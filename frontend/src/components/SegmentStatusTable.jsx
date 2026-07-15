@@ -45,7 +45,10 @@ const styles = {
   wrapper: {
     overflowX: 'auto',
     borderRadius: '10px',
-    border: '1px solid #2e3141',
+    border: '1px solid rgba(74, 158, 255, 0.12)',
+    background: 'rgba(14, 21, 37, 0.65)',
+    backdropFilter: 'blur(12px)',
+    WebkitBackdropFilter: 'blur(12px)',
   },
   table: {
     width: '100%',
@@ -53,20 +56,21 @@ const styles = {
     fontSize: '12px',
   },
   th: {
-    background: '#1e2130',
-    color: '#8b90a7',
+    background: 'rgba(8, 12, 24, 0.7)',
+    color: '#7a85a3',
     fontWeight: 700,
     textTransform: 'uppercase',
     letterSpacing: '0.5px',
     padding: '9px 12px',
     textAlign: 'left',
-    borderBottom: '1px solid #2e3141',
+    borderBottom: '1px solid rgba(74, 158, 255, 0.1)',
     whiteSpace: 'nowrap',
+    fontSize: '11px',
   },
   td: (highlighted) => ({
     padding: '8px 12px',
-    borderBottom: '1px solid #1e2130',
-    background: highlighted ? '#ffffff06' : 'transparent',
+    borderBottom: '1px solid rgba(14, 21, 37, 0.8)',
+    background: highlighted ? 'rgba(74,158,255,0.05)' : 'transparent',
     verticalAlign: 'middle',
   }),
   satBar: (sat) => ({
@@ -120,7 +124,7 @@ export default function SegmentStatusTable({ segments, decisions, incidentSegmen
             return (
               <tr key={segId}>
                 <td style={styles.td(highlighted)}>
-                  <code style={{ color: '#a29bfe', fontSize: '11px' }}>{segId}</code>
+                  <code style={{ color: '#4a9eff', fontSize: '11px', fontFamily: "'Cascadia Code', 'Consolas', monospace" }}>{segId}</code>
                 </td>
                 <td style={styles.td(highlighted)}>{seg.name}</td>
                 <td style={styles.td(highlighted)}>

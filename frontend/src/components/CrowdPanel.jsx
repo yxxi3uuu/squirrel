@@ -3,29 +3,37 @@ import { STATIONS, getCrowdStateAt, getActiveIncidents, TIME_STEPS } from '../da
 
 const s = {
   wrap: {
-    background: '#1a1d2e', border: '1px solid #2e3141',
-    borderRadius: '10px', padding: '14px 16px',
+    background: 'rgba(14, 21, 37, 0.65)',
+    backdropFilter: 'blur(12px)',
+    WebkitBackdropFilter: 'blur(12px)',
+    border: '1px solid rgba(74, 158, 255, 0.15)',
+    borderRadius: '10px',
+    padding: '14px 16px',
   },
   title: {
-    fontSize: '11px', color: '#8b90a7', fontWeight: 700,
+    fontSize: '11px', color: '#7a85a3', fontWeight: 700,
     textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '12px',
   },
   grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '8px' },
   card: {
-    background: '#141720', borderRadius: '8px', padding: '10px 12px',
-    border: '1px solid #2e3141',
+    background: 'rgba(8, 12, 24, 0.6)',
+    backdropFilter: 'blur(8px)',
+    WebkitBackdropFilter: 'blur(8px)',
+    borderRadius: '8px',
+    padding: '10px 12px',
+    border: '1px solid rgba(74, 158, 255, 0.1)',
   },
-  cardName: { fontSize: '11px', color: '#8b90a7', marginBottom: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
-  cardCount: { fontSize: '18px', fontWeight: 700, color: '#e8eaf6' },
+  cardName: { fontSize: '11px', color: '#7a85a3', marginBottom: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+  cardCount: { fontSize: '18px', fontWeight: 700, color: '#e2e8f8' },
   cardGrowth: (g) => ({
     fontSize: '11px', fontWeight: 700,
     color: g > 0.3 ? '#ff4757' : g > 0 ? '#ffa502' : '#2ed573',
   }),
   incidentSection: { marginTop: '14px' },
-  incidentTitle: { fontSize: '11px', color: '#8b90a7', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' },
+  incidentTitle: { fontSize: '11px', color: '#7a85a3', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' },
   incidentCard: (severity) => ({
-    background: severity === 'Critical' ? '#ff475710' : severity === 'High' ? '#ff7f5010' : '#ffa50210',
-    border: `1px solid ${severity === 'Critical' ? '#ff475744' : severity === 'High' ? '#ff7f5044' : '#ffa50244'}`,
+    background: severity === 'Critical' ? 'rgba(255,71,87,0.07)' : severity === 'High' ? 'rgba(255,127,80,0.07)' : 'rgba(255,165,2,0.07)',
+    border: `1px solid ${severity === 'Critical' ? 'rgba(255,71,87,0.3)' : severity === 'High' ? 'rgba(255,127,80,0.3)' : 'rgba(255,165,2,0.3)'}`,
     borderRadius: '8px', padding: '10px 12px', marginBottom: '6px',
   }),
   incidentType: (severity) => ({
@@ -34,7 +42,7 @@ const s = {
     textTransform: 'uppercase', letterSpacing: '0.5px',
   }),
   incidentLoc: { fontSize: '12px', color: '#c8cde8', marginTop: '3px' },
-  incidentDesc: { fontSize: '11px', color: '#777', marginTop: '4px', lineHeight: '1.4' },
+  incidentDesc: { fontSize: '11px', color: '#666f87', marginTop: '4px', lineHeight: '1.4' },
   noData: { fontSize: '12px', color: '#555c7a', textAlign: 'center', padding: '12px 0' },
 }
 

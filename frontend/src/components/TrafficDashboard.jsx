@@ -12,28 +12,38 @@ const s = {
   topRow: { display: 'flex', gap: '12px', flexWrap: 'wrap' },
   statCard: {
     flex: '1 1 120px',
-    background: '#1a1d2e', border: '1px solid #2e3141',
-    borderRadius: '10px', padding: '12px 16px',
+    background: 'rgba(14, 21, 37, 0.65)',
+    backdropFilter: 'blur(12px)',
+    WebkitBackdropFilter: 'blur(12px)',
+    border: '1px solid rgba(74, 158, 255, 0.15)',
+    borderRadius: '10px',
+    padding: '12px 16px',
   },
-  statLabel: { fontSize: '11px', color: '#8b90a7', marginBottom: '4px' },
-  statValue: { fontSize: '22px', fontWeight: 700, color: '#e8eaf6' },
+  statLabel: { fontSize: '11px', color: '#7a85a3', marginBottom: '4px' },
+  statValue: { fontSize: '22px', fontWeight: 700, color: '#e2e8f8' },
   statSub: { fontSize: '11px', color: '#555c7a', marginTop: '2px' },
   mapRow: { display: 'flex', gap: '14px', alignItems: 'flex-start', flexWrap: 'wrap' },
   mapCol: { flex: '1 1 500px', minWidth: 0 },
   sideCol: { width: '320px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '12px' },
   segTable: {
-    background: '#1a1d2e', border: '1px solid #2e3141',
-    borderRadius: '10px', padding: '12px 16px', maxHeight: '440px', overflowY: 'auto',
+    background: 'rgba(14, 21, 37, 0.65)',
+    backdropFilter: 'blur(12px)',
+    WebkitBackdropFilter: 'blur(12px)',
+    border: '1px solid rgba(74, 158, 255, 0.15)',
+    borderRadius: '10px',
+    padding: '12px 16px',
+    maxHeight: '440px',
+    overflowY: 'auto',
   },
-  segTitle: { fontSize: '11px', color: '#8b90a7', fontWeight: 700, textTransform: 'uppercase', marginBottom: '10px' },
+  segTitle: { fontSize: '11px', color: '#7a85a3', fontWeight: 700, textTransform: 'uppercase', marginBottom: '10px', letterSpacing: '0.5px' },
   segRow: {
     display: 'flex', alignItems: 'center', gap: '8px',
-    padding: '5px 0', borderBottom: '1px solid #1e2135',
+    padding: '5px 0', borderBottom: '1px solid rgba(30, 33, 53, 0.8)',
     fontSize: '12px',
   },
   segDot: (color) => ({ width: '8px', height: '8px', borderRadius: '50%', background: color, flexShrink: 0 }),
   segName: { flex: 1, color: '#c8cde8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-  segSpeed: { color: '#8b90a7', fontSize: '11px', width: '54px', textAlign: 'right' },
+  segSpeed: { color: '#7a85a3', fontSize: '11px', width: '54px', textAlign: 'right' },
   segSat: (sat) => ({
     width: '40px', textAlign: 'right', fontSize: '11px',
     color: sat >= 0.95 ? '#ff4757' : sat >= 0.80 ? '#ffa502' : '#2ed573',
@@ -72,10 +82,12 @@ export default function TrafficDashboard() {
             key={l}
             onClick={() => setLang(l)}
             style={{
-              background: lang === l ? '#a29bfe33' : '#1a1d2e',
-              border: `1px solid ${lang === l ? '#a29bfe66' : '#2e3141'}`,
-              color: lang === l ? '#a29bfe' : '#8b90a7',
+              background: lang === l ? 'rgba(74,158,255,0.15)' : 'rgba(14,21,37,0.65)',
+              border: `1px solid ${lang === l ? 'rgba(74,158,255,0.45)' : 'rgba(74,158,255,0.12)'}`,
+              color: lang === l ? '#4a9eff' : '#7a85a3',
               borderRadius: '6px', padding: '4px 12px', fontSize: '12px', cursor: 'pointer',
+              backdropFilter: 'blur(8px)',
+              WebkitBackdropFilter: 'blur(8px)',
             }}
           >
             {l === 'zh' ? '中文' : 'EN'}

@@ -15,9 +15,11 @@ const styles = {
     alignItems: 'center',
     gap: '12px',
     padding: '8px 14px',
-    background: '#1e2130',
+    background: 'rgba(14, 21, 37, 0.65)',
+    backdropFilter: 'blur(12px)',
+    WebkitBackdropFilter: 'blur(12px)',
     borderRadius: '8px',
-    border: '1px solid #2e3141',
+    border: '1px solid rgba(74, 158, 255, 0.15)',
     fontSize: '13px',
   },
   dot: (done) => ({

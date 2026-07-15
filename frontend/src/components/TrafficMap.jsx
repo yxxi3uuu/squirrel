@@ -59,15 +59,19 @@ const busIcon = L.divIcon({
 const incidentIcon = (severity) => L.divIcon({
   className: '',
   html: `<div style="
-    width:20px;height:20px;border-radius:50%;
+    width:22px;height:22px;border-radius:50%;
     background:${severity === 'Critical' ? '#ff4757' : severity === 'High' ? '#ff7f50' : '#ffa502'};
-    border:2px solid #fff;
+    border:2px solid rgba(255,255,255,0.8);
     display:flex;align-items:center;justify-content:center;
-    font-size:11px;line-height:20px;text-align:center;
-    box-shadow:0 0 10px ${severity === 'Critical' ? '#ff4757' : '#ffa502'}88;
-    animation: pulse 1.5s infinite;
-  ">⚠</div>`,
-  iconSize: [20, 20], iconAnchor: [10, 10],
+    box-shadow:0 0 12px ${severity === 'Critical' ? '#ff4757' : '#ffa502'}88;
+  ">
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+      <line x1="12" y1="9" x2="12" y2="13"/>
+      <line x1="12" y1="17" x2="12.01" y2="17"/>
+    </svg>
+  </div>`,
+  iconSize: [22, 22], iconAnchor: [11, 11],
 })
 
 const s = {
@@ -76,7 +80,7 @@ const s = {
     position: 'relative',
     borderRadius: '12px',
     overflow: 'hidden',
-    border: '1px solid #2e3141',
+    border: '1px solid rgba(74, 158, 255, 0.15)',
     height: '480px',
   },
   mapEl: { width: '100%', height: '100%' },
@@ -86,19 +90,25 @@ const s = {
   },
   toggleBtn: {
     padding: '5px 12px', fontSize: '12px', fontWeight: 700,
-    border: '1px solid #2e3141', borderRadius: '6px',
+    border: '1px solid rgba(74,158,255,0.2)', borderRadius: '6px',
     cursor: 'pointer', transition: 'all 0.2s',
-    background: '#141720cc', color: '#8b90a7',
-    backdropFilter: 'blur(4px)',
+    background: 'rgba(8, 12, 24, 0.75)', color: '#7a85a3',
+    backdropFilter: 'blur(8px)',
+    WebkitBackdropFilter: 'blur(8px)',
   },
   toggleBtnActive: {
-    background: '#a29bfedd', color: '#fff', borderColor: '#a29bfe',
+    background: 'rgba(74,158,255,0.25)', color: '#e2e8f8', borderColor: 'rgba(74,158,255,0.55)',
+    boxShadow: '0 0 10px rgba(74,158,255,0.2)',
   },
   legend: {
-    background: '#1a1d2e', border: '1px solid #2e3141', borderRadius: '10px',
+    background: 'rgba(14, 21, 37, 0.65)',
+    backdropFilter: 'blur(12px)',
+    WebkitBackdropFilter: 'blur(12px)',
+    border: '1px solid rgba(74, 158, 255, 0.15)',
+    borderRadius: '10px',
     padding: '12px 16px',
   },
-  legendTitle: { fontSize: '11px', color: '#8b90a7', fontWeight: 700, textTransform: 'uppercase', marginBottom: '10px' },
+  legendTitle: { fontSize: '11px', color: '#7a85a3', fontWeight: 700, textTransform: 'uppercase', marginBottom: '10px', letterSpacing: '0.5px' },
   legendGrid: { display: 'flex', flexWrap: 'wrap', gap: '8px 20px' },
   legendItem: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#c8cde8' },
   legendDot: (color) => ({
@@ -157,7 +167,7 @@ export default function TrafficMap({ stepIndex, lang = 'zh' }) {
       marker.bindPopup(`<div style="font-family:sans-serif;min-width:140px">
         <b style="font-size:13px">${st.name}</b>
         <div style="font-size:11px;color:#888;margin-top:4px">
-          ${st.type === 'mrt' ? '🚇 捷運站' : st.type === 'bus' ? '🚌 公車轉運站' : '🏢 地標'}
+          ${st.type === 'mrt' ? '[捷運] 捷運站' : st.type === 'bus' ? '[公車] 公車轉運站' : '[地標] 地標'}
         </div>
       </div>`)
       stationLayersRef.current[st.id] = marker

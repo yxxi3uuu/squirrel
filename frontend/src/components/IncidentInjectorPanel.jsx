@@ -29,24 +29,33 @@ const INITIAL_FORM = {
 const STATUS_OPTIONS = ['Closed', 'Blocked', 'Restricted', 'Caution', 'Open']
 const SEVERITY_OPTIONS = ['Low', 'Medium', 'High', 'Critical']
 
+const severityColor = (sev) => {
+  if (sev === 'Critical') return { bg: 'rgba(255,71,87,0.12)', color: '#ff4757', border: 'rgba(255,71,87,0.3)' }
+  if (sev === 'High')     return { bg: 'rgba(255,107,129,0.12)', color: '#ff6b81', border: 'rgba(255,107,129,0.3)' }
+  if (sev === 'Medium')   return { bg: 'rgba(255,211,42,0.12)', color: '#ffd32a', border: 'rgba(255,211,42,0.3)' }
+  return { bg: 'rgba(74,158,255,0.10)', color: '#4a9eff', border: 'rgba(74,158,255,0.25)' }
+}
+
 const styles = {
   panel: {
-    background: '#1a1d27',
+    background: 'rgba(14, 21, 37, 0.65)',
+    backdropFilter: 'blur(14px)',
+    WebkitBackdropFilter: 'blur(14px)',
     borderRadius: '12px',
-    border: '1px solid #2e3141',
+    border: '1px solid rgba(74, 158, 255, 0.15)',
     overflow: 'hidden',
   },
   tabs: {
     display: 'flex',
-    borderBottom: '1px solid #2e3141',
+    borderBottom: '1px solid rgba(74, 158, 255, 0.12)',
   },
   tab: (active) => ({
     padding: '11px 20px',
     fontSize: '13px',
     fontWeight: active ? 700 : 400,
-    color: active ? '#a29bfe' : '#8b90a7',
-    background: active ? '#a29bfe12' : 'transparent',
-    borderBottom: active ? '2px solid #a29bfe' : '2px solid transparent',
+    color: active ? '#4a9eff' : '#7a85a3',
+    background: active ? 'rgba(74, 158, 255, 0.08)' : 'transparent',
+    borderBottom: active ? '2px solid #4a9eff' : '2px solid transparent',
     cursor: 'pointer',
     border: 'none',
     transition: 'all 0.15s',
@@ -55,37 +64,77 @@ const styles = {
   }),
   body: { padding: '18px' },
   sampleCard: (selected) => ({
-    border: `1px solid ${selected ? '#a29bfe88' : '#2e3141'}`,
-    borderRadius: '8px',
+    border: `1px solid ${selected ? 'rgba(74,158,255,0.5)' : 'rgba(74,158,255,0.1)'}`,
+    borderRadius: '10px',
     padding: '12px 14px',
     marginBottom: '10px',
     cursor: 'pointer',
-    background: selected ? '#a29bfe12' : '#ffffff05',
+    background: selected ? 'rgba(74, 158, 255, 0.1)' : 'rgba(255,255,255,0.03)',
     transition: 'all 0.15s',
+    boxShadow: selected ? '0 0 12px rgba(74,158,255,0.12)' : 'none',
   }),
-  sampleHeader: { display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '5px' },
-  sampleId: { fontFamily: 'monospace', fontSize: '11px', color: '#a29bfe' },
-  sampleType: {
-    background: '#ffffff10',
-    borderRadius: '4px',
-    padding: '1px 6px',
-    fontSize: '11px',
-    color: '#8b90a7',
+  sampleHeader: {
+    display: 'flex',
+    gap: '6px',
+    alignItems: 'center',
+    marginBottom: '6px',
+    flexWrap: 'wrap',
   },
-  severityBadge: (sev) => ({
-    background: sev === 'Critical' ? '#ff475722' : sev === 'High' ? '#ff6b8122' : '#ffd32a22',
-    color: sev === 'Critical' ? '#ff4757' : sev === 'High' ? '#ff6b81' : '#ffd32a',
-    borderRadius: '4px',
-    padding: '1px 6px',
+  sampleId: {
+    fontFamily: "'Cascadia Code', 'Consolas', monospace",
     fontSize: '11px',
-    fontWeight: 700,
-  }),
-  sampleDesc: { fontSize: '12px', color: '#8b90a7', lineHeight: 1.4 },
+    color: '#4a9eff',
+    background: 'rgba(74,158,255,0.1)',
+    padding: '1px 6px',
+    borderRadius: '4px',
+    flexShrink: 0,
+    whiteSpace: 'nowrap',
+  },
+  sampleType: {
+    background: 'rgba(255,255,255,0.07)',
+    borderRadius: '4px',
+    padding: '2px 7px',
+    fontSize: '11px',
+    color: '#9aa5bf',
+    maxWidth: '160px',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+  sampleSegment: {
+    fontFamily: "'Cascadia Code', 'Consolas', monospace",
+    fontSize: '11px',
+    color: '#7a85a3',
+    background: 'rgba(255,255,255,0.05)',
+    padding: '1px 6px',
+    borderRadius: '4px',
+    marginLeft: 'auto',
+    flexShrink: 0,
+    whiteSpace: 'nowrap',
+  },
+  sampleDesc: {
+    fontSize: '12px',
+    color: '#9aa5bf',
+    lineHeight: 1.5,
+    marginTop: '2px',
+  },
   formRow: { marginBottom: '12px' },
   formGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
   actions: { display: 'flex', gap: '10px', marginTop: '16px' },
-  btnPrimary: { background: '#a29bfe', color: '#fff', flex: 1 },
-  btnSecondary: { background: '#2e3141', color: '#e8eaf6', flex: 1 },
+  btnPrimary: {
+    background: 'linear-gradient(135deg, #2979ff, #1565c0)',
+    color: '#fff',
+    flex: 1,
+    border: '1px solid rgba(74,158,255,0.4)',
+    boxShadow: '0 2px 12px rgba(41,121,255,0.25)',
+    fontWeight: 600,
+  },
+  btnSecondary: {
+    background: 'rgba(30, 45, 74, 0.8)',
+    color: '#c2cfe0',
+    flex: 1,
+    border: '1px solid rgba(74,158,255,0.15)',
+  },
 }
 
 // ─── Sample Tab ───────────────────────────────────────────────────
@@ -100,34 +149,50 @@ function SamplesTab({ onInject, loading }) {
       .catch(e => setError(e.message))
   }, [])
 
-  if (error) return <div style={{ color: '#ff4757', padding: '16px' }}>載入失敗：{error}</div>
+  if (error) return <div style={{ color: '#ff4757', padding: '16px', fontSize: '13px' }}>載入失敗：{error}</div>
+
+  const sc = selected ? severityColor(selected.severity) : null
 
   return (
     <div>
-      {samples.map(s => (
-        <div
-          key={s.event_id}
-          style={styles.sampleCard(selected?.event_id === s.event_id)}
-          onClick={() => setSelected(s)}
-          role="button"
-          tabIndex={0}
-          aria-pressed={selected?.event_id === s.event_id}
-          onKeyDown={e => e.key === 'Enter' && setSelected(s)}
-        >
-          <div style={styles.sampleHeader}>
-            <span style={styles.sampleId}>{s.event_id}</span>
-            <span style={styles.sampleType}>{s.type}</span>
-            <span style={styles.severityBadge(s.severity)}>{s.severity}</span>
-            <span style={{ marginLeft: 'auto', fontSize: '11px', color: '#8b90a7' }}>
-              {s.affected_segment}
-            </span>
+      {samples.map(s => {
+        const sv = severityColor(s.severity)
+        return (
+          <div
+            key={s.event_id}
+            style={styles.sampleCard(selected?.event_id === s.event_id)}
+            onClick={() => setSelected(s)}
+            role="button"
+            tabIndex={0}
+            aria-pressed={selected?.event_id === s.event_id}
+            onKeyDown={e => e.key === 'Enter' && setSelected(s)}
+          >
+            <div style={styles.sampleHeader}>
+              <span style={styles.sampleId}>{s.event_id}</span>
+              <span style={styles.sampleType}>{s.type}</span>
+              {/* Severity badge */}
+              <span style={{
+                background: sv.bg,
+                color: sv.color,
+                border: `1px solid ${sv.border}`,
+                borderRadius: '4px',
+                padding: '1px 7px',
+                fontSize: '11px',
+                fontWeight: 700,
+                flexShrink: 0,
+              }}>
+                {s.severity}
+              </span>
+              {/* Segment ID — pushed to right, monospace, never overflows */}
+              <span style={styles.sampleSegment}>{s.affected_segment}</span>
+            </div>
+            <div style={styles.sampleDesc}>{s.location}</div>
           </div>
-          <div style={styles.sampleDesc}>{s.location}</div>
-        </div>
-      ))}
+        )
+      })}
       <div style={styles.actions}>
         <button
-          style={{ ...styles.btnPrimary, opacity: (!selected || loading) ? 0.4 : 1 }}
+          style={{ ...styles.btnPrimary, opacity: (!selected || loading) ? 0.45 : 1 }}
           disabled={!selected || loading}
           onClick={() => selected && onInject(selected)}
           aria-busy={loading}
@@ -208,6 +273,7 @@ function CustomFormTab({ onInject, loading }) {
             placeholder="RD_TPE_002"
             value={form.affected_segment}
             onChange={handleChange}
+            style={{ fontFamily: "'Cascadia Code', 'Consolas', monospace" }}
           />
         </div>
         <div style={styles.formRow}>
@@ -218,6 +284,7 @@ function CustomFormTab({ onInject, loading }) {
             placeholder="RD_TPE_001"
             value={form.affected_road}
             onChange={handleChange}
+            style={{ fontFamily: "'Cascadia Code', 'Consolas', monospace" }}
           />
         </div>
       </div>

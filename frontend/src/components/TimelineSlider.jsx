@@ -1,34 +1,77 @@
 import React, { useEffect, useRef } from 'react'
 import { TIME_STEPS } from '../data/trafficData'
 
+// ─── Icons ────────────────────────────────────────────────────────
+const IconPlay = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+    <polygon points="5 3 19 12 5 21 5 3"/>
+  </svg>
+)
+const IconPause = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+    <rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>
+  </svg>
+)
+const IconSkipBack = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+    <polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+  </svg>
+)
+const IconChevronLeft = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="15 18 9 12 15 6"/>
+  </svg>
+)
+const IconChevronRight = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="9 18 15 12 9 6"/>
+  </svg>
+)
+
 const s = {
   wrap: {
-    background: '#1a1d2e',
-    border: '1px solid #2e3141',
+    background: 'rgba(14, 21, 37, 0.65)',
+    backdropFilter: 'blur(14px)',
+    WebkitBackdropFilter: 'blur(14px)',
+    border: '1px solid rgba(74, 158, 255, 0.15)',
     borderRadius: '10px',
     padding: '14px 20px',
   },
   header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' },
-  label: { fontSize: '12px', color: '#8b90a7', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' },
-  time: { fontSize: '18px', fontWeight: 700, color: '#a29bfe', fontFamily: 'monospace' },
-  controls: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' },
+  label: { fontSize: '12px', color: '#7a85a3', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' },
+  time: {
+    fontSize: '18px', fontWeight: 700, color: '#4a9eff',
+    fontFamily: "'Cascadia Code', 'Consolas', monospace",
+    display: 'flex', alignItems: 'center', gap: '6px',
+  },
+  controls: { display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' },
   btn: {
-    background: '#2e3141', border: '1px solid #3a3f5c', borderRadius: '6px',
-    color: '#e8eaf6', fontSize: '13px', padding: '5px 12px', cursor: 'pointer',
+    background: 'rgba(30, 45, 74, 0.8)',
+    border: '1px solid rgba(74,158,255,0.2)',
+    borderRadius: '6px',
+    color: '#c2cfe0',
+    fontSize: '13px',
+    padding: '5px 12px',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '5px',
   },
   btnActive: {
-    background: '#a29bfe33', border: '1px solid #a29bfe66',
-    color: '#a29bfe',
+    background: 'rgba(74,158,255,0.15)',
+    border: '1px solid rgba(74,158,255,0.45)',
+    color: '#4a9eff',
   },
-  slider: { width: '100%', accentColor: '#a29bfe', cursor: 'pointer' },
+  slider: { width: '100%', accentColor: '#4a9eff', cursor: 'pointer' },
   ticks: {
     display: 'flex', justifyContent: 'space-between',
     marginTop: '4px',
   },
   tick: { fontSize: '10px', color: '#555c7a' },
   incidentDot: {
-    display: 'inline-block', width: '8px', height: '8px',
-    borderRadius: '50%', background: '#ff4757', marginLeft: '6px',
+    display: 'inline-block', width: '7px', height: '7px',
+    borderRadius: '50%', background: '#ff4757',
+    boxShadow: '0 0 5px #ff4757',
     verticalAlign: 'middle',
   },
 }
@@ -69,7 +112,9 @@ export default function TimelineSlider({ stepIndex, onStepChange, playing, onPla
         <span style={s.label}>時間軸回放</span>
         <span style={s.time}>
           {currentTs ? currentTs.split(' ')[1] : '--:--'}
-          {hasIncident && <span style={s.incidentDot} title="此時有事件發生" />}
+          {hasIncident && (
+            <span style={s.incidentDot} title="此時有事件發生" aria-label="有事件發生" />
+          )}
         </span>
       </div>
 
@@ -79,28 +124,30 @@ export default function TimelineSlider({ stepIndex, onStepChange, playing, onPla
           onClick={onPlayToggle}
           aria-label={playing ? '暫停' : '播放'}
         >
-          {playing ? '⏸ 暫停' : '▶ 播放'}
+          {playing ? <IconPause /> : <IconPlay />}
+          {playing ? '暫停' : '播放'}
         </button>
         <button
           style={s.btn}
           onClick={() => onStepChange(0)}
           aria-label="重置到開始"
         >
-          ⏮ 重置
+          <IconSkipBack />
+          重置
         </button>
         <button
           style={s.btn}
           onClick={() => onStepChange(prev => Math.max(0, prev - 1))}
           aria-label="上一步"
         >
-          ◀
+          <IconChevronLeft />
         </button>
         <button
           style={s.btn}
           onClick={() => onStepChange(prev => Math.min(TIME_STEPS.length - 1, prev + 1))}
           aria-label="下一步"
         >
-          ▶
+          <IconChevronRight />
         </button>
         <span style={{ fontSize: '11px', color: '#555c7a', marginLeft: '4px' }}>
           {stepIndex + 1} / {TIME_STEPS.length}

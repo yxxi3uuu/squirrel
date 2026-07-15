@@ -45,10 +45,14 @@ class IncidentIn(BaseModel):
 
 
 class InjectResponse(BaseModel):
-    """注入端點的 Response wrapper，含決策清單與處理時間。"""
+    """注入端點的 Response wrapper，含決策清單、處理時間與對應快照。"""
 
     decisions: List[TriggerDecision]
     processing_time_ms: float = Field(description="後端規則運算耗時（毫秒）")
+    snapshot: Dict[str, Any] = Field(
+        description="注入時間點的 TrafficSnapshot（road_segments / stations / incidents）",
+        default_factory=dict,
+    )
 
 
 # ------------------------------------------------------------------
@@ -90,7 +94,7 @@ def inject_incident(incident_in: IncidentIn) -> InjectResponse:
     decisions = process_incident(incident, snapshot)
     elapsed_ms = round((time.monotonic() - t0) * 1000, 2)
 
-    return InjectResponse(decisions=decisions, processing_time_ms=elapsed_ms)
+    return InjectResponse(decisions=decisions, processing_time_ms=elapsed_ms, snapshot=snapshot)
 
 
 # ------------------------------------------------------------------

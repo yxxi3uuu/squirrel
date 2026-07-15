@@ -23,7 +23,7 @@ const SEVERITY_COLOR = {
 
 // ─── SOP clause → 主題色 ─────────────────────────────────────────
 const CLAUSE_COLOR = {
-  'SOP-1': '#a29bfe',
+  'SOP-1': '#4a9eff',
   'SOP-2': '#fd79a8',
   'SOP-5': '#fdcb6e',
 }
@@ -38,12 +38,17 @@ const styles = {
     padding: '32px',
     textAlign: 'center',
     color: '#636e72',
-    border: '2px dashed #2e3141',
+    border: '2px dashed rgba(74,158,255,0.15)',
     borderRadius: '12px',
+    background: 'rgba(14,21,37,0.4)',
+    backdropFilter: 'blur(8px)',
+    WebkitBackdropFilter: 'blur(8px)',
   },
   card: (triggered, clause) => ({
-    background: '#1a1d27',
-    border: `1px solid ${triggered ? (CLAUSE_COLOR[clause] || '#2e3141') + '55' : '#2e3141'}`,
+    background: 'rgba(14, 21, 37, 0.65)',
+    backdropFilter: 'blur(12px)',
+    WebkitBackdropFilter: 'blur(12px)',
+    border: `1px solid ${triggered ? (CLAUSE_COLOR[clause] || '#2e3141') + '55' : 'rgba(74,158,255,0.1)'}`,
     borderRadius: '12px',
     overflow: 'hidden',
     opacity: triggered ? 1 : 0.7,
@@ -54,9 +59,9 @@ const styles = {
     gap: '10px',
     padding: '14px 18px',
     background: triggered
-      ? `${CLAUSE_COLOR[clause] || '#444'}18`
-      : '#ffffff08',
-    borderBottom: `1px solid ${triggered ? (CLAUSE_COLOR[clause] || '#2e3141') + '33' : '#2e3141'}`,
+      ? `${CLAUSE_COLOR[clause] || '#444'}15`
+      : 'rgba(255,255,255,0.04)',
+    borderBottom: `1px solid ${triggered ? (CLAUSE_COLOR[clause] || '#2e3141') + '33' : 'rgba(74,158,255,0.08)'}`,
   }),
   clauseBadge: (clause) => ({
     background: `${CLAUSE_COLOR[clause] || '#636e72'}22`,
@@ -111,12 +116,12 @@ const styles = {
     gap: '4px',
   },
   actionItem: {
-    background: '#ffffff07',
+    background: 'rgba(74,158,255,0.05)',
     borderRadius: '6px',
     padding: '7px 10px',
     fontSize: '12px',
     color: '#e0e3f0',
-    borderLeft: '3px solid #a29bfe',
+    borderLeft: '3px solid #4a9eff',
   },
   routeBox: (color) => ({
     background: `${color}12`,
