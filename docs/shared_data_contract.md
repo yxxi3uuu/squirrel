@@ -5,14 +5,11 @@
 ## 分層
 
 ```text
-app.py                  # 目前可跑的模組 3 API demo
 data/                   # 當前資料快照，之後由模組 1 接真實資料
 shared/
   schemas.py            # 全隊共用資料模型
   lookup.py             # 路名、站名、場館別名查詢
 sop/                    # SOP 條文來源
-llm/                    # LLM/Bedrock/Anthropic 抽象層
-static/                 # 模組 3 前端
 ```
 
 ## ID 規則
