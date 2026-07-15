@@ -1,0 +1,8 @@
+# Module 2 backend dependencies
+# Install from project root: pip install -r backend/requirements.txt
+
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+
+# Shared data contracts (already in root requirements.txt, listed for clarity)
+pydantic==2.10.3
