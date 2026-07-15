@@ -14,13 +14,6 @@
 | 判斷方式 | LLM 根據 SOP 與假設條件判斷 |
 | 輸出格式 | 觸發條款、判定依據、預期動作、連鎖檢查 |
 
-模組 3 和其他模組的責任邊界：
-
-- 不負責 Dashboard 時序視覺化，那是模組 1。
-- 不負責事故注入後的路網重規劃，那是模組 2。
-- 不負責 ETE 公式的正式程式運算，那是模組 4。
-- 不負責多語通報發布流程，那是模組 5。
-- 可以引用 `data/`、`shared/`、`sop/` 的共用資料，但 what-if 條件以使用者輸入為優先。
 
 ## 檔案結構
 
@@ -103,7 +96,7 @@ Response:
 |---|---|---|
 | `mock` | 離線 demo 與 T1-T7 驗收 | 不需要 API key |
 | `anthropic` | 本機開發調 prompt | `ANTHROPIC_API_KEY` |
-| `bedrock` | 正式賽 AWS 環境 | AWS 憑證與 Bedrock model access |
+| `bedrock` | AWS 環境 | AWS 憑證與 Bedrock model access |
 
 ## 回答格式
 
@@ -127,11 +120,3 @@ Response:
 | T5 | 台北101廣場漫遊率 35%？ | 第 6 條多語通報 |
 | T6 | 飽和度 0.80 要處置嗎？ | 不觸發，說明距門檻差距 |
 | T7 | 接續 T1：那如果再加 5,000 人？ | 接住上一輪脈絡，改以 45,000 人判斷 |
-
-## 與 main 的關係
-
-`main` 只保留共用資料契約、SOP、mock 資料格式和整合文件。這個分支包含模組 3 的專屬 API、前端與 LLM prompt。
-
-不要把整個 `module-3-advisory` 直接 merge 回 `main`，否則會把 `app.py`、`prompt.py`、`static/`、`llm/` 等模組 3 專屬檔案加回共用底座。
-
-若模組 3 需要修改共用契約，請開獨立小分支，只改 `shared/`、`data/`、`sop/` 或 `docs/shared_data_contract.md`，再合回 `main`。
