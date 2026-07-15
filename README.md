@@ -1,73 +1,48 @@
-# Squirrel Traffic Advisory
+# Module 3: Interactive Strategic Advisory
 
-大型活動交通指揮系統的共用架構與模組整合 repo。
+這個分支實作核心功能模組 3：對話式策略諮詢顧問。
 
-這個 repo 先定義全隊共用的資料契約、SOP 條文來源、路名/站名查詢方式，以及一個可跑的模組 3 對話式策略諮詢 demo。後續各模組應該沿用同一份 `TrafficSnapshot` 與 `TriggerDecision`，避免整合時出現路名、ID、門檻邏輯不一致。
+模組 3 的目標是在 Dashboard 旁提供對話視窗，讓指揮官輸入模擬指令或 what-if questions。AI 需根據使用者假設、SOP 條文、對話歷史，以及必要的當前狀態資料，回答會觸發的 SOP 條款、判定依據與預期動作。
 
-## 系統資料流
+## 模組定位
 
-```text
-模組 1 資料取得/清洗
-  -> TrafficSnapshot
-模組 2 規則判斷/事件偵測
-  -> TriggerDecision[]
-模組 3 對話式策略諮詢
-  -> what-if 推演、SOP 解釋、指揮官問答
-模組 4 Dashboard
-  -> 顯示 snapshot 與 trigger 狀態
-模組 5 通報/多語訊息
-  -> 依 TriggerDecision 產生通知內容
-```
+| 項目 | 說明 |
+|---|---|
+| 使用者 | 交通指揮官 |
+| 入口 | Dashboard 旁的聊天視窗 |
+| 核心問題 | 「若 BL17 人數增至 40,000 人，依 SOP 該做什麼？」 |
+| 判斷方式 | LLM 根據 SOP 與假設條件判斷 |
+| 輸出格式 | 觸發條款、判定依據、預期動作、連鎖檢查 |
 
-## 模組分工
+模組 3 和其他模組的責任邊界：
 
-| 模組 | 主要責任 | 共用輸入/輸出 |
-|---|---|---|
-| 模組 1 | 接資料來源、清洗、轉成系統格式 | 輸出 `TrafficSnapshot` |
-| 模組 2 | 根據 SOP 與門檻做規則判斷、事件偵測、連鎖觸發 | 讀 `TrafficSnapshot`，輸出 `TriggerDecision[]` |
-| 模組 3 | 指揮官聊天視窗、what-if 問答、SOP 推理解釋 | 讀 `TrafficSnapshot`、SOP、可引用 `TriggerDecision[]` |
-| 模組 4 | Dashboard 視覺化與紅黃燈狀態 | 讀 `TrafficSnapshot`、`TriggerDecision[]` |
-| 模組 5 | 通報訊息、多語內容、CMS/簡訊文字 | 讀 `TriggerDecision[]` |
+- 不負責 Dashboard 時序視覺化，那是模組 1。
+- 不負責事故注入後的路網重規劃，那是模組 2。
+- 不負責 ETE 公式的正式程式運算，那是模組 4。
+- 不負責多語通報發布流程，那是模組 5。
+- 可以引用 `data/`、`shared/`、`sop/` 的共用資料，但 what-if 條件以使用者輸入為優先。
 
-## 目前內容
+## 檔案結構
 
 ```text
 .
-├── app.py                        # 目前可跑的模組 3 FastAPI demo
-├── prompt.py                     # 模組 3 system prompt 組裝
-├── requirements.txt
-├── data/
-│   └── snapshot.py               # mock TrafficSnapshot，之後由模組 1 替換真實資料
-├── shared/
-│   ├── schemas.py                # 全隊共用資料契約
-│   └── lookup.py                 # 路名、站名、場館別名查詢
-├── docs/
-│   └── shared_data_contract.md   # 共用資料架構與 branch 建議
+├── app.py                        # FastAPI 後端，提供 /chat 與 /health
+├── prompt.py                     # 組 system prompt：角色、SOP、資料快照、回答規則
+├── static/
+│   └── index.html                # 聊天視窗 demo
 ├── llm/
 │   └── clients.py                # mock / anthropic / bedrock LLM 抽象層
+├── data/
+│   └── snapshot.py               # mock TrafficSnapshot
+├── shared/
+│   ├── schemas.py                # 共用 schema
+│   └── lookup.py                 # 路名、站名、場館別名查詢
 ├── sop/
 │   └── emergency_traffic_sop.txt # SOP 七條應變規則
-└── static/
-    └── index.html                # 模組 3 聊天前端 demo
+└── requirements.txt
 ```
 
-## 共用資料契約
-
-核心契約放在 `shared/schemas.py`：
-
-- `TrafficSnapshot`：現場狀態快照，包含道路、捷運站、場館、基地台、事件、號誌。
-- `TriggerDecision`：模組 2 判斷後的觸發結果，供模組 3、4、5 共用。
-
-路名/站名/場館名稱查詢放在 `shared/lookup.py`。例如：
-
-- `忠孝東路四段` -> `RD_TPE_001`
-- `BL17` -> `BS_MRT_BL17`
-- `大巨蛋` -> `BS_TPE_DOME`
-- `台北101` -> `BS_TPE_101`
-
-完整說明請看 `docs/shared_data_contract.md`。
-
-## 本機啟動模組 3 Demo
+## 啟動方式
 
 ### 1. 安裝套件
 
@@ -87,36 +62,76 @@ python3 -m uvicorn app:app --reload --port 8000
 http://localhost:8000
 ```
 
+## API
+
+### `POST /chat`
+
+Request:
+
+```json
+{
+  "question": "若 BL17 人數增至 40,000 人？",
+  "history": [
+    { "role": "user", "content": "上一輪問題" },
+    { "role": "assistant", "content": "上一輪回答" }
+  ]
+}
+```
+
+Response:
+
+```json
+{
+  "ok": true,
+  "answer": "■ 觸發條款：第 3 條...",
+  "mode": "mock",
+  "error": null
+}
+```
+
+### `GET /health`
+
+```json
+{ "status": "ok", "mode": "mock" }
+```
+
 ## LLM 模式
 
 透過環境變數 `LLM_MODE` 切換，預設為 `mock`。
 
 | 模式 | 用途 | 需要什麼 |
 |---|---|---|
-| `mock` | demo 與離線驗收 | 不需要 API key |
+| `mock` | 離線 demo 與 T1-T7 驗收 | 不需要 API key |
 | `anthropic` | 本機開發調 prompt | `ANTHROPIC_API_KEY` |
 | `bedrock` | 正式賽 AWS 環境 | AWS 憑證與 Bedrock model access |
 
-## 模組 3 Demo 驗收題
+## 回答格式
 
-| # | 輸入 | 預期觸發 |
+每次回答固定包含四欄：
+
+```text
+■ 觸發條款：第 N 條（條款名稱）
+■ 判定依據：輸入數值 vs 門檻數值
+■ 預期動作：引用 SOP 的具體處置
+■ 連鎖檢查：是否連動其他條款
+```
+
+## 驗收題
+
+| # | 輸入 | 預期 |
 |---|---|---|
 | T1 | 若 BL17 人數增至 40,000 人？ | 第 3 條，連鎖檢查第 6 條 |
 | T2 | 忠孝東路飽和度 0.96？ | 第 1 條 A 級 |
-| T3 | 忠孝東路飽和度 0.90？ | 第 1 條 B 級 |
+| T3 | 忠孝東路飽和度 0.90？ | 第 1 條 B 級，不可答成 A 級 |
 | T4 | 大巨蛋 Growth_Rate 降至 -0.25？ | 第 4 條，連動第 3 條 |
 | T5 | 台北101廣場漫遊率 35%？ | 第 6 條多語通報 |
-| T6 | 飽和度 0.80 要處置嗎？ | 不觸發 |
-| T7 | 接續 T1：那如果再加 5,000 人？ | 多輪對話接住上一輪 |
+| T6 | 飽和度 0.80 要處置嗎？ | 不觸發，說明距門檻差距 |
+| T7 | 接續 T1：那如果再加 5,000 人？ | 接住上一輪脈絡，改以 45,000 人判斷 |
 
-## Branch 建議
+## 與 main 的關係
 
-- `main`：保持可 demo、契約穩定。
-- `shared-data-contract`：共用資料契約調整。
-- `module-1-data-ingestion`：資料來源與清洗。
-- `module-2-rule-engine`：SOP 規則判斷與事件偵測。
-- `module-3-advisory`：對話式策略諮詢。
-- `module-4-dashboard`：Dashboard。
-- `module-5-notification`：通報與多語訊息。
+`main` 只保留共用資料契約、SOP、mock 資料格式和整合文件。這個分支包含模組 3 的專屬 API、前端與 LLM prompt。
 
-各模組開發時，請優先沿用 `shared/schemas.py` 和 `shared/lookup.py`。如果需要新增欄位，先更新共用契約，再讓各模組跟上。
+不要把整個 `module-3-advisory` 直接 merge 回 `main`，否則會把 `app.py`、`prompt.py`、`static/`、`llm/` 等模組 3 專屬檔案加回共用底座。
+
+若模組 3 需要修改共用契約，請開獨立小分支，只改 `shared/`、`data/`、`sop/` 或 `docs/shared_data_contract.md`，再合回 `main`。
