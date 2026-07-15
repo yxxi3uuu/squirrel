@@ -31,6 +31,15 @@ Schema 適配說明（見 README 第11節）：
     Optional[str] 與 List[str]（只存 segment_id）
     → 詳細路段資訊改放 basis 欄位，primary_route/secondary_routes
       只存 segment_id 字串
+
+【修正紀錄 2026-07-15】
+  1. plan_accident_response 的排除理由：先前「缺少飽和度資料」跟
+     「飽和度較高、非最優解」共用同一個預設文字，會誤導模組4的
+     解釋鏈顯示不存在的比較結果。現在分開標注。
+  2. resolve_upstream_downstream 的方位詞判斷：先前無論路段是
+     南北向或東西向，一律用「北側/西側」當作 upstream 關鍵字，
+     東西向路段會判斷錯誤。現在依 flow_direction 的軸向動態決定
+     要用哪組方位詞，軸向無法辨識時退回只看「上游/下游」通用詞。
 """
 
 from typing import List, Optional, Tuple
@@ -99,6 +108,41 @@ def _intersection_in_text(intersection_name: str, text: str) -> bool:
     return False
 
 
+def _direction_keywords(flow_direction: str) -> Tuple[List[str], List[str]]:
+    """
+    【修正】依路段 flow_direction 的軸向（南北向 / 東西向），動態決定
+    要用哪一組方位詞來判斷事故相對於路口的前後位置。
+
+    為什麼要改：原本不管路段是南北向還是東西向，一律用「北側/西側」
+    當作 upstream 關鍵字。這組詞剛好對南北向的 RD_TPE_002 demo案例
+    成立，但對東西向路段（例如 RD_TPE_007 松高路）語意完全不對——
+    東西向路段的「北側/南側」跟行進方向無關，真正該看的是
+    「東側/西側」。所以這裡改成先看 flow_direction 字串決定軸向，
+    再選對應方位詞；軸向無法從字串辨識時，退回只用通用的
+    「上游/下游」字樣，不要亂猜南北或東西，避免誤判比瞎猜還糟。
+
+    回傳 (before_keywords, after_keywords)：
+      before：文字含這些詞 → 事故在該路口「之前」
+      after ：文字含這些詞 → 事故在該路口「之後」
+    """
+    generic_before = ["上游"]
+    generic_after = ["下游"]
+
+    if "南北向" in flow_direction:
+        before = ["北側", "以北", "北邊"] + generic_before
+        after = ["南側", "以南", "南邊"] + generic_after
+    elif "東西向" in flow_direction:
+        before = ["西側", "以西", "西邊"] + generic_before
+        after = ["東側", "以東", "東邊"] + generic_after
+    else:
+        # 軸向無法從 flow_direction 辨識（例如字串完全不含「向」的描述），
+        # 只用通用詞，不要套用南北或東西任一組方位詞。
+        before = generic_before
+        after = generic_after
+
+    return before, after
+
+
 def resolve_upstream_downstream(
     incident: dict,
     segment: dict,
@@ -113,8 +157,9 @@ def resolve_upstream_downstream(
 
     中文地址判斷規則（經驗式，見規格書 4.1 節說明）：
       - 事故描述通常由粗到細，取「最後一個」比對到的路口
-      - 「北側」或「西側」 → 事故在該路口之前（upstream）
-      - 其他方位詞 → 事故在該路口之後或路口本身
+      - 方位詞組依 flow_direction 軸向動態決定（見 _direction_keywords）
+        ——「前」方位詞出現 → 事故在該路口之前（upstream）
+      - 其他方位詞或無方位詞 → 事故在該路口之後或路口本身
     """
     intersections: List[str] = segment.get("intersections", [])
     location_text: str = incident.get("location", "")
@@ -127,7 +172,12 @@ def resolve_upstream_downstream(
     if anchor_idx is None:
         return None, None
 
-    incident_before_anchor = ("北側" in location_text) or ("西側" in location_text)
+    # 【修正】改用依 flow_direction 動態決定的方位詞，取代原本寫死的
+    # 「北側/西側」判斷。
+    before_keywords, _after_keywords = _direction_keywords(
+        segment.get("flow_direction", "")
+    )
+    incident_before_anchor = any(kw in location_text for kw in before_keywords)
 
     if incident_before_anchor:
         upstream_names = intersections[:anchor_idx]
@@ -295,7 +345,7 @@ def plan_accident_response(incident: dict, snapshot: dict) -> dict:
         if c["position"] == "downstream" and c["excluded_reason"] is None
     ]
 
-    # 排除清單：容量不足、不相交、或上游飽和度高於最優解
+    # 排除清單：容量不足、不相交、缺少飽和度資料、或上游飽和度高於最優解
     excluded = []
     primary_id = primary["segment_id"] if primary else None
     for c in candidates:
@@ -305,7 +355,13 @@ def plan_accident_response(incident: dict, snapshot: dict) -> dict:
             continue
         reason = c.get("excluded_reason")
         if reason is None:
-            reason = "位於上游但飽和度高於其他候選，非最優解"
+            # 【修正】原本這裡不管是「沒有飽和度數值」還是「飽和度較高」
+            # 都套用同一句「非最優解」，會誤導模組4的解釋鏈顯示一個
+            # 不存在的比較結果（實際上根本沒有數字可比）。現在分開標注。
+            if c.get("saturation") is None:
+                reason = "位於上游但缺少即時飽和度資料，無法比較，故未列為主疏散"
+            else:
+                reason = "位於上游但飽和度高於其他候選，非最優解"
         excluded.append({**c, "excluded_reason": reason})
 
     # 下游但已被列為次要的，加上說明
@@ -387,6 +443,7 @@ def build_sop1_decision(incident: dict, snapshot: dict) -> Optional[TriggerDecis
         excluded_routes=[],
         ete_minutes=None,
         cms_text=None,
+        timestamp=incident.get("timestamp"),
     )
 
 
@@ -497,6 +554,7 @@ def build_sop2_decision(incident: dict, snapshot: dict) -> TriggerDecision:
         excluded_routes=excluded_for_schema,
         ete_minutes=ete_minutes,
         cms_text=cms_text,
+        timestamp=incident.get("timestamp"),
     )
 
 
@@ -559,6 +617,7 @@ def build_sop5_decision(incident: dict, snapshot: dict) -> TriggerDecision:
         excluded_routes=[],
         ete_minutes=ete_minutes,
         cms_text=cms_text,
+        timestamp=incident.get("timestamp"),
     )
 
 
@@ -617,6 +676,7 @@ def process_incident(incident: dict, snapshot: dict) -> List[TriggerDecision]:
                 excluded_routes=[],
                 ete_minutes=None,
                 cms_text=None,
+                timestamp=incident.get("timestamp"),
             )
         )
 
