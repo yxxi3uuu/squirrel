@@ -12,12 +12,40 @@ import DecisionCard from './components/DecisionCard'
 import IncidentInjectorPanel from './components/IncidentInjectorPanel'
 import SegmentStatusTable from './components/SegmentStatusTable'
 import SLATimer from './components/SLATimer'
+import TrafficDashboard from './components/TrafficDashboard'
+
+const TABS = [
+  { id: 'incident', label: '🚨 事件處置' },
+  { id: 'traffic',  label: '🗺️ 交通地圖' },
+]
 
 const styles = {
   app: {
     minHeight: '100vh',
     display: 'flex',
     flexDirection: 'column',
+  },
+  tabBar: {
+    display: 'flex',
+    gap: '4px',
+    padding: '0 24px',
+    borderBottom: '1px solid #2e3141',
+    background: '#141720',
+  },
+  tab: {
+    padding: '10px 18px',
+    fontSize: '13px',
+    fontWeight: 700,
+    cursor: 'pointer',
+    border: 'none',
+    background: 'transparent',
+    color: '#8b90a7',
+    borderBottom: '2px solid transparent',
+    transition: 'all 0.15s',
+  },
+  tabActive: {
+    color: '#a29bfe',
+    borderBottom: '2px solid #a29bfe',
   },
   header: {
     padding: '14px 24px',
@@ -85,6 +113,7 @@ const styles = {
 }
 
 export default function App() {
+  const [activeTab, setActiveTab] = useState('incident')
   const [loading, setLoading] = useState(false)
   const [decisions, setDecisions] = useState(null)
   const [snapshot, setSnapshot] = useState(null)
@@ -115,37 +144,19 @@ export default function App() {
     }
   }, [])
 
-  return (
-    <div style={styles.app}>
-      {/* Header */}
-      <header style={styles.header}>
-        <div>
-          <div style={styles.headerTitle}>🚨 模組2 突發事件注入與處置</div>
-          <div style={styles.headerSub}>Live Incident Response — SOP 規則引擎</div>
-        </div>
-        <span style={styles.badge}>v2.0</span>
-        {decisions && (
-          <span
-            style={{
-              ...styles.badge,
-              background: '#2ed57322',
-              color: '#2ed573',
-              borderColor: '#2ed57344',
-              marginLeft: '8px',
-            }}
-          >
-            {decisions.length} 筆決策
-          </span>
-        )}
-      </header>
-
+  const tabContent = activeTab === 'traffic'
+    ? (
+      <main style={{ flex: 1, padding: '20px 24px' }}>
+        <TrafficDashboard />
+      </main>
+    )
+    : (
       <main style={styles.main}>
         {/* Left: injection panel + timer */}
         <aside style={styles.leftCol} aria-label="事件注入控制面板">
           <div style={styles.sectionTitle}>事件注入</div>
           <IncidentInjectorPanel onInject={handleInject} loading={loading} />
           <SLATimer startTime={startTime} done={!loading && decisions !== null} processingMs={processingMs} />
-
           {error && (
             <div style={styles.errorBox} role="alert">
               <strong>注入失敗：</strong>{error}
@@ -173,6 +184,48 @@ export default function App() {
           </section>
         </div>
       </main>
+    )
+
+  return (
+    <div style={styles.app}>
+      {/* Header */}
+      <header style={styles.header}>
+        <div>
+          <div style={styles.headerTitle}>🚨 模組2 突發事件注入與處置</div>
+          <div style={styles.headerSub}>Live Incident Response — SOP 規則引擎</div>
+        </div>
+        <span style={styles.badge}>v2.0</span>
+        {decisions && (
+          <span
+            style={{
+              ...styles.badge,
+              background: '#2ed57322',
+              color: '#2ed573',
+              borderColor: '#2ed57344',
+              marginLeft: '8px',
+            }}
+          >
+            {decisions.length} 筆決策
+          </span>
+        )}
+      </header>
+
+      {/* Tab bar */}
+      <div style={styles.tabBar} role="tablist">
+        {TABS.map(tab => (
+          <button
+            key={tab.id}
+            role="tab"
+            aria-selected={activeTab === tab.id}
+            style={{ ...styles.tab, ...(activeTab === tab.id ? styles.tabActive : {}) }}
+            onClick={() => setActiveTab(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {tabContent}
     </div>
   )
 }
