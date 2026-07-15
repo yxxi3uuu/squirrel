@@ -1,55 +1,67 @@
 # Module 3: Interactive Strategic Advisory
 
-這個分支實作核心功能模組 3：對話式策略諮詢顧問。
+This branch implements Module 3: a SOP-grounded conversational advisory
+assistant for traffic command-center what-if questions.
 
-模組 3 的目標是在 Dashboard 旁提供對話視窗，讓指揮官輸入模擬指令或 what-if questions。AI 需根據使用者假設、SOP 條文、對話歷史，以及必要的當前狀態資料，回答會觸發的 SOP 條款、判定依據與預期動作。
+The module is designed as a chatbot beside the dashboard. Commanders can ask
+hypothetical questions such as:
 
-## 模組定位
+> 若 BL17 人數增至 40,000 人，依 SOP 該啟動什麼措施？
 
-| 項目 | 說明 |
-|---|---|
-| 使用者 | 交通指揮官 |
-| 入口 | Dashboard 旁的聊天視窗 |
-| 核心問題 | 「若 BL17 人數增至 40,000 人，依 SOP 該做什麼？」 |
-| 判斷方式 | LLM 根據 SOP 與假設條件判斷 |
-| 輸出格式 | 觸發條款、判定依據、預期動作、連鎖檢查 |
+The backend retrieves relevant SOP context, sends the question and conversation
+history to the selected LLM backend, and returns a structured advisory answer.
 
-
-## 檔案結構
+## Current Architecture
 
 ```text
 .
-├── app.py                        # FastAPI 後端，提供 /chat 與 /health
-├── prompt.py                     # 組 system prompt：角色、SOP、資料快照、回答規則
+├── app.py                          # FastAPI backend: /chat, /health, static UI
 ├── static/
-│   └── index.html                # 聊天視窗 demo
+│   └── index.html                  # Chat UI demo
+├── module3_advisor/
+│   ├── __init__.py
+│   ├── service.py                  # Main advisory flow
+│   ├── sop_retriever.py            # Local SOP/docs retrieval
+│   ├── prompts.py                  # Module 3 prompt templates
+│   └── schemas.py                  # Response shapes
 ├── llm/
-│   └── clients.py                # mock / anthropic / bedrock LLM 抽象層
-├── data/
-│   └── snapshot.py               # mock TrafficSnapshot
-├── shared/
-│   ├── schemas.py                # 共用 schema
-│   └── lookup.py                 # 路名、站名、場館別名查詢
+│   ├── __init__.py
+│   └── clients.py                  # mock / anthropic / bedrock LLM adapter
 ├── sop/
-│   └── emergency_traffic_sop.txt # SOP 七條應變規則
+│   └── emergency_traffic_sop.txt   # SOP rules
+├── docs/
+│   ├── module3_advisor_architecture.md
+│   └── shared_data_contract.md
+├── shared/
+│   ├── __init__.py
+│   ├── lookup.py                   # Optional shared entity lookup helpers
+│   └── schemas.py                  # Shared cross-module contracts
 └── requirements.txt
 ```
 
-## 啟動方式
+## Request Flow
 
-### 1. 安裝套件
+```text
+Dashboard chat UI
+  -> POST /chat
+  -> module3_advisor.answer_advisory_question()
+  -> retrieve relevant SOP/docs context
+  -> llm.clients.chat()
+  -> structured answer
+```
+
+Module 3 no longer depends on a mock traffic snapshot as its primary data
+source. It answers what-if questions from user-provided assumptions and SOP
+context. Future dashboard state can be added later as optional context.
+
+## Run Locally
 
 ```bash
 pip install -r requirements.txt
-```
-
-### 2. 啟動服務
-
-```bash
 python3 -m uvicorn app:app --reload --port 8000
 ```
 
-### 3. 開啟頁面
+Open:
 
 ```text
 http://localhost:8000
@@ -78,6 +90,13 @@ Response:
   "ok": true,
   "answer": "■ 觸發條款：第 3 條...",
   "mode": "mock",
+  "sources": [
+    {
+      "path": "sop/emergency_traffic_sop.txt",
+      "score": 3,
+      "excerpt": "..."
+    }
+  ],
   "error": null
 }
 ```
@@ -88,19 +107,26 @@ Response:
 { "status": "ok", "mode": "mock" }
 ```
 
-## LLM 模式
+## LLM Mode
 
-透過環境變數 `LLM_MODE` 切換，預設為 `mock`。
+Use `LLM_MODE` to switch backend. Default is `mock`.
 
-| 模式 | 用途 | 需要什麼 |
+| Mode | Use case | Required setup |
 |---|---|---|
-| `mock` | 離線 demo 與 T1-T7 驗收 | 不需要 API key |
-| `anthropic` | 本機開發調 prompt | `ANTHROPIC_API_KEY` |
-| `bedrock` | AWS 環境 | AWS 憑證與 Bedrock model access |
+| `mock` | Offline demo and acceptance tests | None |
+| `anthropic` | Local model-backed development | `ANTHROPIC_API_KEY` |
+| `bedrock` | AWS deployment | AWS credentials and Bedrock model access |
 
-## 回答格式
+Example:
 
-每次回答固定包含四欄：
+```bash
+export LLM_MODE=anthropic
+export ANTHROPIC_API_KEY=...
+```
+
+## Answer Format
+
+The assistant should answer with these fields:
 
 ```text
 ■ 觸發條款：第 N 條（條款名稱）
@@ -109,9 +135,9 @@ Response:
 ■ 連鎖檢查：是否連動其他條款
 ```
 
-## 驗收題
+## Acceptance Questions
 
-| # | 輸入 | 預期 |
+| # | Input | Expected |
 |---|---|---|
 | T1 | 若 BL17 人數增至 40,000 人？ | 第 3 條，連鎖檢查第 6 條 |
 | T2 | 忠孝東路飽和度 0.96？ | 第 1 條 A 級 |

@@ -6,7 +6,7 @@
 
 ```text
 app.py                  # 目前可跑的模組 3 API demo
-data/                   # 當前資料快照，之後由模組 1 接真實資料
+module3_advisor/        # 模組 3：SOP-grounded what-if advisor
 shared/
   schemas.py            # 全隊共用資料模型
   lookup.py             # 路名、站名、場館別名查詢
@@ -26,9 +26,9 @@ static/                 # 模組 3 前端
 | 路口/號誌 | `INT_` | `INT_001` | 號誌狀態與路口警力 |
 | 事件 | `INC_` | `INC_20260715_001` | 事故、路障、號誌故障 |
 
-## 快照格式
+## Snapshot 格式
 
-`data/snapshot.py` 的 `get_snapshot()` 應回傳同一份 shape：
+模組 1 / 2 / 4 若需要傳遞即時狀態，建議使用同一份 shape：
 
 ```json
 {
@@ -49,7 +49,7 @@ static/                 # 模組 3 前端
 |---|---|---|
 | 模組 1 | 取得真實資料，轉成 snapshot | 寫入 `TrafficSnapshot` 格式 |
 | 模組 2 | SOP 規則判斷、事件偵測、連鎖觸發 | 讀 `TrafficSnapshot`，輸出 `TriggerDecision[]` |
-| 模組 3 | 對話式策略諮詢與 what-if 推演 | 讀 snapshot、SOP、別名查詢，可引用 `TriggerDecision[]` |
+| 模組 3 | 對話式策略諮詢與 what-if 推演 | 主要讀 SOP 與使用者假設；snapshot 僅作為未來 optional context |
 | 模組 4 | Dashboard | 讀 snapshot、`TriggerDecision[]` |
 | 模組 5 | 通報/多語訊息 | 讀 `TriggerDecision[]`、entity ID、地點名稱 |
 
@@ -77,7 +77,7 @@ static/                 # 模組 3 前端
 - `shared-data-contract`：先做共用資料架構與文件。
 - `module-1-data-ingestion`：資料來源。
 - `module-2-rule-engine`：SOP 規則判斷與事件偵測。
-- `module-3-advisory`：你的對話顧問。
+- `module-3-advisor`：你的對話顧問。
 - `module-4-dashboard`：儀表板。
 - `module-5-notification`：通報與多語訊息。
 

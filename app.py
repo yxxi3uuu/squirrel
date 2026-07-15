@@ -18,9 +18,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from prompt import build_system_prompt
-from data.snapshot import get_snapshot, format_snapshot_for_prompt
-from llm.clients import chat, get_mode
+from llm.clients import get_mode
+from module3_advisor import answer_advisory_question
 
 # ---------------------------------------------------------------------------
 # 初始化
@@ -54,6 +53,7 @@ class ChatResponse(BaseModel):
     answer: str
     mode: str
     error: Optional[str] = None
+    sources: list = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -76,30 +76,24 @@ async def health():
 async def chat_endpoint(req: ChatRequest):
     """
     核心對話端點。資料流：
-    1. 讀取當前數據快照
-    2. 組裝 system prompt（角色 + SOP + 數據 + 規則）
-    3. 對話歷史 + 新問題 → LLM
-    4. 回傳結構化回答，前端存入 history
+    1. 接收指揮官 what-if 問題
+    2. 檢索 SOP / 文件中的相關規則
+    3. 對話歷史 + SOP context + 新問題 → LLM
+    4. 回傳策略諮詢回答，前端存入 history
     """
     try:
         logger.info("問題：%s", req.question[:100])
 
-        # 1. 快照
-        snapshot = get_snapshot()
-        snapshot_text = format_snapshot_for_prompt(snapshot)
-
-        # 2. System prompt
-        system_prompt = build_system_prompt(snapshot_text)
-
-        # 3. 組合 messages
-        messages = [{"role": m.role, "content": m.content} for m in (req.history or [])]
-        messages.append({"role": "user", "content": req.question})
-
-        # 4. 呼叫 LLM
-        answer = chat(system_prompt, messages)
+        history = [{"role": m.role, "content": m.content} for m in (req.history or [])]
+        advisory = answer_advisory_question(req.question, history=history)
 
         logger.info("回答完成，mode=%s", get_mode())
-        return ChatResponse(ok=True, answer=answer, mode=get_mode())
+        return ChatResponse(
+            ok=True,
+            answer=advisory["answer"],
+            mode=advisory["llm_mode"],
+            sources=advisory["sources"],
+        )
 
     except FileNotFoundError as e:
         logger.error("找不到必要檔案：%s", e)
