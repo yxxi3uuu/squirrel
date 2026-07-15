@@ -5,40 +5,53 @@
 ## 分層
 
 ```text
-data/                   # 當前資料快照，之後由模組 1 接真實資料
+data_source/            # 主辦方官方時序/事件/路網資料（CSV / JSON）
+data/
+  snapshot.py           # 讀 official files 產生 TrafficSnapshot
 shared/
   schemas.py            # 全隊共用資料模型
   lookup.py             # 路名、站名、場館別名查詢
-sop/                    # SOP 條文來源
+sop/                    # 主辦方官方 SOP 規則文件
 ```
+
+`data_source/` 與 `sop/` 都保存主辦方官方資料，但用途不同：
+
+- `data_source/`：可被程式讀成 `TrafficSnapshot` 的時序、事件、路網資料。
+- `sop/`：官方 SOP 規則文件，供規則判斷、LLM 解釋與 what-if 諮詢引用。
+
+不要把 SOP 搬進 `data_source/`，避免狀態資料與規則文件混在同一層。
 
 ## ID 規則
 
 | 類型 | Prefix | 範例 | 說明 |
 |---|---|---|---|
 | 道路路段 | `RD_` | `RD_TPE_001` | 路段與替代道路 |
-| 捷運/公車站點 | `BS_` | `BS_MRT_BL17` | 人流、接駁、過站不停 |
-| 場館 | `BS_` | `BS_TPE_DOME` | 大巨蛋、101 廣場 |
-| 基地台/區域 | `CT_` | `CT_BL17_AREA` | 漫遊比例、多語通報 |
-| 路口/號誌 | `INT_` | `INT_001` | 號誌狀態與路口警力 |
-| 事件 | `INC_` | `INC_20260715_001` | 事故、路障、號誌故障 |
+| 人流站點 | `BS_` | `BS_MRT_BL17` | 捷運站、場館、商圈、轉運站、漫遊比例 |
+| 事件 | 官方 event_id | `TPE_2026_ACC_001` | 事故、路障、號誌故障、人流事件 |
 
 ## 快照格式
 
-`data/snapshot.py` 的 `get_snapshot()` 應回傳同一份 shape：
+`data/snapshot.py` 的 `get_snapshot(timestamp)` 應回傳同一份 shape：
 
 ```json
 {
-  "timestamp": "2026-07-15T20:00:00+08:00",
-  "source": "mock",
+  "timestamp": "2026-05-20 22:30",
+  "source": "official_files",
   "road_segments": {},
-  "metro_stations": {},
-  "venues": {},
-  "cell_towers": {},
-  "incidents": [],
-  "signals": {}
+  "stations": {},
+  "incidents": []
 }
 ```
+
+資料來源對應：
+
+| source file | 用途 |
+|---|---|
+| `city_traffic_flow.csv` | 各時間點車速、車流量、飽和度、車道狀態 |
+| `signaling_crowd_density.csv` | 各時間點 BS_ 站點人流、停留時間、增幅、漫遊率 |
+| `road_network_geometry.json` | 路段容量、替代路段、相交路口、鄰近站點 |
+| `live_incidents.json` | 可注入事件與事故狀態 |
+| `sop/emergency_traffic_sop.txt` | 官方 SOP 七條應變規則 |
 
 ## 各模組責任
 
@@ -70,7 +83,7 @@ sop/                    # SOP 條文來源
 
 ## Branch 建議
 
-- `main`：只放共用資料契約、SOP、mock 資料格式、文件。
+- `main`：只放共用官方資料來源、資料契約與文件。
 - `shared-data-contract`：先做共用資料架構與文件。
 - `module-1-dashboard`：動態時序監測儀表板。
 - `module-2-incident-response`：突發事件注入與路網重規劃。

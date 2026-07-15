@@ -2,12 +2,10 @@
 
 from typing import Dict, Iterable, List, Optional
 
-
+# 對齊修正後的 snapshot：官方資料只有兩種實體
 ENTITY_COLLECTIONS = {
-    "road_segment": "road_segments",
-    "metro_station": "metro_stations",
-    "venue": "venues",
-    "cell_tower": "cell_towers",
+    "road_segment": "road_segments",   # RD_ 開頭
+    "station": "stations",             # BS_ 開頭（捷運站、場館、商圈、轉運站＝基地台）
 }
 
 
@@ -18,15 +16,15 @@ def normalize_name(value: str) -> str:
         .replace(" ", "")
         .replace("　", "")
         .replace("臺", "台")
+        .replace("捷運", "")
         .replace("站", "")
     )
 
 
 def iter_entity_aliases(entity_id: str, entity: Dict) -> Iterable[str]:
     yield entity_id
-    name = entity.get("name") or entity.get("area")
-    if name:
-        yield name
+    if entity.get("name"):
+        yield entity["name"]
     for alias in entity.get("aliases", []):
         yield alias
 
@@ -76,7 +74,7 @@ def find_entities_in_text(
                 {
                     "entity_type": ref["entity_type"],
                     "entity_id": entity_id,
-                    "name": entity.get("name") or entity.get("area") or entity_id,
+                    "name": entity.get("name") or entity_id,
                     "matched_alias": alias,
                     "data": entity,
                 }
@@ -95,4 +93,3 @@ def _dedupe_results(results: List[Dict]) -> List[Dict]:
         seen.add(key)
         unique.append(result)
     return unique
-
