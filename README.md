@@ -18,6 +18,10 @@ history to the selected LLM backend, and returns a structured advisory answer.
 ├── app.py                          # FastAPI backend: /chat, /health, static UI
 ├── static/
 │   └── index.html                  # Chat UI demo
+├── data_source/                    # Shared official CSV / JSON source files
+├── data/
+│   ├── __init__.py
+│   └── snapshot.py                 # Shared TrafficSnapshot builder
 ├── module3_advisor/
 │   ├── __init__.py
 │   ├── service.py                  # Main advisory flow
@@ -53,6 +57,10 @@ Dashboard chat UI
 Module 3 no longer depends on a mock traffic snapshot as its primary data
 source. It answers what-if questions from user-provided assumptions and SOP
 context. Future dashboard state can be added later as optional context.
+
+`data_source/` and `data/snapshot.py` are kept from `main` as shared team
+infrastructure. They are useful for modules 1, 2, 4, 5 and for future optional
+dashboard context, but `/chat` does not read them in the current Module 3 flow.
 
 ## Run Locally
 

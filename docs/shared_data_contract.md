@@ -6,6 +6,9 @@
 
 ```text
 app.py                  # 目前可跑的模組 3 API demo
+data_source/            # 主辦方官方時序/事件/路網資料（CSV / JSON）
+data/
+  snapshot.py           # 讀 official files 產生 TrafficSnapshot
 module3_advisor/        # 模組 3：SOP-grounded what-if advisor
 shared/
   schemas.py            # 全隊共用資料模型
