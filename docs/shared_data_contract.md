@@ -44,15 +44,15 @@ sop/                    # SOP 條文來源
 
 | 模組 | 責任 | 使用共用資料 |
 |---|---|---|
-| 模組 1 | 取得真實資料，轉成 snapshot | 寫入 `TrafficSnapshot` 格式 |
-| 模組 2 | SOP 規則判斷、事件偵測、連鎖觸發 | 讀 `TrafficSnapshot`，輸出 `TriggerDecision[]` |
-| 模組 3 | 對話式策略諮詢與 what-if 推演 | 讀 snapshot、SOP、別名查詢，可引用 `TriggerDecision[]` |
-| 模組 4 | Dashboard | 讀 snapshot、`TriggerDecision[]` |
-| 模組 5 | 通報/多語訊息 | 讀 `TriggerDecision[]`、entity ID、地點名稱 |
+| 模組 1 Dynamic Time-Series Dashboard | 時間軸資料展示、SOP 預警門檻判斷、異常彈窗 | 讀 `TrafficSnapshot`，可輸出 Dashboard 用 `TriggerDecision[]` |
+| 模組 2 Live Incident Response | 注入 `live_incidents.json`、60 秒內路網重規劃、避開容量不足或飽和路段 | 讀 `TrafficSnapshot` 與 incidents，輸出重規劃結果與 `TriggerDecision[]` |
+| 模組 3 Interactive Strategic Advisory | Dashboard 旁對話視窗、what-if 推演、SOP 觸發條款回答 | 讀 SOP、對話歷史，必要時引用 `TrafficSnapshot` 當前狀態 |
+| 模組 4 Reasoning & Explainability | 展示 SOP 分級依據、替代道路排除理由、ETE 公式運算 | 讀 `TrafficSnapshot`、事故資料與 `TriggerDecision[]` |
+| 模組 5 Multilingual Notification | 偵測漫遊率門檻、產生多語通報候選文字 | 讀基地台資料、`TriggerDecision[]`、entity ID、地點名稱 |
 
 ## 觸發結果格式
 
-模組 2、3、4、5 之間建議共用 `TriggerDecision`：
+跨模組狀態與判定結果建議共用 `TriggerDecision`：
 
 ```json
 {
@@ -70,12 +70,12 @@ sop/                    # SOP 條文來源
 
 ## Branch 建議
 
-- `main`：永遠保持可 demo。
+- `main`：只放共用資料契約、SOP、mock 資料格式、文件。
 - `shared-data-contract`：先做共用資料架構與文件。
-- `module-1-data-ingestion`：資料來源。
-- `module-2-rule-engine`：SOP 規則判斷與事件偵測。
-- `module-3-advisory`：你的對話顧問。
-- `module-4-dashboard`：儀表板。
+- `module-1-dashboard`：動態時序監測儀表板。
+- `module-2-incident-response`：突發事件注入與路網重規劃。
+- `module-3-advisory`：對話式策略諮詢顧問。
+- `module-4-explainability`：AI 決策推理與解釋鏈。
 - `module-5-notification`：通報與多語訊息。
 
 先讓大家從 `shared-data-contract` 開發，確認契約後再 merge 回 `main`。
