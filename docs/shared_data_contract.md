@@ -1,21 +1,20 @@
-# 共用資料架構草案
+# 共用資料架構
 
-這份契約先讓各功能模組用同一套 ID、欄位和觸發結果格式。模組可以各自開發，但資料來源與輸出不要各自發明。
+這份契約讓各功能模組使用同一套 ID、欄位和觸發結果格式。
 
 ## 分層
 
 ```text
-app.py                  # 目前可跑的模組 3 API demo
 data_source/            # 主辦方官方時序/事件/路網資料（CSV / JSON）
 data/
   snapshot.py           # 讀 official files 產生 TrafficSnapshot
-module3_advisor/        # 模組 3：SOP-grounded what-if advisor
 shared/
-  schemas.py            # 全隊共用資料模型
+  schemas.py            # 共用資料模型
   lookup.py             # 路名、站名、場館別名查詢
-sop/                    # SOP 條文來源
-llm/                    # LLM/Bedrock/Anthropic 抽象層
-static/                 # 模組 3 前端
+sop/                    # 主辦方官方 SOP 規則文件
+module3_advisor/        # 模組 3：SOP-grounded what-if advisor
+app.py                  # 模組 3 demo API
+static/                 # 模組 3 demo UI
 ```
 
 ## ID 規則
@@ -23,42 +22,46 @@ static/                 # 模組 3 前端
 | 類型 | Prefix | 範例 | 說明 |
 |---|---|---|---|
 | 道路路段 | `RD_` | `RD_TPE_001` | 路段與替代道路 |
-| 捷運/公車站點 | `BS_` | `BS_MRT_BL17` | 人流、接駁、過站不停 |
-| 場館 | `BS_` | `BS_TPE_DOME` | 大巨蛋、101 廣場 |
-| 基地台/區域 | `CT_` | `CT_BL17_AREA` | 漫遊比例、多語通報 |
-| 路口/號誌 | `INT_` | `INT_001` | 號誌狀態與路口警力 |
-| 事件 | `INC_` | `INC_20260715_001` | 事故、路障、號誌故障 |
+| 人流站點 | `BS_` | `BS_MRT_BL17` | 捷運站、場館、商圈、轉運站、漫遊比例 |
+| 事件 | 官方 event_id | `TPE_2026_ACC_001` | 事故、路障、號誌故障、人流事件 |
 
 ## Snapshot 格式
 
-模組 1 / 2 / 4 若需要傳遞即時狀態，建議使用同一份 shape：
+`data/snapshot.py` 的 `get_snapshot(timestamp)` 會回傳同一份 shape：
 
 ```json
 {
-  "timestamp": "2026-07-15T20:00:00+08:00",
-  "source": "mock",
+  "timestamp": "2026-05-20 22:30",
+  "source": "official_files",
   "road_segments": {},
-  "metro_stations": {},
-  "venues": {},
-  "cell_towers": {},
-  "incidents": [],
-  "signals": {}
+  "stations": {},
+  "incidents": []
 }
 ```
+
+資料來源對應：
+
+| source file | 用途 |
+|---|---|
+| `city_traffic_flow.csv` | 各時間點車速、車流量、飽和度、車道狀態 |
+| `signaling_crowd_density.csv` | 各時間點 BS_ 站點人流、停留時間、增幅、漫遊率 |
+| `road_network_geometry.json` | 路段容量、替代路段、相交路口、鄰近站點 |
+| `live_incidents.json` | 可注入事件與事故狀態 |
+| `sop/emergency_traffic_sop.txt` | 官方 SOP 七條應變規則 |
 
 ## 各模組責任
 
 | 模組 | 責任 | 使用共用資料 |
 |---|---|---|
-| 模組 1 | 取得真實資料，轉成 snapshot | 寫入 `TrafficSnapshot` 格式 |
-| 模組 2 | SOP 規則判斷、事件偵測、連鎖觸發 | 讀 `TrafficSnapshot`，輸出 `TriggerDecision[]` |
-| 模組 3 | 對話式策略諮詢與 what-if 推演 | 主要讀 SOP 與使用者假設；snapshot 僅作為未來 optional context |
-| 模組 4 | Dashboard | 讀 snapshot、`TriggerDecision[]` |
-| 模組 5 | 通報/多語訊息 | 讀 `TriggerDecision[]`、entity ID、地點名稱 |
+| 1 Dynamic Time-Series Dashboard | 時間軸資料展示、SOP 預警門檻判斷、異常彈窗 | 讀 `TrafficSnapshot`，可輸出 Dashboard 用 `TriggerDecision[]` |
+| 2 Live Incident Response | 注入 `live_incidents.json`、路網重規劃、避開容量不足或飽和路段 | 讀 `TrafficSnapshot` 與 incidents，輸出重規劃結果與 `TriggerDecision[]` |
+| 3 Interactive Strategic Advisory | Dashboard 旁對話視窗、what-if 推演、SOP 觸發條款回答 | 主要讀 SOP 與使用者假設；snapshot 僅作為未來 optional context |
+| 4 Reasoning & Explainability | 展示 SOP 分級依據、替代道路排除理由、ETE 公式運算 | 讀 `TrafficSnapshot`、事故資料與 `TriggerDecision[]` |
+| 5 Multilingual Notification | 偵測漫遊率門檻、產生多語通報候選文字 | 讀基地台資料、`TriggerDecision[]`、entity ID、地點名稱 |
 
 ## 觸發結果格式
 
-模組 2、3、4、5 之間建議共用 `TriggerDecision`：
+跨模組狀態與判定結果建議共用 `TriggerDecision`：
 
 ```json
 {
@@ -73,15 +76,3 @@ static/                 # 模組 3 前端
   "severity": "yellow"
 }
 ```
-
-## Branch 建議
-
-- `main`：永遠保持可 demo。
-- `shared-data-contract`：先做共用資料架構與文件。
-- `module-1-data-ingestion`：資料來源。
-- `module-2-rule-engine`：SOP 規則判斷與事件偵測。
-- `module-3-advisor`：你的對話顧問。
-- `module-4-dashboard`：儀表板。
-- `module-5-notification`：通報與多語訊息。
-
-先讓大家從 `shared-data-contract` 開發，確認契約後再 merge 回 `main`。
