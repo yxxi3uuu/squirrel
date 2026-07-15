@@ -1,29 +1,9 @@
 # Squirrel Traffic Advisory
 
-大型活動交通指揮系統的共用資料架構 repo。
+本系統為能隨時間監測交通與人流、即時偵測異常，並在突發事件發生時自動產生專業指揮建議的智慧交通決策中樞。
 
-`main` 只保留全隊共用的官方資料來源、資料契約與整合文件。各功能模組請在自己的 branch 開發，避免把模組專屬 UI、API、LLM prompt 或演算法混進共用底座。
+`main` 僅保留共用的官方資料來源、資料說明與整合文件。各功能模組請在自己的 branch 開發。
 
-## Main 的角色
-
-`main` 是全隊共用底座，不是任一功能模組的實作分支。
-
-它負責：
-
-- 保存主辦方官方資料檔，包括時序/事件/路網資料與 SOP 規則文件
-- 將官方時序/事件/路網資料整理成同一份 `TrafficSnapshot`
-- 定義跨模組共用的 `TrafficSnapshot` / `TriggerDecision` schema
-- 提供路名、站名、場館別名查詢工具
-- 保存共用資料契約文件
-
-它不負責：
-
-- Dashboard UI
-- 事故注入介面
-- 路網重規劃演算法
-- 對話式策略諮詢 API
-- LLM prompt
-- 多語通報發布流程
 
 ## 資料流
 
@@ -46,17 +26,15 @@ data_source/   # 可被讀成 TrafficSnapshot 的時序、事件、路網資料
 sop/           # 官方 SOP 規則文件
 ```
 
-`sop/emergency_traffic_sop.txt` 不放進 `data_source/`，因為它不是現場狀態資料，而是各模組判斷與解釋時要引用的官方規則來源。
-
 ## 核心功能模組
 
 | 模組 | 名稱 | 程式運算負責 | LLM 負責 |
 |---|---|---|---|
-| 模組 1 | Dynamic Time-Series Dashboard | 依時間軸讀取並展示車流、人流資料；判斷 SOP 預警門檻；觸發自動彈窗 | 產生趨勢異常摘要與預警提示 |
-| 模組 2 | Live Incident Response | 注入 `live_incidents.json`；在 60 秒內完成路網重規劃；避開容量不足或飽和路段 | 產生導引建議文字 |
-| 模組 3 | Interactive Strategic Advisory | 提供 Dashboard 旁對話視窗與對話歷史 | 根據假設條件檢索 SOP，回答觸發條款與預期動作 |
-| 模組 4 | Reasoning & Explainability | 計算 SOP 分級、替代道路排除理由、ETE 公式 | 解釋判定依據、數據佐證與 ETE 結果 |
-| 模組 5 | Multilingual Notification | 自動偵測基地台漫遊率，判斷是否達 30% 門檻 | 產生多國語言告警文字 |
+| 1 | Dynamic Time-Series Dashboard | 依時間軸讀取並展示車流、人流資料；判斷 SOP 預警門檻；觸發自動彈窗 | 產生趨勢異常摘要與預警提示 |
+| 2 | Live Incident Response | 注入 `live_incidents.json`；在 60 秒內完成路網重規劃；避開容量不足或飽和路段 | 產生導引建議文字 |
+| 3 | Interactive Strategic Advisory | 提供 Dashboard 旁對話視窗與對話歷史 | 根據假設條件檢索 SOP，回答觸發條款與預期動作 |
+| 4 | Reasoning & Explainability | 計算 SOP 分級、替代道路排除理由、ETE 公式 | 解釋判定依據、數據佐證與 ETE 結果 |
+| 5 | Multilingual Notification | 自動偵測基地台漫遊率，判斷是否達 30% 門檻 | 產生多國語言告警文字 |
 
 ## 目前檔案結構
 
@@ -75,7 +53,7 @@ sop/           # 官方 SOP 規則文件
 │   ├── schemas.py                 # 共用 schema
 │   └── lookup.py                  # 路名、站名、場館別名查詢
 ├── docs/
-│   └── shared_data_contract.md    # 共用資料契約說明
+│   └── shared_data_contract.md    # 共用資料說明
 ├── sop/
 │   └── emergency_traffic_sop.txt  # 主辦方官方 SOP 七條應變規則
 ├── requirements.txt
@@ -174,13 +152,46 @@ BL17 => [('station', 'BS_MRT_BL17', '捷運國父紀念館站')]
 台北101 => [('station', 'BS_TPE_101', '台北101廣場')]
 ```
 
-## Branch 分工
+## 常用指令
 
-- `main`：共用官方資料來源、schema、lookup、文件。
-- `module-1-dashboard`：動態時序監測儀表板。
-- `module-2-incident-response`：突發事件注入與路網重規劃。
-- `module-3-advisory`：對話式策略諮詢顧問。
-- `module-4-explainability`：AI 決策推理與解釋鏈。
-- `module-5-notification`：多語化全通路通報。
+查看目前分支與檔案狀態：
 
-目前完整的模組 3 demo 保留在 `module-3-advisory` 分支。不要將整個模組分支直接 merge 回 `main`；若需要更新共用資料契約，請開小分支只修改 `data_source/`、`data/`、`shared/`、`sop/` 或 `docs/`。
+```bash
+git status
+git branch
+```
+
+更新本機 main：
+
+```bash
+git switch main
+git pull origin main
+```
+
+建立自己的功能分支：
+
+```bash
+git switch -c 分支名字
+```
+
+提交變更：
+
+```bash
+git status
+git add <file-or-folder>
+git commit -m "Describe the change"
+```
+
+推到 GitHub：
+
+```bash
+git push origin <branch-name>
+```
+
+範例：提交共用資料契約更新：
+
+```bash
+git add README.md data/snapshot.py docs/shared_data_contract.md shared/ data_source/
+git commit -m "Align shared data layer with official data and SOP sources"
+git push origin main
+```
