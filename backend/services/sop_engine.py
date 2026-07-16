@@ -12,6 +12,16 @@ SOP Rule Engine — Module 2: Live Incident Response
 
 不負責的條款：SOP-3、SOP-4（模組3），SOP-6（模組5）
 
+文字生成流程：
+  CMS 文字（cms_text）：固定格式，程式直接組合，不經過 LLM：
+    有主疏散：<事故路段>封閉，請改道 <主疏散路段>，預計延誤 <ETE> 分鐘
+    無主疏散：<事故路段>事故，請注意行車安全，預計延誤 <ETE> 分鐘
+
+  引導文字（guidance_text）：SOP-2 / SOP-5 觸發後，將草稿 TriggerDecision
+  傳入 llm_mock.generate_guidance()：
+    - Ollama 可用  → LLM 產生的指揮官引導說明，guidance_source="llm"
+    - Ollama 失敗  → mock fallback，guidance_source="mock"
+
 Schema 適配說明（見 README 第11節）：
   shared/schemas.py 的 TriggerDecision 欄位型別與規格書原設計
   有三處差異，本引擎統一以下轉換對應：
@@ -25,6 +35,7 @@ Schema 適配說明（見 README 第11節）：
   actions:
     規格書設計為 List[dict]，shared.schemas 定義為 List[str]
     → 每個 action dict 序列化成易讀字串
+    → 第三項 action 固定為「指揮官摘要（llm/mock）：...」
 
   primary_route / secondary_routes:
     規格書設計為 dict/List[dict]，shared.schemas 定義為
@@ -40,12 +51,17 @@ Schema 適配說明（見 README 第11節）：
      南北向或東西向，一律用「北側/西側」當作 upstream 關鍵字，
      東西向路段會判斷錯誤。現在依 flow_direction 的軸向動態決定
      要用哪組方位詞，軸向無法辨識時退回只看「上游/下游」通用詞。
+【修正紀錄 2026-07-16】
+  3. build_sop2_decision / build_sop5_decision 的 CMS 文字改由
+     llm_mock.generate_text() 產生，Ollama 失效時自動 fallback 到
+     mock_generate_cms_text() 底稿，並在 actions 中標記 _source。
 """
 
 from typing import List, Optional, Tuple
 
 from shared.lookup import find_entities_in_text
 from shared.schemas import TriggerDecision
+from backend.services.llm_mock import generate_guidance
 
 # ------------------------------------------------------------------
 # 常數
@@ -232,20 +248,25 @@ def calculate_ete(incident: dict, primary_seg_id: Optional[str], snapshot: dict)
 
 
 # ------------------------------------------------------------------
-# CMS 文字（Mock，不呼叫外部 API）
+# CMS 文字（固定格式，不經 LLM）
 # ------------------------------------------------------------------
-def mock_generate_cms_text(
+def generate_cms_text(
     incident: dict, primary_route: Optional[dict], ete_minutes: float
 ) -> str:
     """
-    產生 CMS 電子看板文字（40字以內）。
-    demo 階段用格式化字串，接 LLM 後替換為 API 呼叫。
+    產生 CMS 電子看板文字，格式固定：
+      有主疏散：<事故路段>封閉，請改道 <主疏散路段>，預計延誤 <ETE> 分鐘
+      無主疏散：<事故路段>事故，請注意行車安全，預計延誤 <ETE> 分鐘
     """
     seg_name = incident.get("location", incident.get("affected_segment", ""))
     if primary_route:
         alt_name = primary_route.get("name", primary_route.get("segment_id", "替代道路"))
-        return f"{seg_name}封閉，請改道{alt_name}，預計延誤{ete_minutes:.0f}分鐘"
-    return f"{seg_name}事故，請注意行車安全，預計延誤{ete_minutes:.0f}分鐘"
+        return f"{seg_name}封閉，請改道 {alt_name}，預計延誤 {ete_minutes:.0f} 分鐘"
+    return f"{seg_name}事故，請注意行車安全，預計延誤 {ete_minutes:.0f} 分鐘"
+
+
+# 向下相容別名（保留給測試或外部可能有舊呼叫）
+mock_generate_cms_text = generate_cms_text
 
 
 # ------------------------------------------------------------------
@@ -476,7 +497,8 @@ def build_sop2_decision(incident: dict, snapshot: dict) -> TriggerDecision:
     ete_result = calculate_ete(incident, primary_seg_id, snapshot)
     ete_minutes = ete_result["ete_minutes"]
 
-    cms_text = mock_generate_cms_text(incident, primary, ete_minutes)
+    # CMS 文字：固定格式，程式直接組合，不經 LLM
+    cms_text = generate_cms_text(incident, primary, ete_minutes)
 
     # 建構 basis（含路徑選擇理由，供模組4解釋鏈使用）
     basis_parts = [
@@ -523,11 +545,6 @@ def build_sop2_decision(incident: dict, snapshot: dict) -> TriggerDecision:
 
     basis = " ".join(basis_parts)
 
-    actions = [
-        f"重新導引車流：主疏散路徑 {primary_seg_id or '無'}",
-        f"CMS 電子看板更新：{cms_text}",
-    ]
-
     cascade = []
     if seg_id in TRIGGER_SEGMENTS:
         cascade.append(
@@ -537,6 +554,35 @@ def build_sop2_decision(incident: dict, snapshot: dict) -> TriggerDecision:
     excluded_for_schema = [
         {"segment_id": c["segment_id"], "reason": c["excluded_reason"]}
         for c in plan["excluded_candidates"]
+    ]
+
+    # ── 組出草稿 decision 再呼叫 LLM 產生引導文字 ─────────────────────────
+    # cms_text 已確定（固定格式），guidance_text 交給 LLM
+    draft_decision = TriggerDecision(
+        triggered=True,
+        sop_clause="SOP-2",
+        clause_name="事故與路障應變",
+        entity_id=seg_id,
+        entity_name=seg_name,
+        basis=basis,
+        actions=[],
+        cascade_checks=cascade,
+        severity=_map_severity(incident.get("severity", "Medium")),
+        primary_route=primary_seg_id,
+        secondary_routes=secondary_ids,
+        excluded_routes=excluded_for_schema,
+        ete_minutes=ete_minutes,
+        cms_text=cms_text,
+        timestamp=incident.get("timestamp"),
+    )
+
+    llm_result = generate_guidance(draft_decision)
+    guidance_text = llm_result.get("guidance_text", "")
+    guidance_source = llm_result.get("_source", "mock")
+
+    actions = [
+        f"重新導引車流：主疏散路徑 {primary_seg_id or '無'}",
+        f"CMS 電子看板更新：{cms_text}",
     ]
 
     return TriggerDecision(
@@ -554,6 +600,8 @@ def build_sop2_decision(incident: dict, snapshot: dict) -> TriggerDecision:
         excluded_routes=excluded_for_schema,
         ete_minutes=ete_minutes,
         cms_text=cms_text,
+        guidance_text=guidance_text,
+        guidance_source=guidance_source,
         timestamp=incident.get("timestamp"),
     )
 
@@ -586,7 +634,8 @@ def build_sop5_decision(incident: dict, snapshot: dict) -> TriggerDecision:
     ete_result = calculate_ete(incident, None, snapshot)
     ete_minutes = ete_result["ete_minutes"]
 
-    cms_text = f"{seg_name}號誌故障，請依現場指揮通行"
+    # CMS 文字：固定格式
+    cms_text = f"{seg_name}號誌故障，請依現場指揮通行，預計延誤 {ete_minutes:.0f} 分鐘"
 
     basis = (
         f"事件 type={incident.get('type')!r} 或描述含「號誌故障/失效」，"
@@ -596,6 +645,29 @@ def build_sop5_decision(incident: dict, snapshot: dict) -> TriggerDecision:
         f"（base={ete_result['base_clearance']} 分鐘 + "
         f"壅塞加罰={ete_result['congestion_penalty']} 分鐘）。"
     )
+
+    # ── 組出草稿 decision 再呼叫 LLM 產生引導文字 ─────────────────────────
+    draft_decision = TriggerDecision(
+        triggered=True,
+        sop_clause="SOP-5",
+        clause_name="號誌故障應變",
+        entity_id=seg_id,
+        entity_name=seg_name,
+        basis=basis,
+        actions=[],
+        cascade_checks=[],
+        severity=_map_severity(incident.get("severity", "Medium")),
+        primary_route=None,
+        secondary_routes=[],
+        excluded_routes=[],
+        ete_minutes=ete_minutes,
+        cms_text=cms_text,
+        timestamp=incident.get("timestamp"),
+    )
+
+    llm_result = generate_guidance(draft_decision)
+    guidance_text = llm_result.get("guidance_text", "")
+    guidance_source = llm_result.get("_source", "mock")
 
     actions = [
         f"人工指揮派遣：{seg_name} 派遣 {police_needed} 名警力接管交通指揮",
@@ -617,6 +689,8 @@ def build_sop5_decision(incident: dict, snapshot: dict) -> TriggerDecision:
         excluded_routes=[],
         ete_minutes=ete_minutes,
         cms_text=cms_text,
+        guidance_text=guidance_text,
+        guidance_source=guidance_source,
         timestamp=incident.get("timestamp"),
     )
 

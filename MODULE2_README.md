@@ -23,13 +23,15 @@
 4.  [API端點](#api-端點)
 5.  [依賴的 main 分支共用元件](#依賴的-main-分支共用元件)
 6.  [SOP 規則引擎詳解](#sop-規則引擎詳解backendservicessop_enginepy)
-7.  [Mock LLM 說明](#mock-llm-說明backendservicesllm_mockpy)
+7.  [Ollama LLM 說明](#ollama-llm-說明backendservicesllm_mockpy)
 8.  [In-memory 事件暫存](#in-memory-事件暫存backendstoreincident_storepy)
 9.  [前端說明](#前端說明frontendsrc)
 10. [三個驗收測試案例](#三個驗收測試案例backendteststest_sop_enginepy)
 11. [與其他模組的整合介面](#與其他模組的整合介面)
 12. [待確認事項](#待確認事項)
 13. [其他補充](#其他補充)
+
+> ⚠️ **v2.1 新增問題（待釐清）** — 詳見第12節「待確認事項」第4、5點
 
 <br><br>
 
@@ -263,6 +265,8 @@ class TriggerDecision:
     excluded_routes: List[dict]  # [{"segment_id": ..., "reason": ...}]（SOP-2 才有）
     ete_minutes: float | None    # 預計恢復時間（SOP-2 / SOP-5 才有）
     cms_text: str | None         # CMS 電子看板文字（40 字以內）
+    guidance_text: str | None    # ★ v2.1 新增：指揮官引導文字（由 Ollama 生成，失敗時 fallback 到 mock）
+    guidance_source: str | None  # ★ v2.1 新增："llm" 或 "mock"，標記上方文字是否由 Ollama 成功產生
     timestamp: str | None        # 事件時間戳
 ```
 
@@ -496,21 +500,69 @@ ETE 同樣用 `calculate_ete()` 計算，使用相同的 SOP-7 公式。
 
 <br><br>
 
-## Mock LLM 說明（`backend/services/llm_mock.py`）
+## Ollama LLM 說明（`backend/services/llm_mock.py`）
 
-`cms_text` 和 `commander_brief` 目前由此模組的格式化字串產生，不呼叫外部 API。
+> ★ v2.1：已接入本機 Ollama，不再是純 mock。
 
-**未來接入真實 LLM 時，只需改這一個函式：**
+### 目前狀態
+
+本機使用 `qwen2.5:1.5b` 模型（因硬體限制選用輕量版本）。
+每次 SOP-2 / SOP-5 觸發後，後端會呼叫本機 Ollama 產生 `guidance_text`（指揮官引導文字）。
+Ollama 不可用時自動 fallback 到 mock 格式化字串，並以 `guidance_source` 欄位標記來源。
+
+### 設定
 
 ```python
-def generate_text(decision: TriggerDecision) -> Dict[str, str]:
-    # 把這裡換成 Claude / OpenAI API 呼叫即可
-    # System prompt 已定義在 SYSTEM_PROMPT 常數
-    # User prompt 用 build_llm_user_prompt(decision) 取得
+# backend/services/llm_mock.py
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")  # 本機預設
+OLLAMA_MODEL    = os.getenv("OLLAMA_MODEL",    "qwen2.5:1.5b")
+OLLAMA_TIMEOUT  = float(os.getenv("OLLAMA_TIMEOUT", "10"))  # 秒
 ```
 
-重要提醒：一個事件可能有多筆 `TriggerDecision`，
-接入 LLM 時需要逐一迴圈呼叫，不要把所有 decision 混入同一個 prompt。
+EC2 部署時只需設定環境變數，程式邏輯不變：
+```bash
+export OLLAMA_BASE_URL=http://<ec2-private-ip>:11434
+```
+
+### 對外介面
+
+```python
+from backend.services.llm_mock import generate_guidance
+
+result = generate_guidance(decision)
+# 回傳 {"guidance_text": "...", "_source": "llm" | "mock"}
+```
+
+`_source` 的值由 `sop_engine` 存入 `TriggerDecision.guidance_source`，
+前端 `DecisionCard` 讀取後顯示 **LLM** 或 **MOCK** badge。
+
+### Prompt 設計
+
+System prompt 要求 LLM 只做措辭轉換，不重新判斷 SOP 數字，
+輸出一段 ≤100 字的指揮官引導說明。
+
+```
+輸出：{"guidance_text": "..."}
+```
+
+### Fallback 觸發條件
+
+- Ollama 連線失敗（服務未啟動）→ `ConnectError`
+- 呼叫超過 10 秒 → `TimeoutException`
+- 回傳非合法 JSON → `JSONDecodeError`
+- 缺少 `guidance_text` 欄位 → `ValueError`
+- HTTP 錯誤（4xx/5xx）→ `HTTPStatusError`
+
+### 哪些 SOP 條款會呼叫 LLM
+
+| 條款 | 呼叫 LLM | 說明 |
+|---|---|---|
+| SOP-1 | ❌ | 壅塞分級只有規則數值，無需引導文字 |
+| SOP-2 | ✅ | 事故應變，呼叫一次 `generate_guidance()` |
+| SOP-5 | ✅ | 號誌故障，呼叫一次 `generate_guidance()` |
+
+注意：一個事件若同時觸發 SOP-1 + SOP-2，只有 SOP-2 那筆會呼叫 LLM，
+SOP-1 卡片不顯示 `guidance_text`，前端的 badge 區塊也不會出現。
 
 
 <br><br>
@@ -586,14 +638,20 @@ App 呼叫 `api/client.js` 的 `injectIncident()`，
 
 **最核心的展示元件，把 `TriggerDecision[]` 渲染成卡片清單。**
 
-每張卡片的內容依 `sop_clause` 而異：
+每張卡片頂部有一個醒目區塊（`HighlightZone`），**只在 SOP-2 / SOP-5 觸發時顯示**：
+- 🟡 **CMS 電子看板**：黃色大字，顯示 `cms_text`
+- 🔵 **指揮官引導**：藍/灰色大字，顯示 `guidance_text`，右側有 **LLM** 或 **MOCK** badge
+  - `LLM` badge（藍色閃電）：Ollama 成功生成
+  - `MOCK` badge（灰色方塊）：Ollama 不可用，使用格式化字串 fallback
+
+其餘區塊依序排在醒目區塊下方：
 
 | `sop_clause` | 顯示的區塊 |
 |---|---|
-| `triggered=false` | 灰階卡片，只顯示 basis + cascade_checks |
-| `SOP-1` | 判定依據 + 建議動作 + 連動提示 |
-| `SOP-2` | 判定依據 + 建議動作 + **疏散路徑規劃**（主/次/排除）+ ETE + CMS 文字 |
-| `SOP-5` | 判定依據 + 建議動作 + ETE + CMS 文字 |
+| `triggered=false` | 灰階卡片，只顯示 basis + cascade_checks，不顯示醒目區塊 |
+| `SOP-1` | 判定依據 + 建議動作 + 連動提示（無 CMS / 指揮官引導） |
+| `SOP-2` | **醒目區塊**（CMS + 指揮官引導）+ 判定依據 + 建議動作 + 疏散路徑規劃 + ETE + 連動提示 |
+| `SOP-5` | **醒目區塊**（CMS + 指揮官引導）+ 判定依據 + 建議動作 + ETE |
 
 條款顏色：SOP-1 紫色、SOP-2 粉紅色、SOP-5 金色。
 Severity dot 顏色：critical 紅、red 粉紅、yellow 黃、info 藍。
@@ -797,10 +855,31 @@ Severity dot 顏色：critical 紅、red 粉紅、yellow 黃、info 藍。
 - `backend/services/sop_engine.py` 中的 `_map_severity()` 等轉換邏輯
 
 
-### 3. LLM 接入
+### 3. LLM 接入（已完成本機 Ollama，待 EC2 驗證）
 
-改 `llm_mock.py` 的 `generate_text()` 函式即可，呼叫介面不變。
-System prompt 和 User prompt 模板已就緒。
+本機已接入 Ollama（`qwen2.5:1.5b`，因硬體限制選用輕量版本）。
+EC2 環境尚未開放，部署時設定 `OLLAMA_BASE_URL` 環境變數即可，不需改程式碼。
+
+
+### 4. ⚠️ `guidance_text` 內容與 CMS 重複問題（待釐清）
+
+**現象：** `guidance_text`（指揮官引導文字）和 `cms_text`（CMS 電子看板文字）的內容目前非常接近，
+mock fallback 的版本幾乎就是把 SOP 條款 + 數值串在一起，跟 CMS 格式差不多。
+
+**問題：**
+- `cms_text` 是給**電子看板/簡訊**用的，格式固定（地點 + 改道建議 + 延誤分鐘），面向一般用路人
+- `guidance_text` 應該是給**交通指揮官**看的，理論上應包含更多決策脈絡
+  （例如：為什麼選這條疏散路徑、壅塞加罰怎麼算、連動哪條 SOP）
+
+**待確認方向（二擇一）：**
+1. **保留 `guidance_text` 並改善 Prompt**：調整 System prompt，要求 LLM 產出更偏「決策說明」而非「公告文字」的內容，強調引用 basis 裡的推理邏輯
+2. **移除 `guidance_text`，只保留 `cms_text`**：若其他模組（模組3/4/5）不需要這個欄位，可直接刪掉以減少複雜度
+
+
+### 5. `qwen2.5:1.5b` 模型輸出品質限制
+
+目前本機使用的 `qwen2.5:1.5b` 是為了配合硬體規格選用的輕量版本。
+但之後就可以改好棒棒的模型
 
 
 <br><br>

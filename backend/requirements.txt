@@ -6,3 +6,6 @@ uvicorn[standard]==0.32.1
 
 # Shared data contracts (already in root requirements.txt, listed for clarity)
 pydantic==2.10.3
+
+# HTTP client for Ollama REST API（本機開發 & EC2 部署通用）
+httpx==0.27.2
