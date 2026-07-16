@@ -1,7 +1,8 @@
-"""SOP loader for Module 3.
+"""SOP Knowledge Base retrieval for Module 3.
 
-The design document intentionally uses full SOP injection instead of RAG:
-the SOP is short, and full injection avoids missing the relevant clause.
+The challenge calls this step RAG. Because the official SOP is short, this
+module retrieves the full SOP text as a lightweight KB/RAG context instead of
+using vector chunks that might miss the relevant clause.
 """
 
 from pathlib import Path
@@ -15,7 +16,7 @@ SUPPORTED_SUFFIXES = {".md", ".txt"}
 
 
 def load_sop_context(message: str, limit: int = 5) -> List[SopSource]:
-    del message  # Full SOP injection intentionally does not filter by query.
+    del message  # Full SOP retrieval intentionally does not filter by query.
     sources: List[SopSource] = []
     for path in _iter_sop_files(DEFAULT_SEARCH_DIRS):
         text = _read_text(path)
@@ -40,7 +41,7 @@ def format_sop_context(sources: List[SopSource]) -> str:
     chunks = []
     for index, source in enumerate(sources, start=1):
         chunks.append(
-            f"[來源 {index}: {source.path}, score={source.score}]\n{source.excerpt}"
+            f"[SOP Knowledge Base 來源 {index}: {source.path}, score={source.score}]\n{source.excerpt}"
         )
     return "\n\n".join(chunks)
 

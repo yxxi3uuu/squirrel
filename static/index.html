@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>模組 3｜對話式策略諮詢顧問</title>
+  <title>squirrel</title>
   <style>
     /* ── Reset & Base ── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -55,25 +55,85 @@
     }
 
     /* ── Quick buttons ── */
-    .quick-btns {
+    .quick-panel {
+      padding: 12px 0 10px;
+      flex-shrink: 0;
+      border-bottom: 1px solid #21262d;
+    }
+    .quick-label {
+      font-size: 11px;
+      color: #8b949e;
+      margin-bottom: 7px;
+    }
+    .quick-direct,
+    .quick-categories {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
-      padding: 14px 0 10px;
-      flex-shrink: 0;
     }
-    .quick-btns button {
+    .quick-direct,
+    .quick-categories { margin-bottom: 10px; }
+    .quick-direct button,
+    .quick-categories button,
+    #quickAskBtn {
       font-size: 12px;
       padding: 5px 12px;
       border-radius: 16px;
-      border: 1px solid #388bfd;
       background: transparent;
-      color: #58a6ff;
       cursor: pointer;
       transition: background .15s;
       white-space: nowrap;
+      font-family: inherit;
     }
-    .quick-btns button:hover { background: #1f3a5f; }
+    .quick-direct button {
+      border: 1px solid #238636;
+      color: #3fb950;
+    }
+    .quick-direct button:hover { background: #173a24; }
+    .quick-categories button {
+      border: 1px solid #30363d;
+      color: #c9d1d9;
+    }
+    .quick-categories button:hover,
+    .quick-categories button.active {
+      background: #1f3a5f;
+      border-color: #388bfd;
+      color: #58a6ff;
+    }
+    .quick-builder {
+      display: grid;
+      grid-template-columns: minmax(180px, 1fr) auto;
+      gap: 8px;
+      max-width: 520px;
+    }
+    #quickSelect {
+      min-width: 0;
+      width: 100%;
+      height: 34px;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      background: #161b22;
+      color: #e6edf3;
+      font: inherit;
+      font-size: 13px;
+      padding: 0 10px;
+      outline: none;
+    }
+    #quickSelect:focus {
+      border-color: #388bfd;
+      box-shadow: 0 0 0 2px rgba(56,139,253,.2);
+    }
+    #quickAskBtn {
+      border: 1px solid #388bfd;
+      color: #58a6ff;
+      border-radius: 8px;
+      height: 34px;
+    }
+    #quickAskBtn:hover { background: #1f3a5f; }
+
+    @media (max-width: 640px) {
+      .quick-builder { grid-template-columns: 1fr; }
+    }
 
     /* ── Message list ── */
     #messages {
@@ -169,7 +229,7 @@
       padding: 10px 14px;
       resize: none;
       outline: none;
-      height: 44px;
+      height: 52px;
       max-height: 140px;
       overflow-y: auto;
       transition: border-color .15s;
@@ -177,7 +237,8 @@
     }
     #questionInput:focus { border-color: #388bfd; }
     #questionInput::placeholder { color: #484f58; }
-    #sendBtn {
+    #sendBtn,
+    #resetBtn {
       background: #238636;
       border: none; border-radius: 10px;
       color: #fff; font-size: 14px; font-weight: 600;
@@ -187,6 +248,13 @@
     }
     #sendBtn:hover:not(:disabled) { background: #2ea043; }
     #sendBtn:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
+    #resetBtn {
+      background: #21262d;
+      border: 1px solid #30363d;
+      color: #c9d1d9;
+    }
+    #resetBtn:hover:not(:disabled) { background: #30363d; }
+    #resetBtn:disabled { color: #484f58; cursor: not-allowed; }
 
     /* ── Welcome placeholder ── */
     #welcome {
@@ -207,20 +275,30 @@
 
 <header>
   <div class="dot"></div>
-  <h1>🚦 交通指揮中心｜策略諮詢顧問</h1>
+  <h1>🚦 交通指揮策略諮詢顧問 Squirrel</h1>
   <div class="mode-badge">LLM 模式：<span id="modeLabel">讀取中…</span></div>
 </header>
 
 <main>
-  <!-- 快捷提問 -->
-  <div class="quick-btns" role="group" aria-label="快捷提問">
-    <button onclick="quickAsk('若 BS_MRT_BL17 人數增至 40,000 人？')">🚇 BL17 增至 40,000 人</button>
-    <button onclick="quickAsk('忠孝東路飽和度到 0.96 算哪一級？')">🚗 飽和度 0.96</button>
-    <button onclick="quickAsk('忠孝東路飽和度到 0.90 算哪一級？')">🚗 飽和度 0.90</button>
-    <button onclick="quickAsk('大巨蛋 Growth_Rate 降至 -0.25？')">🏟️ 散場 -0.25</button>
-    <button onclick="quickAsk('台北101廣場漫遊率 35% 要處置嗎？')">🌐 漫遊率 35%</button>
-    <button onclick="quickAsk('飽和度 0.80 要處置嗎？')">🟢 飽和度 0.80</button>
-    <button onclick="quickAsk('那如果再加 5,000 人？')">➕ 再加 5,000 人</button>
+  <!-- SOP 分類快捷提問 -->
+  <div class="quick-panel" aria-label="SOP 分類快捷提問">
+    <div class="quick-label">固定範圍，一鍵提問</div>
+    <div class="quick-direct" role="group" aria-label="固定情境快捷提問">
+      <button type="button" onclick="quickAsk('假設忠孝東路四段已達 A 級壅塞，依 SOP 要啟動哪些交通應變？')">忠孝東路四段 A 級</button>
+      <button type="button" onclick="quickAsk('假設光復南路已達 B 級壅塞，依 SOP 要啟動哪些交通應變？')">光復南路 B 級</button>
+      <button type="button" onclick="quickAsk('假設捷運國父紀念館站人潮增至 40,000 人，依 SOP 要啟動哪些捷運與接駁措施？')">國父紀念館站分流</button>
+      <button type="button" onclick="quickAsk('假設大巨蛋人潮曾達 40,000 人且開始散場，依 SOP 要啟動哪些措施並連動什麼檢查？')">大巨蛋散場啟動</button>
+    </div>
+    <div class="quick-label">需要指定地點</div>
+    <div class="quick-categories" role="group" aria-label="SOP 類別">
+      <button type="button" data-quick-set="incident">車禍與路障應變</button>
+      <button type="button" data-quick-set="signal">號誌故障應變</button>
+      <button type="button" data-quick-set="notification">數位通報</button>
+    </div>
+    <div class="quick-builder">
+      <select id="quickSelect" aria-label="選擇地點"></select>
+      <button type="button" id="quickAskBtn">套用情境</button>
+    </div>
   </div>
 
   <!-- 訊息區 -->
@@ -235,10 +313,11 @@
   <div class="input-area">
     <textarea
       id="questionInput"
-      placeholder="輸入 What-if 問題，例如：若 BL17 人數增至 40,000 人？"
+      placeholder="直接輸入假設性問題，例如：如果光復南路發生事故，應該怎麼處理？"
       rows="1"
       aria-label="輸入問題"
     ></textarea>
+    <button id="resetBtn" aria-label="清除對話">清除</button>
     <button id="sendBtn" aria-label="送出問題">送出</button>
   </div>
 </main>
@@ -252,8 +331,12 @@
   const messagesEl   = document.getElementById('messages');
   const inputEl      = document.getElementById('questionInput');
   const sendBtn      = document.getElementById('sendBtn');
+  const resetBtn     = document.getElementById('resetBtn');
   const welcomeEl    = document.getElementById('welcome');
   const modeLabelEl  = document.getElementById('modeLabel');
+  const quickSelectEl = document.getElementById('quickSelect');
+  const quickAskBtn   = document.getElementById('quickAskBtn');
+  let activeQuickSet = 'incident';
 
   // ── 初始化：讀取 LLM 模式 ──
   fetch('/health')
@@ -261,7 +344,77 @@
     .then(d => { modeLabelEl.textContent = d.mode ?? '未知'; })
     .catch(() => { modeLabelEl.textContent = '離線'; });
 
-  // ── 快捷提問 ──
+  // ── SOP 分類快捷提問 ──
+  const roadNames = [
+    '忠孝東路四段',
+    '光復南路',
+    '基隆路一段',
+    '市民大道四段',
+    '仁愛路四段',
+    '敦化南路一段',
+    '松高路',
+    '延吉街',
+    '基隆路地下道',
+    '市府路',
+    '松壽路',
+    '敦化南路二段',
+    '信義路五段',
+    '松智路',
+    '復興南路一段',
+  ];
+
+  const stationNames = [
+    '大巨蛋場館內',
+    '捷運國父紀念館站',
+    '松山文創園區',
+    '捷運忠孝敦化站',
+    '信義威秀商圈',
+    '台北101廣場',
+    '市府轉運站',
+    'ATT4FUN周邊',
+    '捷運市政府站',
+  ];
+
+  const quickSets = {
+    incident: roadNames.map(name => ({
+      label: name,
+      text: `如果${name}發生嚴重車禍並造成路段封鎖，依 SOP 應該怎麼改道、通報，預計多久恢復？`,
+    })),
+    signal: roadNames.map(name => ({
+      label: name,
+      text: `如果${name}號誌故障，依 SOP 要怎麼派遣現場人力、發布 CMS，預計多久恢復？`,
+    })),
+    notification: stationNames.map(name => ({
+      label: name,
+      text: `假設${name}外籍旅客比例達 35%，依 SOP 是否需要啟動多語數位通報，並產出通報建議？`,
+    })),
+  };
+
+  function showQuickSet(key) {
+    const options = quickSets[key] || [];
+    activeQuickSet = key;
+    quickSelectEl.innerHTML = '';
+    options.forEach(item => {
+      const option = document.createElement('option');
+      option.value = item.text;
+      option.textContent = item.label;
+      quickSelectEl.appendChild(option);
+    });
+
+    document.querySelectorAll('[data-quick-set]').forEach(button => {
+      button.classList.toggle('active', button.dataset.quickSet === key);
+    });
+  }
+
+  document.querySelectorAll('[data-quick-set]').forEach(button => {
+    button.addEventListener('click', () => showQuickSet(button.dataset.quickSet));
+  });
+  quickAskBtn.addEventListener('click', () => {
+    if (!quickSelectEl.value) return;
+    quickAsk(quickSelectEl.value);
+  });
+  showQuickSet('incident');
+
   function quickAsk(text) {
     if (isLoading) return;
     inputEl.value = text;
@@ -338,6 +491,10 @@
   // ── 格式化 AI 回答：高亮四個欄位 ──
   function formatAnswer(text) {
     return escapeHtml(text)
+      .replace(/(■ 判定：[^\n]+)/g,      '<span class="tag-clause">$1</span>')
+      .replace(/(■ 依據：[^\n]+)/g,      '<span class="tag-basis">$1</span>')
+      .replace(/(■ 建議處置：[^\n]+)/g,  '<span class="tag-action">$1</span>')
+      .replace(/(■ 後續確認：[^\n]+)/g,  '<span class="tag-cascade">$1</span>')
       .replace(/(■ 觸發條款：[^\n]+)/g,  '<span class="tag-clause">$1</span>')
       .replace(/(■ 判定依據：[^\n]+)/g,  '<span class="tag-basis">$1</span>')
       .replace(/(■ 預期動作：[^\n]+)/g,  '<span class="tag-action">$1</span>')
@@ -388,6 +545,7 @@
   function setLoading(val) {
     isLoading = val;
     sendBtn.disabled = val;
+    resetBtn.disabled = val;
     inputEl.disabled = val;
   }
 
@@ -396,7 +554,7 @@
   }
 
   function adjustTextareaHeight() {
-    inputEl.style.height = '44px';
+    inputEl.style.height = '52px';
     inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
   }
 
@@ -410,6 +568,14 @@
   inputEl.addEventListener('input', adjustTextareaHeight);
 
   sendBtn.addEventListener('click', sendMessage);
+  resetBtn.addEventListener('click', () => {
+    if (isLoading) return;
+    history.length = 0;
+    messagesEl.querySelectorAll('.msg-row').forEach(row => row.remove());
+    if (welcomeEl) welcomeEl.style.display = 'flex';
+    inputEl.value = '';
+    adjustTextareaHeight();
+  });
 </script>
 </body>
 </html>

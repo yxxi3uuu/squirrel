@@ -77,8 +77,8 @@ async def chat_endpoint(req: ChatRequest):
     """
     核心對話端點。資料流：
     1. 接收指揮官 what-if 問題
-    2. 載入 SOP 全文與當前快照輔助脈絡
-    3. 對話歷史 + SOP 全文 + 新問題 → LLM
+    2. 載入 SOP 全文
+    3. 對話歷史 + SOP 全文 + 使用者假設問題 → LLM
     4. 回傳策略諮詢回答，前端存入 history
     """
     try:

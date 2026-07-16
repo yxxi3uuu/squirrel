@@ -55,7 +55,7 @@ static/                 # 模組 3 demo UI
 |---|---|---|
 | 模組 1：動態時間序列 Dashboard | 時間軸資料展示、SOP 預警門檻判斷、異常彈窗 | 讀 `TrafficSnapshot`，可輸出 Dashboard 用 `TriggerDecision[]` |
 | 模組 2：即時事件應變 | 注入 `live_incidents.json`、路網重規劃、避開容量不足或飽和路段 | 讀 `TrafficSnapshot` 與 incidents，輸出重規劃結果與 `TriggerDecision[]` |
-| 模組 3：對話式策略諮詢顧問 | Dashboard 旁對話視窗、what-if 推演、SOP 觸發條款回答 | 主要讀 SOP 與使用者假設；snapshot 僅作為連鎖檢查與現況佐證 |
+| 模組 3：對話式策略諮詢顧問 | Dashboard 旁對話視窗、what-if 推演、SOP 觸發條款回答 | 讀 SOP 與使用者假設條件；不自動依賴 `TrafficSnapshot` |
 | 模組 4：推理與可解釋性 | 展示 SOP 分級依據、替代道路排除理由、ETE 公式運算 | 讀 `TrafficSnapshot`、事故資料與 `TriggerDecision[]` |
 | 模組 5：多語通報 | 偵測漫遊率門檻、產生多語通報候選文字 | 讀基地台資料、`TriggerDecision[]`、entity ID、地點名稱 |
 
@@ -72,7 +72,7 @@ static/                 # 模組 3 demo UI
   "entity_name": "國父紀念館",
   "basis": "User_Count 40,000 > 門檻 25,000",
   "actions": ["過站不停", "調度接駁專車", "引導至 BS_MRT_BL18"],
-  "cascade_checks": ["Roaming_User_Pct 5% < 30%，不觸發第 6 條"],
+  "cascade_checks": ["若另有外籍旅客比例 >= 30% 的假設條件，需連動第 6 條"],
   "severity": "yellow"
 }
 ```

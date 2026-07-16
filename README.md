@@ -31,7 +31,7 @@ sop/           # 官方 SOP 規則文件
 |---|---|---|---|
 | 1 | Dynamic Time-Series Dashboard | 依時間軸讀取並展示車流、人流資料；判斷 SOP 預警門檻；觸發自動彈窗 | 產生趨勢異常摘要與預警提示 |
 | 2 | Live Incident Response | 注入 `live_incidents.json`；在 60 秒內完成路網重規劃；避開容量不足或飽和路段 | 產生導引建議文字 |
-| 3 | Interactive Strategic Advisory | 提供 Dashboard 旁對話視窗與對話歷史 | 根據假設條件載入 SOP，回答觸發條款與預期動作 |
+| 3 | Interactive Strategic Advisory | 提供 Dashboard 旁對話視窗與對話歷史；不自動查詢即時快照 | 根據使用者假設條件與 SOP，回答判定、依據、建議處置與後續確認 |
 | 4 | Reasoning & Explainability | 計算 SOP 分級、替代道路排除理由、ETE 公式 | 解釋判定依據、數據佐證與 ETE 結果 |
 | 5 | Multilingual Notification | 自動偵測基地台漫遊率，判斷是否達 30% 門檻 | 產生多國語言告警文字 |
 
@@ -128,6 +128,60 @@ TriggerDecision
 pip install -r requirements.txt
 ```
 
+## 環境變數
+
+本機開發先複製範本：
+
+```bash
+cp .env.example .env
+```
+
+預設 `LLM_MODE=mock`，不需要 API key，適合離線 demo 與前後端測試。
+
+若要接真 LLM：
+
+```text
+LLM_MODE=anthropic
+ANTHROPIC_API_KEY=你的 Anthropic key
+```
+
+或：
+
+```text
+LLM_MODE=bedrock
+BEDROCK_REGION=us-east-1
+BEDROCK_MODEL_ID=anthropic.claude-3-5-sonnet-20241022-v2:0
+```
+
+`.env` 已被 `.gitignore` 排除，請不要提交任何真實 API key 或 AWS 憑證。
+
+Bedrock 補充設定：
+
+```text
+# 若模型需要 inference profile，可填 us / global / eu / apac
+BEDROCK_INFERENCE_PREFIX=
+
+# 遇到 Bedrock throttling / quota error 時重試
+BEDROCK_MAX_RETRIES=3
+BEDROCK_RETRY_DELAY_SECONDS=2
+```
+
+例如正式環境要求 cross-region inference 時，可設定：
+
+```text
+BEDROCK_INFERENCE_PREFIX=us
+```
+
+系統會把 model id 組成 `us.anthropic...` 形式；若 `BEDROCK_MODEL_ID` 已經自己寫成 `global.xxx` 或 `us.xxx`，就不會重複加前綴。
+
+目前程式直接讀系統環境變數；若使用 `.env`，啟動前可先執行：
+
+```bash
+set -a
+source .env
+set +a
+```
+
 ## 快速驗證
 
 ```bash
@@ -169,6 +223,7 @@ python3 -m uvicorn app:app --reload --port 8000
 ```text
 http://localhost:8000
 ```
+
 
 ## 常用指令
 
