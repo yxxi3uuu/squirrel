@@ -41,7 +41,7 @@ def chat(system_prompt: str, messages: List[Dict[str, str]]) -> str:
     logger.info("LLM_MODE=%s, messages=%d", LLM_MODE, len(messages))
 
     if LLM_MODE == "mock":
-        return _chat_mock(messages)
+        return _chat_mock(system_prompt, messages)
     elif LLM_MODE == "anthropic":
         return _chat_anthropic(system_prompt, messages)
     elif LLM_MODE == "bedrock":
@@ -58,7 +58,7 @@ def get_mode() -> str:
 # Mock 模式 — 罐頭答案對應驗收標準 T1–T7
 # ---------------------------------------------------------------------------
 
-def _chat_mock(messages: List[Dict]) -> str:
+def _chat_mock(system_prompt: str, messages: List[Dict]) -> str:
     last = next(
         (m["content"] for m in reversed(messages) if m["role"] == "user"), ""
     )
@@ -66,7 +66,7 @@ def _chat_mock(messages: List[Dict]) -> str:
 
     user_count = _extract_user_count(last)
     if user_count is not None:
-        return _answer_metro_split(user_count)
+        return _answer_metro_split(user_count, system_prompt)
 
     increment = _extract_increment(last)
     if increment is not None:
@@ -78,7 +78,7 @@ def _chat_mock(messages: List[Dict]) -> str:
                 "■ 預期動作：請先輸入例如「若 BL17 人數增至 40,000 人？」\n"
                 "■ 連鎖檢查：無"
             )
-        return _answer_metro_split(base + increment)
+        return _answer_metro_split(base + increment, system_prompt)
 
     saturation = _extract_saturation(last)
     if saturation is not None:
@@ -94,7 +94,7 @@ def _chat_mock(messages: List[Dict]) -> str:
 
     # Keep the original exact fallback cases for very terse demo input.
     if "40000" in normalized:
-        return _answer_metro_split(40000)
+        return _answer_metro_split(40000, system_prompt)
     if "0.96" in last:
         return _answer_saturation(0.96)
     if "0.90" in last:
@@ -110,7 +110,7 @@ def _chat_mock(messages: List[Dict]) -> str:
     if "再加5000" in normalized:
         base = _find_previous_user_count(messages[:-1])
         if base is not None:
-            return _answer_metro_split(base + 5000)
+            return _answer_metro_split(base + 5000, system_prompt)
 
     return (
         "■ 觸發條款：無法判定（Mock 模式）\n"
@@ -169,14 +169,16 @@ def _extract_roaming_pct(text: str) -> Optional[int]:
     return int(match.group(1)) if match else None
 
 
-def _answer_metro_split(user_count: int) -> str:
+def _answer_metro_split(user_count: int, system_prompt: str = "") -> str:
     formatted = f"{user_count:,}"
+    roaming_pct = _extract_snapshot_roaming_pct(system_prompt, "BS_MRT_BL17")
     if user_count > 25000:
+        cascade = _roaming_cascade_text(roaming_pct)
         return (
             "■ 觸發條款：第 3 條（捷運與接駁分流）\n"
             f"■ 判定依據：假設 User_Count = {formatted} > 門檻 25,000\n"
             "■ 預期動作：建議北捷過站不停、調度接駁專車、引導群眾步行至 BS_MRT_BL18\n"
-            "■ 連鎖檢查：BL17 當前漫遊率 8% < 30%，不觸發第 6 條多語通報"
+            f"■ 連鎖檢查：{cascade}"
         )
     gap = 25000 - user_count + 1
     return (
@@ -185,6 +187,20 @@ def _answer_metro_split(user_count: int) -> str:
         "■ 預期動作：無須啟動過站不停或接駁分流，建議持續監測 BL17 人流成長率\n"
         "■ 連鎖檢查：無"
     )
+
+
+def _extract_snapshot_roaming_pct(system_prompt: str, station_id: str) -> Optional[int]:
+    pattern = rf"{re.escape(station_id)}[^\n]*Roaming=(\d+)%"
+    match = re.search(pattern, system_prompt)
+    return int(match.group(1)) if match else None
+
+
+def _roaming_cascade_text(roaming_pct: Optional[int]) -> str:
+    if roaming_pct is None:
+        return "需查當前 Roaming_User_Pct 是否 ≥ 30%，才能判定是否連動第 6 條多語通報"
+    if roaming_pct >= 30:
+        return f"BL17 當前漫遊率 {roaming_pct}% ≥ 30%，連動第 6 條多語通報"
+    return f"BL17 當前漫遊率 {roaming_pct}% < 30%，不觸發第 6 條多語通報"
 
 
 def _answer_saturation(saturation: float) -> str:

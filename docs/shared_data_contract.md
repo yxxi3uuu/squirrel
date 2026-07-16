@@ -5,14 +5,14 @@
 ## 分層
 
 ```text
-data_source/            # 主辦方官方時序/事件/路網資料（CSV / JSON）
+data_source/            # 主辦方官方時序/事件/路網資料
 data/
-  snapshot.py           # 讀 official files 產生 TrafficSnapshot
+  snapshot.py           # 讀官方資料產生 TrafficSnapshot
 shared/
   schemas.py            # 共用資料模型
   lookup.py             # 路名、站名、場館別名查詢
 sop/                    # 主辦方官方 SOP 規則文件
-module3_advisor/        # 模組 3：SOP-grounded what-if advisor
+module3_advisor/        # 模組 3：SOP 導向 what-if 顧問
 app.py                  # 模組 3 demo API
 static/                 # 模組 3 demo UI
 ```
@@ -27,7 +27,7 @@ static/                 # 模組 3 demo UI
 
 ## Snapshot 格式
 
-`data/snapshot.py` 的 `get_snapshot(timestamp)` 會回傳同一份 shape：
+`data/snapshot.py` 的 `get_snapshot(timestamp)` 會回傳同一份資料形狀：
 
 ```json
 {
@@ -53,11 +53,11 @@ static/                 # 模組 3 demo UI
 
 | 模組 | 責任 | 使用共用資料 |
 |---|---|---|
-| 1 Dynamic Time-Series Dashboard | 時間軸資料展示、SOP 預警門檻判斷、異常彈窗 | 讀 `TrafficSnapshot`，可輸出 Dashboard 用 `TriggerDecision[]` |
-| 2 Live Incident Response | 注入 `live_incidents.json`、路網重規劃、避開容量不足或飽和路段 | 讀 `TrafficSnapshot` 與 incidents，輸出重規劃結果與 `TriggerDecision[]` |
-| 3 Interactive Strategic Advisory | Dashboard 旁對話視窗、what-if 推演、SOP 觸發條款回答 | 主要讀 SOP 與使用者假設；snapshot 僅作為未來 optional context |
-| 4 Reasoning & Explainability | 展示 SOP 分級依據、替代道路排除理由、ETE 公式運算 | 讀 `TrafficSnapshot`、事故資料與 `TriggerDecision[]` |
-| 5 Multilingual Notification | 偵測漫遊率門檻、產生多語通報候選文字 | 讀基地台資料、`TriggerDecision[]`、entity ID、地點名稱 |
+| 模組 1：動態時間序列 Dashboard | 時間軸資料展示、SOP 預警門檻判斷、異常彈窗 | 讀 `TrafficSnapshot`，可輸出 Dashboard 用 `TriggerDecision[]` |
+| 模組 2：即時事件應變 | 注入 `live_incidents.json`、路網重規劃、避開容量不足或飽和路段 | 讀 `TrafficSnapshot` 與 incidents，輸出重規劃結果與 `TriggerDecision[]` |
+| 模組 3：對話式策略諮詢顧問 | Dashboard 旁對話視窗、what-if 推演、SOP 觸發條款回答 | 主要讀 SOP 與使用者假設；snapshot 僅作為連鎖檢查與現況佐證 |
+| 模組 4：推理與可解釋性 | 展示 SOP 分級依據、替代道路排除理由、ETE 公式運算 | 讀 `TrafficSnapshot`、事故資料與 `TriggerDecision[]` |
+| 模組 5：多語通報 | 偵測漫遊率門檻、產生多語通報候選文字 | 讀基地台資料、`TriggerDecision[]`、entity ID、地點名稱 |
 
 ## 觸發結果格式
 
@@ -72,7 +72,7 @@ static/                 # 模組 3 demo UI
   "entity_name": "國父紀念館",
   "basis": "User_Count 40,000 > 門檻 25,000",
   "actions": ["過站不停", "調度接駁專車", "引導至 BS_MRT_BL18"],
-  "cascade_checks": ["Roaming_User_Pct 8% < 30%，不觸發第 6 條"],
+  "cascade_checks": ["Roaming_User_Pct 5% < 30%，不觸發第 6 條"],
   "severity": "yellow"
 }
 ```

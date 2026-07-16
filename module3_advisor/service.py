@@ -2,11 +2,12 @@
 
 from typing import Any, Dict, List, Optional
 
+from data.snapshot import format_snapshot_for_prompt, get_snapshot
 from llm.clients import chat, get_mode
 
 from .prompts import build_system_prompt
 from .schemas import AdvisoryResponse
-from .sop_retriever import format_sop_context, retrieve_sop_context
+from .sop_loader import format_sop_context, load_sop_context
 
 
 def answer_advisory_question(
@@ -18,9 +19,10 @@ def answer_advisory_question(
         raise ValueError("question is required")
 
     user_message = _append_scenario(message.strip(), scenario)
-    sources = retrieve_sop_context(user_message)
+    sources = load_sop_context(user_message)
     sop_context = format_sop_context(sources)
-    system_prompt = build_system_prompt(sop_context)
+    snapshot_context = _snapshot_context()
+    system_prompt = build_system_prompt(sop_context, snapshot_context)
 
     messages = list(history or [])
     messages.append({"role": "user", "content": user_message})
@@ -39,3 +41,10 @@ def _append_scenario(message: str, scenario: Optional[Dict[str, Any]]) -> str:
         return message
     scenario_text = "\n".join(f"- {key}: {value}" for key, value in scenario.items())
     return f"{message}\n\n補充假設條件：\n{scenario_text}"
+
+
+def _snapshot_context() -> str:
+    try:
+        return format_snapshot_for_prompt(get_snapshot())
+    except Exception as exc:
+        return f"目前無法讀取當前資料快照：{exc}"

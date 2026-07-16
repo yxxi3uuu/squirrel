@@ -227,7 +227,7 @@
   <div id="messages" role="log" aria-live="polite" aria-label="對話記錄">
     <div id="welcome">
       <div class="icon">🛡️</div>
-      <p>輸入假設性問題或點選上方快捷按鈕<br>AI 將即時檢索 SOP 並給出應變建議</p>
+      <p>輸入假設性問題或點選上方快捷按鈕<br>AI 將依 SOP 全文給出應變建議</p>
     </div>
   </div>
 
@@ -367,7 +367,7 @@
     const thinking = document.createElement('div');
     thinking.className = 'thinking';
     thinking.innerHTML = `
-      <span>分析中，檢索 SOP…</span>
+      <span>分析中，載入 SOP…</span>
       <div class="dots" aria-hidden="true">
         <span></span><span></span><span></span>
       </div>`;
