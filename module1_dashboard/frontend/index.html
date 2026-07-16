@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Module 1 — 動態時序戰情儀表板</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="app-header">
+    <h1>Module 1 — Dynamic Time-Series Dashboard</h1>
+    <p class="subtitle">
+      即時展示 15 個路段車流與 9 個站點人流，判斷 SOP 第 1 條（擁塞分級）與第 3 條（捷運分流）門檻，
+      門檻觸發時由 LLM 產生趨勢異常摘要與預警提示。事件接收（<code>live_incidents.json</code>）與其餘 SOP 條款由其他模組負責。
+    </p>
+  </header>
+
+  <section class="filter-row" aria-label="時間軸控制">
+    <label for="timestamp-select">時間點</label>
+    <select id="timestamp-select"></select>
+    <button id="prev-btn" type="button">← 上一筆</button>
+    <button id="next-btn" type="button">下一筆 →</button>
+    <button id="play-btn" type="button" aria-pressed="false">▶ 自動播放</button>
+    <span id="loading-indicator" class="loading-indicator" hidden>更新中…</span>
+  </section>
+
+  <section id="alert-panel" class="alert-panel" aria-live="polite" aria-label="新觸發預警"></section>
+
+  <main class="board">
+    <section class="board-column">
+      <h2>道路路段（15）— SOP 第 1 條擁塞分級</h2>
+      <div id="road-grid" class="card-grid road-grid"></div>
+    </section>
+    <section class="board-column">
+      <h2>人流站點（9）— SOP 第 3 條門檻監測</h2>
+      <div id="station-grid" class="card-grid station-grid"></div>
+    </section>
+  </main>
+
+  <section class="chart-section">
+    <div class="chart-header">
+      <h2 id="chart-title">歷史趨勢</h2>
+      <button id="table-toggle-btn" type="button" class="link-btn" hidden>切換表格檢視</button>
+    </div>
+    <div id="chart-empty" class="chart-empty">點選左側路段或右側站點卡片以檢視歷史趨勢</div>
+    <div id="chart-container" class="chart-container" hidden></div>
+    <div id="chart-table-container" class="chart-table-container" hidden></div>
+  </section>
+
+  <script src="app.js"></script>
+</body>
+</html>

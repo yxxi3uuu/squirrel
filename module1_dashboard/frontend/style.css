@@ -1,0 +1,379 @@
+:root {
+  color-scheme: light;
+  --surface-1: #fcfcfb;
+  --page-plane: #f9f9f7;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #898781;
+  --gridline: #e1e0d9;
+  --baseline: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.1);
+
+  --status-good: #0ca30c;
+  --status-warning: #fab219;
+  --status-critical: #d03b3b;
+
+  --series-road: #2a78d6;
+  --series-station: #008300;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --page-plane: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+    --gridline: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255, 255, 255, 0.1);
+
+    --status-good: #0ca30c;
+    --status-warning: #fab219;
+    --status-critical: #d03b3b;
+
+    --series-road: #3987e5;
+    --series-station: #008300;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-1: #1a1a19;
+  --page-plane: #0d0d0d;
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted: #898781;
+  --gridline: #2c2c2a;
+  --baseline: #383835;
+  --border: rgba(255, 255, 255, 0.1);
+
+  --series-road: #3987e5;
+  --series-station: #008300;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--page-plane);
+  color: var(--text-primary);
+  padding: 20px 24px 48px;
+}
+
+.app-header h1 {
+  margin: 0 0 4px;
+  font-size: 22px;
+}
+
+.app-header .subtitle {
+  margin: 0 0 20px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  max-width: 880px;
+}
+
+/* --- filter row: one row, above the charts --- */
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+}
+
+.filter-row label {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.filter-row select,
+.filter-row button {
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--page-plane);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.filter-row button:hover {
+  background: var(--gridline);
+}
+
+.filter-row button[aria-pressed="true"] {
+  background: var(--series-road);
+  color: #fff;
+  border-color: var(--series-road);
+}
+
+.loading-indicator {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* --- alert panel --- */
+.alert-panel {
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.alert-panel:empty::before {
+  content: "目前無新觸發門檻，車流／人流狀態正常。";
+  display: block;
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 10px 4px;
+}
+
+.alert-card {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--status-warning);
+  background: var(--surface-1);
+  border-radius: 8px;
+  padding: 10px 14px;
+}
+
+.alert-card.severity-red {
+  border-left-color: var(--status-critical);
+}
+
+.alert-card .alert-icon {
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.alert-card .alert-body {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.alert-card .alert-title {
+  font-weight: 600;
+  margin-right: 6px;
+}
+
+.alert-card .alert-actions {
+  color: var(--text-secondary);
+}
+
+.alert-summary {
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-line;
+}
+
+.alert-summary .alert-summary-label {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+/* --- board / card grids --- */
+.board {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+}
+
+@media (min-width: 980px) {
+  .board {
+    grid-template-columns: 1.6fr 1fr;
+  }
+}
+
+.board-column h2 {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 0 0 10px;
+  font-weight: 600;
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.entity-card {
+  text-align: left;
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  border-radius: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  font: inherit;
+  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.entity-card:hover {
+  border-color: var(--series-road);
+}
+
+.entity-card.selected {
+  border-color: var(--series-road);
+  box-shadow: 0 0 0 1px var(--series-road);
+}
+
+.entity-card .entity-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.entity-card .entity-value {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.entity-card .entity-sub {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  width: fit-content;
+}
+
+.status-badge.status-good {
+  color: var(--status-good);
+  background: color-mix(in srgb, var(--status-good) 14%, transparent);
+}
+
+.status-badge.status-warning {
+  color: #8a5a00;
+  background: color-mix(in srgb, var(--status-warning) 24%, transparent);
+}
+
+:root[data-theme="dark"] .status-badge.status-warning {
+  color: var(--status-warning);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) .status-badge.status-warning {
+    color: var(--status-warning);
+  }
+}
+
+.status-badge.status-critical {
+  color: var(--status-critical);
+  background: color-mix(in srgb, var(--status-critical) 16%, transparent);
+}
+
+/* --- chart section --- */
+.chart-section {
+  margin-top: 24px;
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.chart-header h2 {
+  font-size: 14px;
+  margin: 0;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--series-road);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.chart-empty {
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 40px 0;
+  text-align: center;
+}
+
+.chart-container {
+  position: relative;
+}
+
+.chart-container svg {
+  width: 100%;
+  height: 260px;
+  display: block;
+  overflow: visible;
+}
+
+.chart-tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: var(--text-primary);
+  color: var(--surface-1);
+  font-size: 12px;
+  padding: 6px 9px;
+  border-radius: 6px;
+  transform: translate(-50%, -110%);
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.chart-tooltip .tooltip-value {
+  font-weight: 700;
+}
+
+.chart-table-container table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.chart-table-container th,
+.chart-table-container td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--gridline);
+}
+
+.chart-table-container td.value-cell {
+  font-variant-numeric: tabular-nums;
+}
+
+.is-loading {
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}

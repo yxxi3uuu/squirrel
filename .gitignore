@@ -17,6 +17,9 @@ venv/
 .idea/
 .vscode/
 
+# Claude Code local tooling (not shared project content)
+.claude/
+
 # Logs
 *.log
 models/*.gguf 
