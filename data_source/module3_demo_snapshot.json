@@ -1,0 +1,13 @@
+{
+  "source": "official_files+module3_demo_snapshot",
+  "road_segments": {
+    "RD_TPE_001": {
+      "alternatives": ["RD_TPE_015", "RD_TPE_004", "RD_TPE_005", "RD_TPE_007"]
+    }
+  },
+  "notes": [
+    "Module 3 demo overlay only.",
+    "Keep official road_network_geometry.json unchanged.",
+    "This fake current snapshot lets SOP 2 select a concrete upstream evacuation route for Zhongxiao East Road Sec. 4."
+  ]
+}

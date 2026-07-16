@@ -7,10 +7,13 @@ LLM 抽象層 — 統一介面，依環境變數 LLM_MODE 切換三種後端：
 """
 
 import os
+import json
 import logging
 import re
 import time
-from typing import List, Dict, Optional
+from functools import lru_cache
+from pathlib import Path
+from typing import Any, List, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -25,13 +28,57 @@ BEDROCK_INFERENCE_PREFIX = os.environ.get("BEDROCK_INFERENCE_PREFIX", "").strip(
 BEDROCK_MAX_RETRIES = int(os.environ.get("BEDROCK_MAX_RETRIES", "3"))
 BEDROCK_RETRY_DELAY_SECONDS = float(os.environ.get("BEDROCK_RETRY_DELAY_SECONDS", "2"))
 ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+ROAD_GEOMETRY_PATH = PROJECT_ROOT / "data_source" / "road_network_geometry.json"
+
+# Module 3 只回答「假設性問題」，這些名稱用來把自然語言對應回 SOP/路網資料。
+ROAD_NAMES = (
+    "忠孝東路四段",
+    "光復南路",
+    "基隆路一段",
+    "市民大道四段",
+    "仁愛路四段",
+    "敦化南路一段",
+    "松高路",
+    "延吉街",
+    "基隆路地下道",
+    "市府路",
+    "松壽路",
+    "敦化南路二段",
+    "信義路五段",
+    "松智路",
+    "復興南路一段",
+)
+
+STATION_NAMES = (
+    "大巨蛋場館內",
+    "捷運國父紀念館站",
+    "松山文創園區",
+    "捷運忠孝敦化站",
+    "信義威秀商圈",
+    "台北101廣場",
+    "市府轉運站",
+    "ATT4FUN周邊",
+    "捷運市政府站",
+)
+
+INCIDENT_CONGESTION_FOLLOW_UP = (
+    "若主疏散路段本身已達 B 級以上壅塞，依 SOP 第 2 條仍維持該路徑，"
+    "並同步啟動長綠燈時制，於回報中註明壅塞狀態並建議併行大眾運輸。"
+)
+
+CONGESTION_ACTION_ROADS = {"忠孝東路四段", "光復南路"}
 
 
 # ---------------------------------------------------------------------------
 # 公開介面
 # ---------------------------------------------------------------------------
 
-def chat(system_prompt: str, messages: List[Dict[str, str]]) -> str:
+def chat(
+    system_prompt: str,
+    messages: List[Dict[str, str]],
+    snapshot: Optional[Dict[str, Any]] = None,
+) -> str:
     """
     統一 LLM 呼叫介面。
 
@@ -45,13 +92,15 @@ def chat(system_prompt: str, messages: List[Dict[str, str]]) -> str:
     logger.info("LLM_MODE=%s, messages=%d", LLM_MODE, len(messages))
 
     if LLM_MODE == "mock":
-        return _commanderize_answer(_chat_mock(system_prompt, messages))
+        answer = _chat_mock(system_prompt, messages, snapshot=snapshot)
     elif LLM_MODE == "anthropic":
-        return _chat_anthropic(system_prompt, messages)
+        answer = _chat_anthropic(system_prompt, messages)
     elif LLM_MODE == "bedrock":
-        return _chat_bedrock(system_prompt, messages)
+        answer = _chat_bedrock(system_prompt, messages)
     else:
         raise ValueError(f"未知的 LLM_MODE: {LLM_MODE}，請設為 mock / anthropic / bedrock")
+
+    return _finalize_public_answer(_commanderize_answer(answer))
 
 
 def get_mode() -> str:
@@ -59,6 +108,15 @@ def get_mode() -> str:
 
 
 def _commanderize_answer(answer: str) -> str:
+    protected_ids = {}
+
+    def protect_id(match: re.Match) -> str:
+        token = f"__KEEP_ID_{len(protected_ids)}__"
+        protected_ids[token] = match.group(0)
+        return token
+
+    answer = re.sub(r"（RD_[A-Z0-9_]+）", protect_id, answer)
+
     replacements = {
         "■ 觸發條款：": "■ 判定：",
         "■ 判定依據：": "■ 依據：",
@@ -98,18 +156,45 @@ def _commanderize_answer(answer: str) -> str:
     answer = answer.replace("從 替代道路", "從替代道路")
     answer = re.sub(r"\bBS_[A-Z0-9_]+\b", "指定站點", answer)
     answer = re.sub(r"\bRD_[A-Z0-9_]+\b", "指定路段", answer)
+    for token, original in protected_ids.items():
+        answer = answer.replace(token, original)
     return answer
+
+
+def _finalize_public_answer(answer: str) -> str:
+    lines = []
+    for line in answer.splitlines():
+        cleaned = line.strip()
+        cleaned = cleaned.strip("*")
+        cleaned = cleaned.strip()
+        label_text = re.sub(r"[*_`]", "", cleaned)
+        if not cleaned:
+            lines.append("")
+            continue
+        if re.match(r"^(?:■\s*)?(?:判定|觸發條款)\s*[:：]", label_text):
+            cleaned = re.sub(r"^(?:■\s*)?(?:[*_`]*\s*)?(?:判定|觸發條款)(?:[*_`]*\s*)[:：]\s*", "", cleaned)
+            if cleaned:
+                lines.append(cleaned)
+            continue
+        if re.match(r"^(?:■\s*)?(?:依據|判定依據|法條依據)\s*[:：]", label_text):
+            continue
+        lines.append(cleaned)
+    return "\n".join(lines).strip()
 
 
 # ---------------------------------------------------------------------------
 # Mock 模式 — 罐頭答案對應驗收標準 T1–T7
 # ---------------------------------------------------------------------------
 
-def _chat_mock(system_prompt: str, messages: List[Dict]) -> str:
-    last = next(
-        (m["content"] for m in reversed(messages) if m["role"] == "user"), ""
-    )
-    normalized = last.replace(",", "").replace("，", "")
+def _chat_mock(
+    system_prompt: str,
+    messages: List[Dict],
+    snapshot: Optional[Dict[str, Any]] = None,
+) -> str:
+    # Mock 模式不是單純罐頭字串，而是用輕量規則模擬 SOP 判斷流程。
+    # 這讓前端和口試 demo 在沒有 API key 時，也能驗證 Module 3 的互動邏輯。
+    last = _latest_user_message(messages)
+    normalized = _normalize_demo_text(last)
 
     if _is_sop_overview_request(last):
         return _answer_sop_overview()
@@ -120,14 +205,14 @@ def _chat_mock(system_prompt: str, messages: List[Dict]) -> str:
         return _answer_saturation(saturation, road_name)
 
     if _is_metro_split_request(last):
-        return _answer_metro_split(40000)
+        return _answer_metro_split(40000, snapshot=snapshot)
 
     if _is_dome_dismissal_request(last):
         return _answer_dome_dismissal(-0.25)
 
     user_count = _extract_user_count(last)
     if user_count is not None:
-        return _answer_metro_split(user_count)
+        return _answer_metro_split(user_count, snapshot=snapshot)
 
     increment = _extract_increment(last)
     if increment is not None:
@@ -139,13 +224,13 @@ def _chat_mock(system_prompt: str, messages: List[Dict]) -> str:
                 "■ 建議處置：請先補充例如「假設捷運國父紀念館站人潮增至 40,000 人」\n"
                 "■ 後續確認：無"
             )
-        return _answer_metro_split(base + increment)
+        return _answer_metro_split(base + increment, snapshot=snapshot)
 
     if _is_signal_failure(last):
         return _answer_signal_failure(last)
 
     if _is_incident_response(last):
-        return _answer_incident_response(last)
+        return _answer_incident_response(last, snapshot=snapshot)
 
     ete_case = _extract_ete_case(last)
     if ete_case is not None:
@@ -172,9 +257,9 @@ def _chat_mock(system_prompt: str, messages: List[Dict]) -> str:
             cascade_from_metro=_has_previous_metro_split(messages[:-1]),
         )
 
-    # Keep the original exact fallback cases for very terse demo input.
+    # 保留早期驗收用的極短輸入，例如只打「40000」或「0.96」。
     if "40000" in normalized:
-        return _answer_metro_split(40000)
+        return _answer_metro_split(40000, snapshot=snapshot)
     if "0.96" in last:
         return _answer_saturation(0.96)
     if "0.90" in last:
@@ -194,7 +279,7 @@ def _chat_mock(system_prompt: str, messages: List[Dict]) -> str:
     if "再加5000" in normalized:
         base = _find_previous_user_count(messages[:-1])
         if base is not None:
-            return _answer_metro_split(base + 5000)
+            return _answer_metro_split(base + 5000, snapshot=snapshot)
 
     return (
         "■ 判定：目前 SOP 內容不足以判定\n"
@@ -203,6 +288,18 @@ def _chat_mock(system_prompt: str, messages: List[Dict]) -> str:
         "■ 後續確認：無"
     )
 
+
+def _latest_user_message(messages: List[Dict]) -> str:
+    return next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+
+
+def _normalize_demo_text(text: str) -> str:
+    return text.replace(",", "").replace("，", "")
+
+
+# ---------------------------------------------------------------------------
+# Mock 輸入解析：從自然語言抽出數值或地點
+# ---------------------------------------------------------------------------
 
 def _extract_user_count(text: str) -> Optional[int]:
     if not any(keyword in text for keyword in ("人數", "人潮", "User_Count", "user_count", "增至", "增加到", "達到", "湧進")):
@@ -263,21 +360,21 @@ def _extract_roaming_pct(text: str) -> Optional[int]:
 
 
 def _extract_road_congestion(text: str) -> Optional[tuple[str, float]]:
-    if not any(keyword in text for keyword in ("壅塞", "交通", "門檻", "應變")):
+    if not any(keyword in text for keyword in ("壅塞", "擁塞", "塞車", "飽和", "交通", "門檻", "應變")):
         return None
-    for road_name in ("忠孝東路四段", "光復南路"):
-        if road_name not in text:
-            continue
-        match = re.search(r"0\.\d+", text)
-        if match:
-            return road_name, float(match.group(0))
-        if "A 級" in text or "A級" in text or "癱瘓" in text or "紅燈" in text:
-            return road_name, 0.96
-        if "B 級" in text or "B級" in text or "壅擠" in text or "黃燈" in text:
-            return road_name, 0.90
-        if "未達" in text or "不觸發" in text:
-            return road_name, 0.80
+    road_name = _matched_road_name(text)
+    if road_name is None:
+        return None
+    match = re.search(r"0\.\d+", text)
+    if match:
+        return road_name, float(match.group(0))
+    if "A 級" in text or "A級" in text or "癱瘓" in text or "紅燈" in text:
+        return road_name, 0.96
+    if "B 級" in text or "B級" in text or "壅擠" in text or "黃燈" in text:
         return road_name, 0.90
+    if "未達" in text or "不觸發" in text:
+        return road_name, 0.80
+    return road_name, 0.90
     return None
 
 
@@ -295,18 +392,7 @@ def _is_dome_dismissal_request(text: str) -> bool:
 def _extract_station_roaming(text: str) -> Optional[tuple[str, int]]:
     if not any(keyword in text for keyword in ("多語", "通報", "外籍", "旅客")):
         return None
-    station_names = (
-        "大巨蛋場館內",
-        "捷運國父紀念館站",
-        "松山文創園區",
-        "捷運忠孝敦化站",
-        "信義威秀商圈",
-        "台北101廣場",
-        "市府轉運站",
-        "ATT4FUN周邊",
-        "捷運市政府站",
-    )
-    for station_name in station_names:
+    for station_name in STATION_NAMES:
         if station_name not in text:
             continue
         match = re.search(r"(\d{1,3})\s*%", text)
@@ -336,6 +422,10 @@ def _extract_ete_case(text: str) -> Optional[tuple[str, float]]:
     return severity, saturation
 
 
+# ---------------------------------------------------------------------------
+# Mock 意圖判斷：判斷使用者正在問哪一條 SOP
+# ---------------------------------------------------------------------------
+
 def _is_signal_failure(text: str) -> bool:
     return "號誌" in text and any(keyword in text for keyword in ("故障", "失效", "Power_Failure"))
 
@@ -351,6 +441,10 @@ def _is_sop_overview_request(text: str) -> bool:
         scope in text for scope in ("條款", "規則", "功能", "問題", "問什麼", "怎麼用", "顧問")
     )
 
+
+# ---------------------------------------------------------------------------
+# Mock 回答產生：每個函式對應一類 SOP 情境
+# ---------------------------------------------------------------------------
 
 def _answer_sop_overview() -> str:
     return (
@@ -413,14 +507,18 @@ def _answer_missing_conditions(text: str) -> Optional[str]:
     )
 
 
-def _answer_metro_split(user_count: int) -> str:
+def _answer_metro_split(
+    user_count: int,
+    snapshot: Optional[Dict[str, Any]] = None,
+) -> str:
     formatted = f"{user_count:,}"
     if user_count > 25000:
+        follow_up = _metro_roaming_follow_up(snapshot)
         return (
             f"■ 判定：假設捷運國父紀念館站人潮達 {formatted} 人，已超過 SOP 門檻 25,000 人，觸發第 3 條（捷運與接駁分流），應立即啟動過站不停與接駁分流\n"
             "■ 依據：第 3 條規定，捷運國父紀念館站人潮超過 25,000 人，或人流成長率超過 30%，即需啟動捷運與接駁分流\n"
             "■ 建議處置：請通知北捷評估過站不停，同步調度接駁專車，並引導人潮改往捷運市政府站分散進站\n"
-            "■ 後續確認：若現場外籍旅客比例達 30% 以上，需同步啟動第 6 條多語數位通報；目前問題未提供該比例，先不自行判定"
+            f"■ 後續確認：{follow_up}"
         )
     gap = 25000 - user_count + 1
     return (
@@ -431,25 +529,46 @@ def _answer_metro_split(user_count: int) -> str:
     )
 
 
+def _metro_roaming_follow_up(snapshot: Optional[Dict[str, Any]]) -> str:
+    roaming = _snapshot_station_roaming(snapshot, "捷運國父紀念館站")
+    if roaming is None:
+        return "若現場外籍旅客比例達 30% 以上，需同步啟動第 6 條多語數位通報；目前快照未提供該比例，先不自行判定"
+
+    roaming_pct = int(roaming * 100)
+    if roaming >= 0.30:
+        return f"目前快照顯示捷運國父紀念館站外籍旅客比例為 {roaming_pct}%，已達 30% 門檻，需同步啟動第 6 條多語數位通報"
+    return f"目前快照顯示捷運國父紀念館站外籍旅客比例為 {roaming_pct}%，未達 30% 門檻，暫不連動第 6 條多語數位通報"
+
+
 def _answer_saturation(saturation: float, road_name: str = "") -> str:
     value = f"{saturation:.2f}"
-    subject = f"{road_name} " if road_name else ""
+    subject = road_name or ""
+    grade = _congestion_grade(saturation)
+    if grade and subject and subject not in CONGESTION_ACTION_ROADS:
+        return _answer_visual_only_congestion(subject, saturation, grade)
+
     if saturation >= 0.95:
         return (
-            "■ 判定：第 1 條 A 級壅塞成立，該路段已達癱瘓等級\n"
-            f"■ 依據：{subject}壅塞程度為 {value}，已達 SOP A 級門檻 0.95\n"
+            f"■ 判定：假設{subject}壅塞程度達 {value}，已達 SOP A 級門檻 0.95，觸發第 1 條 A 級壅塞應變，應先啟動長綠燈時制與路口淨空，並加上替代路徑引導\n"
+            "■ 依據：第 1 條規定，壅塞程度達 0.95 以上為 A 級（癱瘓／紅燈），城市應變觸發路段需加開替代路徑引導\n"
             "■ 建議處置：請啟動替代路徑引導，將替代路段綠燈配時延長 25%，並調度警力淨空關鍵路口\n"
             "■ 後續確認：持續確認替代路段是否也升至 B 級以上，避免分流後形成二次壅塞"
         )
     if saturation >= 0.85:
         gap = 0.95 - saturation
         return (
-            "■ 判定：第 1 條 B 級壅塞成立，該路段已達壅擠等級\n"
-            f"■ 依據：{subject}壅塞程度為 {value}，介於 B 級門檻 0.85 與 A 級門檻 0.95 之間\n"
+            f"■ 判定：假設{subject}壅塞程度達 {value}，已超過 SOP B 級門檻 0.85，觸發第 1 條 B 級壅塞應變，應先啟動長綠燈時制與路口淨空\n"
+            "■ 依據：第 1 條規定，壅塞程度介於 0.85 至 0.95 之間為 B 級（壅擠／黃燈）\n"
             "■ 建議處置：請先延長替代路段綠燈配時 25%，並調派警力維持路口淨空\n"
             f"■ 後續確認：距 A 級門檻約差 {gap:.2f}；若升至 A 級，需加開替代路徑引導"
         )
     gap = 0.85 - saturation
+    if subject and subject not in CONGESTION_ACTION_ROADS:
+        return (
+            f"■ 判定：假設{subject}壅塞程度為 {value}，低於 B 級黃燈門檻 0.85，Dashboard 維持一般狀態；該路段也不屬於第 1 條城市應變觸發路段\n"
+            "■ 建議處置：維持監測即可，不啟動長綠燈時制、警力淨空或替代路徑引導\n"
+            "■ 後續確認：若後續成為事故主疏散路段，應依第 2 條事故應變邏輯重新判斷。"
+        )
     return (
         "■ 判定：不觸發第 1 條壅塞應變\n"
         f"■ 依據：{subject}壅塞程度為 {value}，低於 B 級門檻 0.85，距觸發約差 {gap:.2f}\n"
@@ -458,11 +577,37 @@ def _answer_saturation(saturation: float, road_name: str = "") -> str:
     )
 
 
+def _congestion_grade(saturation: float) -> Optional[str]:
+    if saturation >= 0.95:
+        return "A"
+    if saturation >= 0.85:
+        return "B"
+    return None
+
+
+def _answer_visual_only_congestion(road_name: str, saturation: float, grade: str) -> str:
+    value = f"{saturation:.2f}"
+    segment_id = _road_segment_id_by_name(road_name)
+    road_label = f"{road_name}（{segment_id}）" if segment_id else road_name
+    if grade == "A":
+        rule_text = "飽和度 ≥ 0.95 為 A 級"
+        grade_text = "A 級紅燈"
+    else:
+        rule_text = "0.85 ≤ 飽和度 < 0.95 為 B 級"
+        grade_text = "B 級黃燈"
+    return (
+        f"■ 判定：{road_label}壅塞程度達 {value}，依第 1 條分級規則（{rule_text}）應顯示為 {grade_text}；"
+        f"但城市應變觸發路段僅限忠孝東路四段、光復南路兩段，{road_name}不在名單內，因此不會因第 1 條自動啟動長綠燈時制、警力淨空或替代路徑引導\n"
+        f"■ 建議處置：Dashboard 依分級規則標示 {grade_text}並持續監測即可，無需額外動作；若後續有事故發生且該路段被列為主疏散路段，才需另行評估\n"
+        f"■ 後續確認：若{road_name}是第 2 條某事故的主疏散路段，且本身已壅塞（≥0.85），長綠燈時制的依據應回到第 2 條主疏散路段但書，而非第 1 條——同一動作，不同觸發路徑要引用正確條款。"
+    )
+
+
 def _answer_dome_dismissal(growth_rate: float) -> str:
     if growth_rate <= -0.20:
         return (
-            "■ 判定：第 4 條（大巨蛋散場啟動）成立，應將現場狀態切換為散場應變\n"
-            f"■ 依據：假設大巨蛋曾達 40,000 人，已高於 30,000 人門檻；目前人流開始下降，變化率為 {growth_rate:.2f}，也達到散場觸發條件\n"
+            f"■ 判定：假設大巨蛋人潮曾達 40,000 人且人流變化率為 {growth_rate:.2f}，已符合 SOP 30,000 人峰值與散場下降門檻，觸發第 4 條（大巨蛋散場啟動），應立即切換為散場應變\n"
+            "■ 依據：第 4 條規定，大巨蛋人潮歷史峰值達 30,000 人以上，且目前人流變化率降至 -0.20 以下，即需標記散場啟動\n"
             "■ 建議處置：請標記散場啟動，預先啟動接駁與捷運分流準備，並提醒現場人員引導人潮分批離場\n"
             "■ 後續確認：請同步確認捷運國父紀念館站人潮是否達 25,000 人以上；若達標，需立即連動第 3 條過站不停與接駁分流"
         )
@@ -480,8 +625,8 @@ def _answer_roaming(roaming_pct: int, station_name: str = "", cascade_from_metro
     if roaming_pct >= 30:
         cascade = "承接上一輪第 3 條捷運分流，此外籍旅客比例已達第 6 條門檻，需同步啟動多語通報" if cascade_from_metro else "無"
         return (
-            "■ 判定：第 6 條（數位通報與多語化）成立\n"
-            f"■ 依據：{subject}外籍旅客比例達 {roaming_pct}%，已超過 SOP 門檻 30%\n"
+            f"■ 判定：假設{subject}外籍旅客比例達 {roaming_pct}%，已超過 SOP 門檻 30%，觸發第 6 條（數位通報與多語化），應立即切換為多語通報\n"
+            "■ 依據：第 6 條規定，任一基地台或站點外籍旅客比例達 30% 以上，即需啟動中英日韓多語訊息\n"
             "■ 建議處置：請將該區域簡訊、資訊看板與現場廣播同步改為中英日韓多語版本\n"
             f"■ 後續確認：{cascade}"
         )
@@ -494,30 +639,234 @@ def _answer_roaming(roaming_pct: int, station_name: str = "", cascade_from_metro
     )
 
 
-def _answer_incident_response(text: str) -> str:
-    road_name = _matched_road_name(text)
-    if road_name == "光復南路":
-        segment = "光復南路"
-        route = "市民大道四段或仁愛路四段"
-    elif road_name == "忠孝東路四段":
-        segment = "忠孝東路四段"
-        route = "市民大道四段、仁愛路四段或松高路"
-    elif road_name == "市民大道四段":
-        segment = "市民大道四段"
-        route = "敦化南路一段或忠孝東路四段"
-    else:
-        segment = road_name or "受影響路段"
-        route = "該路段 alternatives 中容量足夠且位於上游的替代道路"
+def _answer_incident_response(
+    text: str,
+    snapshot: Optional[Dict[str, Any]] = None,
+) -> str:
+    """依 SOP 第 2 條回答車禍與路障應變。
 
-    severity = "Critical" if "Critical" in text or "全線封鎖" in text else "High"
-    saturation = 0.90 if severity == "Critical" else 0.80
-    ete_minutes = _calculate_ete_minutes(severity, saturation)
-    return (
-        "■ 判定：第 2 條（車禍與路障應變）成立\n"
-        f"■ 依據：{segment}出現封鎖或通行受阻情境，事故等級判為{severity}，符合 SOP 第 2 條觸發條件\n"
-        f"■ 建議處置：請先將車流導往{route}，並發布資訊看板：「{segment}封閉，請改道{route}，預計延誤 {ete_minutes} 分鐘」\n"
-        "■ 後續確認：已併入第 7 條預計恢復時間；若替代路段也達 B 級壅塞，需同步啟動第 1 條長綠燈時制"
+    第 2 條成立需要三個條件同時具備：
+    1. affected_segment 是道路路段；
+    2. status 是封閉、阻斷或限制通行；
+    3. severity 是高或重大。
+
+    使用者只說「有車禍」時，不可以替他補成高嚴重度。
+    """
+    road_name = _matched_road_name(text)
+    segment_info = _snapshot_road_by_name(snapshot, road_name) or _road_segment_by_name(road_name)
+    segment = segment_info["name"] if segment_info else (road_name or "受影響路段")
+    status = _incident_status(text)
+    severity = _incident_severity(text)
+
+    missing = _missing_incident_fields(segment_info, status, severity)
+    if missing:
+        return _answer_incident_missing_conditions(missing)
+
+    severity_text = _severity_text(severity)
+    ete_minutes = _calculate_ete_minutes(
+        severity,
+        _incident_saturation(severity, segment_info, snapshot),
     )
+    route = _select_primary_evacuation_routes(segment_info, snapshot)["route_text"]
+    return (
+        f"■ 判定：{segment}出現關閉、封鎖或通行受阻情境，事故等級為{severity_text}，符合 SOP 第 2 條車禍與路障應變觸發條件\n"
+        f"■ 建議處置：請先將車流導往{route}，並發布資訊看板：「{segment}封閉，請改道{route}，預計延誤 {ete_minutes} 分鐘」\n"
+        f"■ 後續確認：{INCIDENT_CONGESTION_FOLLOW_UP}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# SOP 第 2 條輔助邏輯：事故條件、路網資料、疏散路徑
+# ---------------------------------------------------------------------------
+
+def _missing_incident_fields(
+    segment_info: Optional[Dict],
+    status: Optional[str],
+    severity: Optional[str],
+) -> List[str]:
+    missing = []
+    if not segment_info:
+        missing.append("事故發生地點")
+    if status is None:
+        missing.append("通行狀態是否為封閉、阻斷或限制通行")
+    if severity is None:
+        missing.append("事故嚴重度是否為高或重大")
+    return missing
+
+
+def _answer_incident_missing_conditions(missing: List[str]) -> str:
+    missing_text = "、".join(missing)
+    return (
+        "目前資訊不足，尚不能判定 SOP 第 2 條車禍與路障應變是否成立\n"
+        f"■ 建議處置：請補充{missing_text}，例如「光復南路發生嚴重車禍並造成路段封鎖」\n"
+        "■ 後續確認：第 2 條需同時確認道路路段、通行狀態與事故嚴重度；"
+        "三項成立後，才會產生改道路徑、資訊看板文字與預計恢復時間。"
+    )
+
+
+def _incident_saturation(
+    severity: str,
+    segment_info: Optional[Dict],
+    snapshot: Optional[Dict[str, Any]],
+) -> float:
+    # 第 7 條 ETE 需要壅塞程度；若快照有受影響路段現況，優先使用快照。
+    # 沒有快照時才退回固定值，讓單元 demo 仍能運作。
+    snapshot_value = _snapshot_road_saturation(snapshot, segment_info)
+    if snapshot_value is not None:
+        return snapshot_value
+    return 0.90 if severity == "Critical" else 0.80
+
+
+def _snapshot_road_saturation(
+    snapshot: Optional[Dict[str, Any]],
+    segment_info: Optional[Dict],
+) -> Optional[float]:
+    if not snapshot or not segment_info:
+        return None
+    road_state = snapshot.get("road_segments", {}).get(segment_info.get("segment_id"))
+    if not road_state:
+        return None
+    saturation = road_state.get("saturation_score")
+    return float(saturation) if saturation is not None else None
+
+
+def _snapshot_station_roaming(
+    snapshot: Optional[Dict[str, Any]],
+    station_name: str,
+) -> Optional[float]:
+    if not snapshot:
+        return None
+    for station in snapshot.get("stations", {}).values():
+        if station.get("name") == station_name:
+            roaming = station.get("roaming_user_pct")
+            return float(roaming) if roaming is not None else None
+    return None
+
+
+def _snapshot_road_by_name(
+    snapshot: Optional[Dict[str, Any]],
+    road_name: Optional[str],
+) -> Optional[Dict]:
+    if not snapshot or not road_name:
+        return None
+    for segment_id, segment in snapshot.get("road_segments", {}).items():
+        if segment.get("name") == road_name:
+            return {"segment_id": segment_id, **segment}
+    return None
+
+
+@lru_cache(maxsize=1)
+def _road_geometry() -> Dict[str, Dict]:
+    try:
+        rows = json.loads(ROAD_GEOMETRY_PATH.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    return {row["segment_id"]: row for row in rows}
+
+
+def _road_segment_by_name(name: Optional[str]) -> Optional[Dict]:
+    if not name:
+        return None
+    return next((row for row in _road_geometry().values() if row.get("name") == name), None)
+
+
+def _incident_status(text: str) -> Optional[str]:
+    if any(keyword in text for keyword in ("封鎖", "封閉", "全線封鎖", "Closed")):
+        return "Closed"
+    if any(keyword in text for keyword in ("阻斷", "路障", "Blocked")):
+        return "Blocked"
+    if any(keyword in text for keyword in ("限制通行", "通行受阻", "受阻", "Restricted")):
+        return "Restricted"
+    return None
+
+
+def _incident_severity(text: str) -> Optional[str]:
+    if any(keyword in text for keyword in ("Critical", "重大", "全線封鎖")):
+        return "Critical"
+    if any(keyword in text for keyword in ("High", "嚴重", "高", "重度")):
+        return "High"
+    return None
+
+
+def _severity_text(severity: str) -> str:
+    return {"Critical": "重大", "High": "高或嚴重", "Medium": "中"}[severity]
+
+
+def _select_primary_evacuation_routes(
+    segment_info: Optional[Dict],
+    snapshot: Optional[Dict[str, Any]] = None,
+) -> Dict[str, str]:
+    if not segment_info:
+        return {
+            "route_text": "該路段 alternatives 中容量足夠、直接相交且位於事故點上游的替代道路",
+            "basis_text": "目前未能對應到官方路網資料，需由現場補足事故路段 ID 後篩選主疏散路段。",
+        }
+
+    roads = _road_geometry()
+    segment_intersections = set(segment_info.get("intersections", []))
+    passed = []
+    rejected = []
+    for alt_id in segment_info.get("alternatives", []):
+        alt = roads.get(alt_id)
+        if not alt:
+            continue
+
+        # SOP 第 2 條主疏散路徑篩選：
+        # 1. 容量足夠；2. 與事故路段直接相交；3. 位於上游。
+        # 現有 mock 路網資料尚未提供完整上下游座標，先以直接相交與容量作為可驗證條件。
+        capacity_ok = int(alt.get("capacity_vph", 0)) >= 1000
+        direct_points = [alt["name"]] if alt.get("name") in segment_intersections else []
+        directly_intersects = segment_info["name"] in alt.get("intersections", [])
+        if capacity_ok and directly_intersects:
+            passed.append((alt, direct_points or [segment_info["name"]]))
+        else:
+            reasons = []
+            if not capacity_ok:
+                reasons.append(f"容量 {alt.get('capacity_vph')} < 1000")
+            if not directly_intersects:
+                reasons.append("未與事故路段直接相交")
+            rejected.append(f"{alt.get('name', alt_id)}（{'、'.join(reasons)}）")
+
+    if not passed:
+        return {
+            "route_text": "替代道路中容量足夠且位於上游的可行路段",
+            "basis_text": "事故路段 alternatives 尚未篩出同時符合容量與直接相交條件的主疏散路段。",
+        }
+
+    route_candidates = _rank_routes_by_snapshot_saturation(passed, snapshot)
+    route_names = [alt["name"] for alt, _ in route_candidates]
+    route_text = "或".join(route_names) if route_names else "替代道路中容量足夠且位於上游的可行路段"
+    passed_text = "、".join(
+        f"{alt['name']}（capacity_vph={alt['capacity_vph']}，相交點：{'/'.join(points)}）"
+        for alt, points in passed
+    )
+    rejected_text = f"；排除：{'、'.join(rejected)}" if rejected else ""
+    return {
+        "route_text": route_text,
+        "basis_text": f"主疏散路段從 {segment_info['name']} 的 alternatives 篩選：{passed_text} 同時符合 capacity_vph >= 1000 且與事故路段直接相交{rejected_text}。",
+    }
+
+
+def _rank_routes_by_snapshot_saturation(
+    candidates: List[tuple[Dict, List[str]]],
+    snapshot: Optional[Dict[str, Any]],
+) -> List[tuple[Dict, List[str]]]:
+    if not candidates:
+        return []
+
+    # SOP 第 2 條要求取 Saturation_Score 最低者；這個值不屬於使用者假設，
+    # 所以要從目前播放時間點的 TrafficSnapshot 查。
+    ranked = []
+    for alt, points in candidates:
+        saturation = _snapshot_road_saturation(snapshot, alt)
+        if saturation is not None:
+            ranked.append((saturation, alt, points))
+
+    if not ranked:
+        return candidates
+
+    lowest = min(score for score, _, _ in ranked)
+    return [(alt, points) for score, alt, points in ranked if score == lowest]
 
 
 def _answer_signal_failure(text: str) -> str:
@@ -525,33 +874,41 @@ def _answer_signal_failure(text: str) -> str:
     ete_minutes = _calculate_ete_minutes("Medium", 0.75)
 
     return (
-        "■ 判定：第 5 條（號誌故障應變）成立\n"
-        f"■ 依據：{segment}出現號誌故障或失效情境，符合 SOP 第 5 條觸發條件\n"
+        f"■ 判定：{segment}出現號誌故障或失效，符合 SOP 第 5 條（號誌故障應變），應立即啟動人工指揮、資訊看板與預計恢復時間回報\n"
+        "■ 依據：第 5 條規定，事件類型為號誌故障，或描述含號誌失效／故障，即需啟動號誌故障應變\n"
         "■ 建議處置：請啟動人工指揮派遣，受影響路口每路口配置 2 名警力；資訊看板發布：「"
         f"{segment}號誌故障，請依現場指揮通行」，預估持續 {ete_minutes} 分鐘\n"
-        "■ 後續確認：已併入第 7 條預計恢復時間；若故障造成替代道路升至 B 級壅塞，需連動第 1 條壅塞級別判定"
+        f"■ 後續確認：{INCIDENT_CONGESTION_FOLLOW_UP}"
     )
 
 
 def _matched_road_name(text: str) -> Optional[str]:
-    road_names = (
-        "忠孝東路四段",
-        "光復南路",
-        "基隆路一段",
-        "市民大道四段",
-        "仁愛路四段",
-        "敦化南路一段",
-        "松高路",
-        "延吉街",
-        "基隆路地下道",
-        "市府路",
-        "松壽路",
-        "敦化南路二段",
-        "信義路五段",
-        "松智路",
-        "復興南路一段",
-    )
-    return next((name for name in road_names if name in text), None)
+    aliases = {
+        "忠孝東路": "忠孝東路四段",
+        "光復南路": "光復南路",
+        "基隆路": "基隆路一段",
+        "市民大道": "市民大道四段",
+        "仁愛路": "仁愛路四段",
+        "敦化南路一段": "敦化南路一段",
+        "敦化南路二段": "敦化南路二段",
+        "松高路": "松高路",
+        "延吉街": "延吉街",
+        "基隆路地下道": "基隆路地下道",
+        "市府路": "市府路",
+        "松壽路": "松壽路",
+        "信義路": "信義路五段",
+        "松智路": "松智路",
+        "復興南路": "復興南路一段",
+    }
+    for name in ROAD_NAMES:
+        if name in text:
+            return name
+    return next((name for alias, name in aliases.items() if alias in text), None)
+
+
+def _road_segment_id_by_name(road_name: str) -> Optional[str]:
+    segment = _road_segment_by_name(road_name)
+    return segment.get("segment_id") if segment else None
 
 
 def _answer_ete(severity: str, saturation: float) -> str:

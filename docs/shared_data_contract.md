@@ -49,13 +49,22 @@ static/                 # 模組 3 demo UI
 | `live_incidents.json` | 可注入事件與事故狀態 |
 | `sop/emergency_traffic_sop.txt` | 官方 SOP 七條應變規則 |
 
+## 第 1 條壅塞分級與觸發
+
+交通壅塞分級有兩層：
+
+- Dashboard 顏色分級：全部 15 路段都用相同門檻，`0.85 <= saturation < 0.95` 顯示 B 級黃燈，`saturation >= 0.95` 顯示 A 級紅燈。
+- 應變動作觸發：只有忠孝東路四段與光復南路屬於城市應變觸發路段。其他路段即使顯示 A/B 級，也不會因第 1 條自動啟動長綠燈、警力淨空或替代路徑引導。
+
+若事故主疏散路段已壅塞，長綠燈時制的依據是第 2 條事故應變但書，不是第 1 條。
+
 ## 各模組責任
 
 | 模組 | 責任 | 使用共用資料 |
 |---|---|---|
 | 模組 1：動態時間序列 Dashboard | 時間軸資料展示、SOP 預警門檻判斷、異常彈窗 | 讀 `TrafficSnapshot`，可輸出 Dashboard 用 `TriggerDecision[]` |
 | 模組 2：即時事件應變 | 注入 `live_incidents.json`、路網重規劃、避開容量不足或飽和路段 | 讀 `TrafficSnapshot` 與 incidents，輸出重規劃結果與 `TriggerDecision[]` |
-| 模組 3：對話式策略諮詢顧問 | Dashboard 旁對話視窗、what-if 推演、SOP 觸發條款回答 | 讀 SOP 與使用者假設條件；不自動依賴 `TrafficSnapshot` |
+| 模組 3：對話式策略諮詢顧問 | Dashboard 旁對話視窗、what-if 推演、SOP 觸發條款回答 | 讀 SOP、使用者假設條件與當前播放時間點的 `TrafficSnapshot`；使用者明講的假設值覆蓋快照，其餘現況由快照判斷 |
 | 模組 4：推理與可解釋性 | 展示 SOP 分級依據、替代道路排除理由、ETE 公式運算 | 讀 `TrafficSnapshot`、事故資料與 `TriggerDecision[]` |
 | 模組 5：多語通報 | 偵測漫遊率門檻、產生多語通報候選文字 | 讀基地台資料、`TriggerDecision[]`、entity ID、地點名稱 |
 

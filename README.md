@@ -31,7 +31,7 @@ sop/           # 官方 SOP 規則文件
 |---|---|---|---|
 | 1 | Dynamic Time-Series Dashboard | 依時間軸讀取並展示車流、人流資料；判斷 SOP 預警門檻；觸發自動彈窗 | 產生趨勢異常摘要與預警提示 |
 | 2 | Live Incident Response | 注入 `live_incidents.json`；在 60 秒內完成路網重規劃；避開容量不足或飽和路段 | 產生導引建議文字 |
-| 3 | Interactive Strategic Advisory | 提供 Dashboard 旁對話視窗與對話歷史；不自動查詢即時快照 | 根據使用者假設條件與 SOP，回答判定、依據、建議處置與後續確認 |
+| 3 | Interactive Strategic Advisory | 提供 Dashboard 旁對話視窗與對話歷史；讀取 SOP、使用者假設與當前播放快照 | 使用者明講的值視為 what-if 假設，其餘現況由 `TrafficSnapshot` 補足，回答結論、建議處置與後續確認 |
 | 4 | Reasoning & Explainability | 計算 SOP 分級、替代道路排除理由、ETE 公式 | 解釋判定依據、數據佐證與 ETE 結果 |
 | 5 | Multilingual Notification | 自動偵測基地台漫遊率，判斷是否達 30% 門檻 | 產生多國語言告警文字 |
 

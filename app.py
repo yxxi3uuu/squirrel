@@ -46,6 +46,7 @@ class Message(BaseModel):
 class ChatRequest(BaseModel):
     question: str
     history: Optional[List[Message]] = Field(default_factory=list)
+    snapshot_timestamp: Optional[str] = None
 
 
 class ChatResponse(BaseModel):
@@ -54,6 +55,7 @@ class ChatResponse(BaseModel):
     mode: str
     error: Optional[str] = None
     sources: list = Field(default_factory=list)
+    snapshot_timestamp: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -85,7 +87,11 @@ async def chat_endpoint(req: ChatRequest):
         logger.info("問題：%s", req.question[:100])
 
         history = [{"role": m.role, "content": m.content} for m in (req.history or [])]
-        advisory = answer_advisory_question(req.question, history=history)
+        advisory = answer_advisory_question(
+            req.question,
+            history=history,
+            snapshot_timestamp=req.snapshot_timestamp,
+        )
 
         logger.info("回答完成，mode=%s", get_mode())
         return ChatResponse(
@@ -93,6 +99,7 @@ async def chat_endpoint(req: ChatRequest):
             answer=advisory["answer"],
             mode=advisory["llm_mode"],
             sources=advisory["sources"],
+            snapshot_timestamp=advisory.get("snapshot_timestamp"),
         )
 
     except FileNotFoundError as e:

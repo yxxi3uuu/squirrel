@@ -18,6 +18,7 @@ class AdvisoryResponse:
     llm_mode: str = "mock"
     sources: List[SopSource] = field(default_factory=list)
     scenario: Optional[Dict[str, Any]] = None
+    snapshot_timestamp: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -29,4 +30,5 @@ class AdvisoryResponse:
                 for source in self.sources
             ],
             "scenario": self.scenario,
+            "snapshot_timestamp": self.snapshot_timestamp,
         }
