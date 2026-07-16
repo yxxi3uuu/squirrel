@@ -3,7 +3,8 @@
 > Branch: `module-2-incident-response`
 > Version: v2.0（對齊 main 共用架構）
 
----
+
+
 
 ## 此文件應該要說明清楚的事情
 
@@ -13,7 +14,24 @@
 - 前端每個元件負責顯示什麼
 - 整合時需要看哪些介面、注意哪些已知問題
 
----
+<br><br>
+
+## 目錄
+1.  [概覽](#概覽)
+2.  [模組2的檔案地圖](#模組2的檔案地圖)
+3.  [快速啟動](#快速啟動)
+4.  [API端點](#api-端點)
+5.  [依賴的 main 分支共用元件](#依賴的-main-分支共用元件)
+6.  [SOP 規則引擎詳解](#sop-規則引擎詳解backendservicessop_enginepy)
+7.  [Mock LLM 說明](#mock-llm-說明backendservicesllm_mockpy)
+8.  [In-memory 事件暫存](#in-memory-事件暫存backendstoreincident_storepy)
+9.  [前端說明](#前端說明frontendsrc)
+10. [三個驗收測試案例](#三個驗收測試案例backendteststest_sop_enginepy)
+11. [與其他模組的整合介面](#與其他模組的整合介面)
+12. [待確認事項](#待確認事項)
+13. [其他補充](#其他補充)
+
+<br><br>
 
 ## 概覽
 
@@ -32,6 +50,7 @@ List[TriggerDecision]（0 到多筆）
 回傳給前端 / 供其他模組消費
 ```
 
+
 ### 負責的 SOP 條款
 
 | 條款 | 名稱 | 說明 |
@@ -43,9 +62,11 @@ List[TriggerDecision]（0 到多筆）
 
 **不負責的條款：** SOP-3、SOP-4（屬模組3）；SOP-6（屬模組5）
 
----
 
-## 整個模組2的檔案地圖
+
+<br><br>
+
+## 模組2的檔案地圖
 
 ```
 squirrel/
@@ -117,9 +138,12 @@ squirrel/
 └── MODULE2_README.md                 ← 本文件
 ```
 
----
+
+
+<br><br>
 
 ## 快速啟動
+
 
 ### 1. 安裝依賴
 
@@ -132,6 +156,7 @@ cd frontend
 npm install
 ```
 
+
 ### 2. 啟動 Backend
 
 ```bash
@@ -140,6 +165,7 @@ uvicorn backend.main:app --reload --port 8002
 ```
 
 啟動後可在 `http://localhost:8002/docs` 看到 Swagger UI，直接在瀏覽器測試 API。
+
 
 ### 3. 啟動 Frontend
 
@@ -151,6 +177,7 @@ npm run dev
 瀏覽器開啟 `http://localhost:5173`。
 Vite 會把 `/api` 開頭的請求自動代理到 `localhost:8002`，不需要額外設定。
 
+
 ### 4. 執行驗收測試
 
 ```bash
@@ -158,7 +185,8 @@ Vite 會把 `/api` 開頭的請求自動代理到 `localhost:8002`，不需要�
 python -m backend.tests.test_sop_engine
 ```
 
----
+
+<br><br>
 
 ## API 端點
 
@@ -171,6 +199,7 @@ python -m backend.tests.test_sop_engine
 | `GET` | `/api/incidents/active` | 取得已注入、尚未 resolve 的事件 | `List[dict]` |
 | `POST` | `/api/incidents/{event_id}/resolve` | 清除已處理事件（demo 用） | `{ status, event_id }` |
 | `GET` | `/health` | 健康檢查 | `{ status: "ok", module: "..." }` |
+
 
 ### inject 端點的 Request Body 範例
 
@@ -190,11 +219,14 @@ python -m backend.tests.test_sop_engine
 
 `inject` 端點會自動找到 `<= timestamp` 的最新可用快照時間，不需要傳入整點時間。
 
----
+
+
+<br><br>
 
 ## 依賴的 main 分支共用元件
 
 **模組2 不自己讀取 CSV/JSON、不自己建路名對照表**，全部呼叫 main 分支的共用層：
+
 
 ### `data/snapshot.py`
 
@@ -208,6 +240,7 @@ available_timestamps()  # ['2026-05-20 17:00', ..., '2026-05-20 23:30']
 注意：`get_snapshot()` 需要傳入 `available_timestamps()` 中存在的時間點，
 若傳入不存在的時間（如 22:10）會拋 `ValueError`。
 **模組2 的 router 和測試腳本都有自動找 `<=` 最近可用時間的邏輯，不用自己處理。**
+
 
 ### `shared/schemas.py`
 
@@ -233,6 +266,7 @@ class TriggerDecision:
     timestamp: str | None        # 事件時間戳
 ```
 
+
 ### Schema 適配說明
 
 `shared/schemas.py` 的欄位型別與規格書原設計有三處差異，
@@ -243,6 +277,7 @@ class TriggerDecision:
 | `severity` | `Literal["info","yellow","red","critical"]` | `_map_severity()` 負責轉換（A→critical, High→red 等） |
 | `actions` | `List[str]` | 每個 action 序列化為易讀字串 |
 | `primary_route` | `Optional[str]` | 只存 segment_id；詳細路段資訊（名稱、飽和度）寫進 `basis` |
+
 
 ### `shared/lookup.py`
 
@@ -256,11 +291,14 @@ matches = find_entities_in_text("光復南路北側", snapshot)
 模組2 在 `resolve_upstream_downstream()` 中使用此工具把事故 location 文字
 轉換成 segment_id，進而判斷上下游位置。
 
----
+
+
+<br><br>
 
 ## SOP 規則引擎詳解（`backend/services/sop_engine.py`）
 
 這是模組2的核心，也是最複雜的一個檔案。以下逐一說明每個函式在做什麼。
+
 
 ### 整體架構
 
@@ -280,6 +318,7 @@ mock_generate_cms_text(...)                   ← CMS 文字（被 SOP-2/5 呼�
 
 ---
 
+
 ### `process_incident(incident, snapshot)`
 
 **對外唯一入口。** 接收一筆事件 dict 和當前快照 dict，
@@ -294,6 +333,7 @@ decisions = process_incident(incident, snapshot)
 ```
 
 ---
+
 
 ### `build_sop1_decision(incident, snapshot)`
 
@@ -311,6 +351,7 @@ A 級會在 `cascade_checks` 加一條「同時觸發 SOP-2」的提示。
 
 ---
 
+
 ### `is_sop2_triggered(incident)`
 
 **SOP-2 觸發條件檢查（三個條件全部成立才回傳 True）：**
@@ -322,6 +363,7 @@ A 級會在 `cascade_checks` 加一條「同時觸發 SOP-2」的提示。
 只要有一條不符合就不觸發，一筆都不產出。
 
 ---
+
 
 ### `build_sop2_decision(incident, snapshot)`
 
@@ -338,6 +380,7 @@ A 級會在 `cascade_checks` 加一條「同時觸發 SOP-2」的提示。
 完整的路段名稱、飽和度、容量資訊都寫在 `basis` 欄位。
 
 ---
+
 
 ### `plan_accident_response(incident, snapshot)`
 
@@ -357,6 +400,7 @@ A 級會在 `cascade_checks` 加一條「同時觸發 SOP-2」的提示。
 進入「保守模式」：把路段 intersections 中所有路口都視為上游。
 
 ---
+
 
 ### `resolve_upstream_downstream(incident, segment, snapshot)`
 
@@ -379,6 +423,7 @@ A 級會在 `cascade_checks` 加一條「同時觸發 SOP-2」的提示。
 
 ---
 
+
 ### `calculate_ete(incident, primary_seg_id, snapshot)`
 
 **依 SOP 第7條公式計算預計恢復時間（ETE）。**
@@ -399,6 +444,7 @@ base_clearance 對照表：
 
 ---
 
+
 ### `mock_generate_cms_text(incident, primary_route, ete_minutes)`
 
 **產出 CMS 電子看板文字（40 字以內）。**
@@ -409,6 +455,7 @@ base_clearance 對照表：
 
 ---
 
+
 ### `is_sop5_triggered(incident)`
 
 **SOP-5 觸發條件（OR 關係，任一成立即觸發）：**
@@ -418,6 +465,7 @@ base_clearance 對照表：
 - `description` 含「號誌故障」
 
 ---
+
 
 ### `build_sop5_decision(incident, snapshot)`
 
@@ -430,6 +478,7 @@ ETE 同樣用 `calculate_ete()` 計算，使用相同的 SOP-7 公式。
 沒有疏散路徑規劃（不選主/次疏散），只有警力派遣和 CMS 更新兩個 actions。
 
 ---
+
 
 ### `_map_severity(raw)`
 
@@ -444,7 +493,8 @@ ETE 同樣用 `calculate_ete()` 計算，使用相同的 SOP-7 公式。
 | "A"（SOP-1 A 級） | "critical" |
 | "B"（SOP-1 B 級） | "yellow" |
 
----
+
+<br><br>
 
 ## Mock LLM 說明（`backend/services/llm_mock.py`）
 
@@ -462,7 +512,8 @@ def generate_text(decision: TriggerDecision) -> Dict[str, str]:
 重要提醒：一個事件可能有多筆 `TriggerDecision`，
 接入 LLM 時需要逐一迴圈呼叫，不要把所有 decision 混入同一個 prompt。
 
----
+
+<br><br>
 
 ## In-memory 事件暫存（`backend/store/incident_store.py`）
 
@@ -479,11 +530,13 @@ def generate_text(decision: TriggerDecision) -> Dict[str, str]:
 > **已知風險**：此處儲存的事件與其他模組透過 `get_snapshot()` 查到的 incidents 不同步。
 > 詳見本文件最後的「待確認事項」。
 
----
+
+<br><br>
 
 ## 前端說明（`frontend/src/`）
 
 前端用 React 18 + Vite 建置，完全用 inline style 不依賴 CSS 框架，深色主題。
+
 
 ### 頁面結構
 
@@ -495,6 +548,7 @@ App 有兩個 Tab：
 | 🗺️ 交通地圖 | 靜態資料的時間軸回放地圖，不需要 backend 運行 |
 
 ---
+
 
 ### `App.jsx`
 
@@ -512,6 +566,7 @@ App 呼叫 `api/client.js` 的 `injectIncident()`，
 
 ---
 
+
 ### `components/IncidentInjectorPanel.jsx`
 
 **事件注入面板，分兩個 Tab：**
@@ -525,6 +580,7 @@ App 呼叫 `api/client.js` 的 `injectIncident()`，
   `affected_road` 欄位可選填，不填時後端會自動忽略。
 
 ---
+
 
 ### `components/DecisionCard.jsx`
 
@@ -549,6 +605,7 @@ Severity dot 顏色：critical 紅、red 粉紅、yellow 黃、info 藍。
 
 ---
 
+
 ### `components/SegmentStatusTable.jsx`
 
 **顯示快照中所有路段的即時狀態，並標記本次事件的路段角色。**
@@ -567,6 +624,7 @@ Severity dot 顏色：critical 紅、red 粉紅、yellow 黃、info 藍。
 
 ---
 
+
 ### `components/SLATimer.jsx`
 
 **SLA 60 秒計時器，注入後開始計時，API 回應後顯示後端實際運算時間。**
@@ -578,6 +636,7 @@ Severity dot 顏色：critical 紅、red 粉紅、yellow 黃、info 藍。
 
 ---
 
+
 ### `components/TrafficDashboard.jsx`
 
 **「交通地圖」Tab 的整合元件。** 把 TrafficMap、TimelineSlider、CrowdPanel 組裝在一起。
@@ -587,6 +646,7 @@ Severity dot 顏色：critical 紅、red 粉紅、yellow 黃、info 藍。
 支援中/英文切換（右上角按鈕）。
 
 ---
+
 
 ### `components/TrafficMap.jsx`
 
@@ -604,6 +664,7 @@ Severity dot 顏色：critical 紅、red 粉紅、yellow 黃、info 藍。
 
 ---
 
+
 ### `components/TimelineSlider.jsx`
 
 **時間軸播放控制器。**
@@ -615,6 +676,7 @@ Severity dot 顏色：critical 紅、red 粉紅、yellow 黃、info 藍。
 已知有事件的時間點（22:10、22:20、22:30）旁邊會顯示紅點提示。
 
 ---
+
 
 ### `components/CrowdPanel.jsx`
 
@@ -629,6 +691,7 @@ Severity dot 顏色：critical 紅、red 粉紅、yellow 黃、info 藍。
 
 ---
 
+
 ### `api/client.js`
 
 所有對後端 `/api/incidents/*` 的 fetch 封裝。
@@ -642,6 +705,7 @@ Severity dot 顏色：critical 紅、red 粉紅、yellow 黃、info 藍。
 | `resolveIncident(eventId)` | `POST /api/incidents/{eventId}/resolve` |
 
 ---
+
 
 ### `data/trafficData.js`
 
@@ -660,7 +724,8 @@ Severity dot 顏色：critical 紅、red 粉紅、yellow 黃、info 藍。
 > 前者是為了讓地圖頁在不需要 backend 的情況下也能運作；
 > 後者才是 SOP 規則引擎實際使用的官方資料來源。
 
----
+
+<br><br>
 
 ## 三個驗收測試案例（`backend/tests/test_sop_engine.py`）
 
@@ -683,9 +748,11 @@ Severity dot 顏色：critical 紅、red 粉紅、yellow 黃、info 藍。
 - `triggered = False`，`sop_clause = None`
 - `cascade_checks` 含 `RD_TPE_001` 間接影響備註
 
----
+
+<br><br>
 
 ## 與其他模組的整合介面
+
 
 ### 其他模組「消費」模組2 結果
 
@@ -696,6 +763,7 @@ Severity dot 顏色：critical 紅、red 粉紅、yellow 黃、info 藍。
 | 模組4（解釋鏈） | `TriggerDecision.basis`（詳細推理文字） + `excluded_routes` + `ete_minutes` | `basis` 欄位已含完整數值和判斷理由 |
 | 模組5（多語通報） | `TriggerDecision.cms_text` | 直接翻譯 `cms_text` 欄位即可 |
 
+
 ### 整合時必須知道的事
 
 1. **一個事件可能回傳多筆 TriggerDecision**（陣列長度 1~3），請勿假設一對一。
@@ -703,9 +771,11 @@ Severity dot 顏色：critical 紅、red 粉紅、yellow 黃、info 藍。
 3. `primary_route` / `secondary_routes` 只存 segment_id 字串，完整路段資訊要去 `TriggerDecision.basis` 或快照查。
 4. `processing_time_ms` 是後端純規則運算時間（通常 < 5ms），不含網路延遲。
 
----
+
+<br><br>
 
 ## 待確認事項
+
 
 ### 1. `data/snapshot.py` 事件注入同步問題
 
@@ -718,6 +788,7 @@ Severity dot 顏色：critical 紅、red 粉紅、yellow 黃、info 藍。
 **解法(若需要)：**  `data/snapshot.py` 補上 `inject_incident()` 共用函式後，
 本模組的 `incident_store.py` 可改為呼叫共用函式，`incident_store.py` 就可以刪掉。
 
+
 ### 2. `shared/schemas.py` 欄位型別對齊
 
 目前採「本模組自行適配，不改共用 schema」策略（見 Schema 適配說明）。
@@ -725,14 +796,17 @@ Severity dot 顏色：critical 紅、red 粉紅、yellow 黃、info 藍。
 - `shared/schemas.py`（`severity`、`actions`、`primary_route` 型別）
 - `backend/services/sop_engine.py` 中的 `_map_severity()` 等轉換邏輯
 
+
 ### 3. LLM 接入
 
 改 `llm_mock.py` 的 `generate_text()` 函式即可，呼叫介面不變。
 System prompt 和 User prompt 模板已就緒。
 
----
+
+<br><br>
 
 ## 其他補充
+
 
 ### 啟動 backend 但不跑前端時如何測試
 
@@ -744,6 +818,7 @@ curl -X POST http://localhost:8002/api/incidents/inject \
   -H "Content-Type: application/json" \
   -d "{\"event_id\":\"TEST_001\",\"type\":\"Road_Collapse_Accident\",\"location\":\"光復南路與忠孝東路口南側\",\"affected_segment\":\"RD_TPE_002\",\"status\":\"Closed\",\"severity\":\"Critical\",\"description\":\"測試事件\",\"timestamp\":\"2026-05-20 22:10\"}"
 ```
+
 
 ### 前端在沒有 backend 時也能運行
 
