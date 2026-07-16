@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>模組 5｜多語化全通路通報</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+<!-- ══ HEADER ══════════════════════════════════════════════════════════════ -->
+<header>
+  <div class="header-inner">
+    <span class="header-icon">🚨</span>
+    <div>
+      <h1>模組 5｜多語化全通路通報指揮台</h1>
+      <p class="header-sub">SOP 第 6 條｜漫遊率 ≥ 30% 自動觸發多語化告警</p>
+    </div>
+    <div id="ollama-badge" class="badge badge-loading">⏳ 檢查 Ollama…</div>
+  </div>
+</header>
+
+<!-- ══ MAIN ════════════════════════════════════════════════════════════════ -->
+<main>
+
+  <!-- ── 區塊一：信令監控 ─────────────────────────────────────────────── -->
+  <section class="card">
+    <h2 class="sec-title">📡 區塊一：信令監控與警報狀態</h2>
+
+    <!-- KPI -->
+    <div class="kpi-row">
+      <div class="kpi-box" id="kpi-triggered">
+        <div class="kpi-val red" id="kpi-val-triggered">—</div>
+        <div class="kpi-label">🔴 SOP 第6條觸發站點</div>
+      </div>
+      <div class="kpi-box">
+        <div class="kpi-val yellow" id="kpi-val-total">—</div>
+        <div class="kpi-label">🛰️ 監控站點總數</div>
+      </div>
+      <div class="kpi-box">
+        <div class="kpi-val" id="kpi-val-maxrate">—</div>
+        <div class="kpi-label">📊 最高漫遊率</div>
+      </div>
+    </div>
+
+    <!-- 觸發站點卡片 -->
+    <div id="triggered-cards"></div>
+
+    <!-- 完整表格 -->
+    <details class="table-wrap">
+      <summary>📋 最新快照完整表格</summary>
+      <div class="table-scroll">
+        <table id="station-table">
+          <thead>
+            <tr>
+              <th>站點 ID</th><th>站點名稱</th><th>人數</th>
+              <th>漫遊率</th><th>增幅</th><th>停留時間</th>
+            </tr>
+          </thead>
+          <tbody id="station-tbody"></tbody>
+        </table>
+      </div>
+    </details>
+  </section>
+
+  <!-- ── 區塊二：多語化告警生成 ────────────────────────────────────────── -->
+  <section class="card">
+    <h2 class="sec-title">🌐 區塊二：多語化告警生成</h2>
+
+    <div class="form-row">
+      <label for="station-select">選擇站點</label>
+      <select id="station-select"></select>
+    </div>
+
+    <div id="station-metrics" class="metrics-row"></div>
+    <div id="sop-banner"></div>
+
+    <button id="btn-generate" class="btn btn-primary btn-full" disabled>
+      ⚡ 生成多語告警
+    </button>
+    <div id="generate-spinner" class="spinner hidden">🤖 Ollama 推論中，請稍候…</div>
+
+    <div id="alerts-editor" class="hidden">
+      <p class="editor-title">✏️ 警告文字（可直接編輯後發布）</p>
+      <div id="lang-tabs" class="lang-tabs"></div>
+      <div id="lang-panels" class="lang-panels"></div>
+    </div>
+  </section>
+
+  <!-- ── 區塊三：全通路一鍵模擬發布 ──────────────────────────────────── -->
+  <section class="card">
+    <h2 class="sec-title">📣 區塊三：全通路一鍵模擬發布</h2>
+
+    <div class="publish-row">
+      <div>
+        <button id="btn-publish" class="btn btn-danger btn-lg" disabled>
+          🚀 一鍵發布通報
+        </button>
+        <p id="publish-hint" class="hint">⬆️ 請先生成告警文字</p>
+      </div>
+      <div class="channel-info">
+        <strong>發布渠道：</strong>
+        <ul>
+          <li>📱 手機 Cell Broadcast 簡訊（全區廣播）</li>
+          <li>🖥️ CMS 電子看板（道路及站點）</li>
+        </ul>
+      </div>
+    </div>
+
+    <div id="publish-result" class="hidden">
+      <div class="publish-success">
+        ✅ 通報已成功發布！
+        <span id="publish-time"></span>
+      </div>
+
+      <!-- 語言選擇器 -->
+      <div class="lang-selector-row">
+        <span>📺 顯示語言：</span>
+        <div id="preview-lang-btns" class="preview-lang-btns"></div>
+      </div>
+
+      <div class="preview-grid">
+        <!-- iPhone -->
+        <div>
+          <p class="preview-label">📱 Cell Broadcast 模擬</p>
+          <div class="iphone">
+            <div class="notch"></div>
+            <div class="iphone-header">緊急廣播通知</div>
+            <div class="bubble" id="iphone-msg">—</div>
+            <div class="iphone-time" id="iphone-time"></div>
+          </div>
+        </div>
+        <!-- CMS -->
+        <div>
+          <p class="preview-label">🖥️ CMS 電子看板模擬</p>
+          <div class="cms-board">
+            <div class="cms-flag" id="cms-flag"></div>
+            <div class="cms-title" id="cms-title"></div>
+            <div class="cms-body" id="cms-body"></div>
+            <div class="cms-footer" id="cms-footer"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 發布日誌 ─────────────────────────────────────────────────────── -->
+  <section class="card" id="log-section" style="display:none">
+    <h2 class="sec-title">📋 本次作業發布紀錄</h2>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>時間</th><th>站點</th><th>漫遊率</th><th>語言數</th><th>狀態</th></tr>
+        </thead>
+        <tbody id="log-tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+</main>
+
+<footer>模組 5 ─ 多語化全通路通報 Prototype｜SOP 第 6 條｜Qwen 2.5</footer>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
