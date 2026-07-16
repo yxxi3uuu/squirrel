@@ -2,7 +2,7 @@
 
 本系統為能隨時間監測交通與人流、即時偵測異常，並在突發事件發生時自動產生專業指揮建議的智慧交通決策中樞。
 
-`main` 保留共用的官方資料來源、資料說明與整合文件；各功能模組在自己的 branch 開發。模組 3 的對話式策略諮詢顧問實作與設計說明，請見 [`docs/module3_advisor_architecture.md`](docs/module3_advisor_architecture.md)。
+`main` 保留共用的官方資料來源、資料說明與整合文件；各功能模組在自己的 branch 開發。
 
 ## 資料流
 
