@@ -22,7 +22,7 @@ SOP 邏輯驗證：AI 必須根據輸入的假設條件，立即檢索 SOP 並�
 | 應變策略推理 + RAG | 模組 3 透過 SOP Knowledge Base 檢索，把相關條款交給 LLM 判斷；若使用者以文字詢問事故情境，可依第 2 條說明應變策略 |
 | 自動化指令產出 | 模組 3 回答會產出指揮官可採用的 CMS / 資訊看板 / 人力派遣建議，但實際派送由其他模組執行 |
 | 動態預測與互動問答 | 模組 3 負責 Dashboard 旁 What-if 問答，並在事故與號誌故障情境中引用第 7 條估算預計恢復時間 |
-| 多語化通報加分 | 模組 3 可依第 6 條判斷是否需要中英日韓多語通報；真正產生完整多語文案可交由模組 5 |
+| 多語化通報加分 | 模組 3 可依第 6 條從快照讀取基地台外籍旅客比例，判斷是否需要中英日韓多語通報；真正產生完整多語文案可交由模組 5 |
 
 責任邊界：
 
@@ -39,7 +39,7 @@ SOP 邏輯驗證：AI 必須根據輸入的假設條件，立即檢索 SOP 並�
 | 非觸發路段分級 | 假設市民大道四段飽和度達 0.98 | Dashboard 顯示 A 級紅燈；但不觸發第 1 條應變動作 |
 | 事故應變詢問 | 假設光復南路發生嚴重車禍並封鎖 | 觸發第 2 條；說明主疏散邏輯、資訊看板內容、連動第 7 條預計恢復時間 |
 | 號誌故障 | 假設信義路五段號誌故障 | 觸發第 5 條；每路口 2 名警力、CMS、估計持續時間 |
-| 多語通報 | 假設台北101廣場外籍旅客比例達 35% | 觸發第 6 條；中英日韓多語簡訊與看板 |
+| 多語通報 | 檢查台北101廣場是否需要啟動多語通報 | 從快照讀外籍旅客比例；達 30% 觸發第 6 條；中英日韓多語簡訊與看板 |
 | 條件不足 | 光復南路要不要處置？ | 說明缺少事故類型、嚴重度、封鎖狀態或壅塞等級，不自行引用現況 |
 
 ## SOP Knowledge Base / RAG 策略
@@ -50,6 +50,8 @@ SOP 邏輯驗證：AI 必須根據輸入的假設條件，立即檢索 SOP 並�
 使用者假設問題
   -> 檢索 SOP Knowledge Base
   -> 取回 SOP 條文全文
+  -> 取得 Dashboard 播放軸時間點的 TrafficSnapshot
+  -> 合併「使用者明講假設」與「未明講現況快照」
   -> 注入 system prompt
   -> LLM 根據 SOP 條款做判斷、引用與建議
 ```
@@ -64,7 +66,8 @@ Dashboard 對話視窗
   -> app.py /chat
   -> module3_advisor.answer_advisory_question()
   -> 檢索 SOP Knowledge Base
-  -> 組 system prompt
+  -> 取得當前 TrafficSnapshot
+  -> 組 system prompt（SOP + 使用者假設 + 快照）
   -> llm.clients.chat()
   -> JSON response
 ```
@@ -75,12 +78,14 @@ flowchart TB
     API["/chat API<br/>app.py"]
     SERVICE["策略顧問服務<br/>module3_advisor/service.py"]
     SOP["SOP Knowledge Base<br/>sop/emergency_traffic_sop.txt"]
+    SNAPSHOT["當前資料快照<br/>data/snapshot.py"]
     PROMPT["Prompt 組裝<br/>module3_advisor/prompts.py"]
     LLM["LLM 抽象層<br/>llm/clients.py"]
 
     UI -->|"question + history"| API
     API --> SERVICE
     SERVICE --> SOP
+    SERVICE --> SNAPSHOT
     SERVICE --> PROMPT
     PROMPT --> LLM
     LLM -->|"結構化回答"| API
@@ -91,7 +96,7 @@ flowchart TB
 
 | 檔案 | 職責 |
 |---|---|
-| `static/index.html` | 對話視窗、快捷提問、送出 `/chat` request、保存 history |
+| `static/index.html` | 對話視窗、快捷提問、送出 `/chat` request、保存 history；可用 `?snapshot_timestamp=` 或 `?ts=` 帶入 Dashboard 播放時間點 |
 | `app.py` | FastAPI API 入口，提供 `/chat` 與 `/health` |
 | `module3_advisor/service.py` | 模組 3 主流程，組合 SOP、history、使用者假設與 LLM 呼叫 |
 | `module3_advisor/sop_loader.py` | SOP Knowledge Base 檢索；目前採完整 SOP 取回，日後可替換為向量 RAG |
@@ -145,6 +150,7 @@ Response:
 
 | 類型 | 設計 |
 |---|---|
+| 規則查詢 | 第 1 條提供「交通壅塞級別如何判定？」一鍵查詢，說明 A/B 級門檻、Dashboard 顯示與城市應變觸發路段 |
 | 固定對象 | 第 1 條只放忠孝東路四段、光復南路；第 3 條固定捷運國父紀念館站；第 4 條固定大巨蛋 |
 | 需指定地點 | 第 2 條與第 5 條展開 15 路段中文名稱；第 6 條展開 9 個基地台／站點中文名稱 |
 
@@ -180,7 +186,7 @@ Response:
 | T3 | 假設光復南路已達 B 級壅塞 | 第 1 條 B 級；長綠燈與警力淨空 | B 級不可答成 A 級 |
 | T3-1 | 假設市民大道四段飽和度達 0.98 | Dashboard 顯示 A 級紅燈；不觸發第 1 條應變動作 | 分級顏色與應變觸發不可混淆 |
 | T4 | 假設大巨蛋人潮曾達 40,000 人且開始散場 | 第 4 條；連動第 3 條接駁機制 | 連鎖檢查 |
-| T5 | 假設台北101廣場外籍旅客比例達 35% | 第 6 條；多語通報 | 多語門檻 |
+| T5 | 檢查台北101廣場是否需要啟動多語通報 | 從快照讀取外籍旅客比例；若達 30% 則第 6 條成立；簡訊與看板同時多語 | 多語門檻與快照查詢 |
 | T6 | 假設某路段壅塞指標只有 0.80 | 不觸發；距 B 級 0.05 | 誠實不觸發 |
 | T7 | 連續追問「那如果再加 5,000 人？」 | 能沿用上一輪人數情境 | 多輪 history |
 | T8 | 如果光復南路發生嚴重事故並封鎖 | 第 2 條；主疏散邏輯、資訊看板、第 7 條預計恢復時間 | RAG + 事故應變說明 + ETE |
@@ -193,7 +199,7 @@ Response:
 | 模組 1 | Module 3 放在 Dashboard 旁，應接收目前播放時間點，並用該時間點 `TrafficSnapshot` 補足使用者未明講的現況 |
 | 模組 2 | 事件注入、live incidents 與路網重規劃由模組 2 負責；Module 3 可讀當前快照與已注入事件作 SOP 問答，但不負責執行重規劃 |
 | 模組 4 | 回答格式對齊：條款編號、建議處置、後續確認；推理細節保留在背後，不直接輸出工程欄位 |
-| 模組 5 | 第 6 條多語通報門檻一致：外籍漫遊旅客比例 ≥ 30% |
+| 模組 5 | 第 6 條多語通報門檻一致：任一基地台外籍漫遊旅客比例 ≥ 30%；通報時間格式統一為 `YYYY-MM-DD HH:MM` |
 | 全隊 | `LLM_MODE` 可切換 `mock`、`anthropic`、`bedrock`；正式接 AWS 時確認 `BEDROCK_REGION`、`BEDROCK_MODEL_ID`、必要時設定 `BEDROCK_INFERENCE_PREFIX` |
 
 ## 風險與備案
@@ -201,6 +207,6 @@ Response:
 | 風險 | 備案 |
 |---|---|
 | LLM 判斷不穩 | 固定回答格式、低 temperature、用驗收題反覆測 |
-| 使用者問題條件不足 | Prompt 要求列出缺少條件，不自行補現況 |
+| 使用者問題條件不足 | 使用者明講的假設優先；未明講的路況、人流、漫遊率從當前快照補足；若 SOP 所需條件仍不存在才要求補充 |
 | Bedrock 尚未開通 | 保留 `mock` 與 `anthropic` 模式 |
 | SOP 條文更新 | `sop/emergency_traffic_sop.txt` 獨立維護，prompt 每次全文注入 |

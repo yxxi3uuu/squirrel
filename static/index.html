@@ -47,22 +47,6 @@
       background-size: 72px 72px;
       mask-image: linear-gradient(110deg, transparent 0%, black 28%, black 62%, transparent 100%);
     }
-    body::after {
-      content: "";
-      position: fixed;
-      right: 7vw;
-      bottom: 14vh;
-      width: 180px;
-      height: 180px;
-      pointer-events: none;
-      opacity: .045;
-      background:
-        radial-gradient(circle at 66% 34%, transparent 0 24px, var(--green) 25px 45px, transparent 46px),
-        radial-gradient(circle at 42% 58%, var(--green) 0 38px, transparent 39px),
-        radial-gradient(circle at 29% 42%, var(--green) 0 18px, transparent 19px),
-        linear-gradient(135deg, transparent 0 46%, var(--green) 47% 54%, transparent 55%);
-      filter: blur(.2px);
-    }
     header {
       display: flex;
       align-items: center;
@@ -459,6 +443,7 @@
   <div class="input-shortcuts" aria-label="固定範圍快捷提問">
     <div class="quick-label">常用假設</div>
     <div class="quick-direct" role="group" aria-label="固定情境快捷提問">
+      <button type="button" onclick="quickAsk('交通壅塞級別如何判定？')">壅塞級別判定</button>
       <button type="button" onclick="quickAsk('假設忠孝東路四段已達 A 級壅塞，依 SOP 要啟動哪些交通應變？')">忠孝東路四段 A 級</button>
       <button type="button" onclick="quickAsk('假設光復南路已達 B 級壅塞，依 SOP 要啟動哪些交通應變？')">光復南路 B 級</button>
       <button type="button" onclick="quickAsk('假設捷運國父紀念館站人潮增至 40,000 人，依 SOP 要啟動哪些捷運與接駁措施？')">國父紀念館站分流</button>
@@ -483,6 +468,8 @@
   // ── 狀態 ──
   const history = [];   // [{ role, content }]
   let isLoading = false;
+  const urlParams = new URLSearchParams(window.location.search);
+  const currentSnapshotTimestamp = urlParams.get('snapshot_timestamp') || urlParams.get('ts') || null;
 
   // ── DOM refs ──
   const messagesEl   = document.getElementById('messages');
@@ -543,7 +530,7 @@
     })),
     notification: stationNames.map(name => ({
       label: name,
-      text: `假設${name}外籍旅客比例達 35%，依 SOP 是否需要啟動多語數位通報，並產出通報建議？`,
+      text: `檢查${name}是否需要啟動多語通報。`,
     })),
   };
 
@@ -602,7 +589,11 @@
       const res = await fetch('/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, history: history.slice(0, -1) }),
+        body: JSON.stringify({
+          question,
+          history: history.slice(0, -1),
+          snapshot_timestamp: currentSnapshotTimestamp,
+        }),
       });
 
       const data = await res.json();

@@ -80,8 +80,9 @@ async def chat_endpoint(req: ChatRequest):
     核心對話端點。資料流：
     1. 接收指揮官 what-if 問題
     2. 載入 SOP 全文
-    3. 對話歷史 + SOP 全文 + 使用者假設問題 → LLM
-    4. 回傳策略諮詢回答，前端存入 history
+    3. 依 snapshot_timestamp 取得 Dashboard 當前播放快照
+    4. 對話歷史 + SOP 全文 + 使用者假設問題 + 當前快照 → LLM
+    5. 回傳策略諮詢回答，前端存入 history
     """
     try:
         logger.info("問題：%s", req.question[:100])

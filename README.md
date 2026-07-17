@@ -224,6 +224,14 @@ python3 -m uvicorn app:app --reload --port 8000
 http://localhost:8000
 ```
 
+若要模擬 Dashboard 播放軸停在特定時間點，可在網址加上時間參數：
+
+```text
+http://localhost:8000?snapshot_timestamp=2026-05-20%2022:00
+```
+
+Module 3 會把使用者問題中明講的數字或狀態視為 what-if 假設；沒有明講的現況，例如替代道路飽和度、站點漫遊率、人流成長率，則由該時間點的 `TrafficSnapshot` 補足。
+
 
 ## 常用指令
 
