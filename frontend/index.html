@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Squirrel 決策解釋儀表板</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Module 4 Reasoning & Explainability</p>
+          <h1>城市應變決策證據鏈</h1>
+        </div>
+        <div class="top-actions">
+          <label class="field">
+            <span>時間</span>
+            <select id="timestampSelect">
+              <option value="2026-05-20 22:15">2026-05-20 22:15</option>
+              <option value="2026-05-20 22:30">2026-05-20 22:30</option>
+              <option value="2026-05-20 22:45">2026-05-20 22:45</option>
+              <option value="2026-05-20 23:00">2026-05-20 23:00</option>
+            </select>
+          </label>
+          <button id="refreshButton" class="icon-button" title="重新載入" aria-label="重新載入">
+            <span aria-hidden="true">↻</span>
+          </button>
+        </div>
+      </header>
+
+      <main>
+        <section class="summary-band">
+          <div class="summary-primary">
+            <div class="level-badge" id="levelBadge">--</div>
+            <div>
+              <p class="section-kicker">即時判定</p>
+              <h2 id="summaryTitle">載入中</h2>
+              <p id="summaryText" class="summary-text">正在讀取模組四決策資料</p>
+            </div>
+          </div>
+          <div class="metric-strip">
+            <article>
+              <span>主要改道</span>
+              <strong id="primaryRoute">--</strong>
+            </article>
+            <article>
+              <span>ETE</span>
+              <strong id="eteMetric">--</strong>
+            </article>
+            <article>
+              <span>信心</span>
+              <strong id="confidenceMetric">--</strong>
+            </article>
+            <article>
+              <span>驗證</span>
+              <strong id="validationMetric">--</strong>
+            </article>
+          </div>
+        </section>
+
+        <section class="dashboard-grid">
+          <div class="column-main">
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <p class="section-kicker">Evidence Chain</p>
+                  <h3>決策時間軸</h3>
+                </div>
+                <span id="decisionId" class="pill">--</span>
+              </div>
+              <ol id="timeline" class="timeline"></ol>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <p class="section-kicker">Route Evaluation</p>
+                  <h3>候選道路比較</h3>
+                </div>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>排序</th>
+                      <th>道路</th>
+                      <th>容量</th>
+                      <th>目前飽和度</th>
+                      <th>分流後</th>
+                      <th>狀態</th>
+                      <th>排除理由</th>
+                    </tr>
+                  </thead>
+                  <tbody id="routeTable"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="panel ask-panel">
+              <div class="panel-header">
+                <div>
+                  <p class="section-kicker">Why Panel</p>
+                  <h3>為什麼？</h3>
+                </div>
+              </div>
+              <div class="question-row" id="quickQuestions">
+                <button data-question="為什麼是 A 級？">A 級原因</button>
+                <button data-question="為什麼推薦仁愛路？">推薦原因</button>
+                <button data-question="為什麼排除延吉街？">排除原因</button>
+                <button data-question="ETE 怎麼計算？">ETE 計算</button>
+                <button data-question="信心分數可靠嗎？">信心分數</button>
+              </div>
+              <form id="askForm" class="ask-form">
+                <input id="questionInput" type="text" value="為什麼推薦仁愛路？" aria-label="追問問題" />
+                <button type="submit">詢問</button>
+              </form>
+              <div id="answerBox" class="answer-box">選一個問題或直接輸入追問。</div>
+            </section>
+          </div>
+
+          <aside class="column-side">
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <p class="section-kicker">SOP Hits</p>
+                  <h3>命中規則</h3>
+                </div>
+              </div>
+              <div id="sopCards" class="sop-list"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <p class="section-kicker">ETE Formula</p>
+                  <h3>恢復時間展開</h3>
+                </div>
+              </div>
+              <div class="formula-box">
+                <p id="formulaLine">--</p>
+                <div class="formula-grid">
+                  <span>基礎清除</span>
+                  <strong id="baseMinutes">--</strong>
+                  <span>壅塞修正</span>
+                  <strong id="adjustMinutes">--</strong>
+                  <span>預計恢復</span>
+                  <strong id="totalMinutes">--</strong>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <p class="section-kicker">Data Quality</p>
+                  <h3>信心與限制</h3>
+                </div>
+              </div>
+              <div class="confidence-ring">
+                <div id="confidenceRing" class="ring">--</div>
+                <div>
+                  <strong id="confidenceLabel">--</strong>
+                  <p id="confidenceText">--</p>
+                </div>
+              </div>
+              <ul id="warningList" class="warning-list"></ul>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <p class="section-kicker">Raw Snapshot</p>
+                  <h3>事故資料</h3>
+                </div>
+              </div>
+              <dl id="rawFacts" class="facts"></dl>
+            </section>
+          </aside>
+        </section>
+      </main>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="/assets/app.js"></script>
+  </body>
+</html>
