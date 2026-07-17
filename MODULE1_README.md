@@ -33,12 +33,31 @@ python -m venv .venv
 
 ```bash
 # Windows (Git Bash)
-./.venv/Scripts/python.exe -m uvicorn module1_dashboard.backend.main:app --reload
+./.venv/Scripts/python.exe -m uvicorn module1_dashboard.backend.main:app --reload --port 8004
 # macOS / Linux
-.venv/bin/python -m uvicorn module1_dashboard.backend.main:app --reload
+.venv/bin/python -m uvicorn module1_dashboard.backend.main:app --reload --port 8004
 ```
 
-開瀏覽器到 <http://127.0.0.1:8000>。
+開瀏覽器到 <http://127.0.0.1:8004>。
+
+## LLM 設定（門檻觸發後的中文摘要）
+
+呼叫本機 [Ollama](https://ollama.com/)（預設模型 `qwen2.5:1.5b`），免 API key、可離線；呼叫失敗、逾時或 Ollama 沒開時會自動退回規則式樣板文字（`_fallback_summary`），不會讓 API 掛掉。
+
+使用前先確認本機已經拉好模型並啟動 Ollama：
+
+```bash
+ollama pull qwen2.5:1.5b
+ollama serve   # 通常安裝完會自動常駐，這行多半不用手動下
+```
+
+CPU 推論較慢（實測約 10+ 秒/次，冷啟動更久），可用環境變數調整：
+
+```bash
+OLLAMA_BASE_URL=http://localhost:11434  # 選填
+OLLAMA_MODEL=qwen2.5:1.5b               # 選填
+OLLAMA_TIMEOUT=10                       # 選填，秒數
+```
 
 ## 目錄結構
 
@@ -49,7 +68,7 @@ module1_dashboard/
 ├── backend/
 │   ├── main.py          # FastAPI app：/api/* + 掛載 frontend/ 靜態檔
 │   ├── thresholds.py     # SOP 第 1/3 條門檻判斷（純函式，回傳 TriggerDecision）
-│   └── llm_summary.py    # 門檻觸發後產生中文摘要；有 ANTHROPIC_API_KEY 才會真的呼叫 LLM，否則走規則式 fallback
+│   └── llm_summary.py    # 門檻觸發後產生中文摘要；呼叫本機 Ollama，見上方「LLM 設定」
 └── frontend/
     ├── index.html
     ├── style.css
@@ -70,14 +89,14 @@ module1_dashboard/
 ## 快速驗證（不開瀏覽器）
 
 ```bash
-./.venv/Scripts/python.exe -m uvicorn module1_dashboard.backend.main:app &
-curl "http://127.0.0.1:8000/api/dashboard?timestamp=2026-05-20%2022:30"
+./.venv/Scripts/python.exe -m uvicorn module1_dashboard.backend.main:app --port 8004 &
+curl "http://127.0.0.1:8004/api/dashboard?timestamp=2026-05-20%2022:30"
 ```
 
 `2026-05-20 22:30` 這個時間點 `RD_TPE_002`（光復南路）因事故已經飽和，會看到第 1 條觸發；可以換到 `22:45`／`23:00` 觀察 `BS_MRT_BL17` 的第 3 條是否觸發。
 
 ## 已知限制（prototype 階段）
 
-- LLM 摘要預設沒有 API key，走規則式樣板文字，不是真正 LLM 產出的品質。
+- LLM 摘要呼叫本機 Ollama，CPU 推論較慢；設定與環境變數見上方「LLM 設定」章節，Ollama 沒開時會退回規則式樣板文字。
 - 時間軸圖表用等間距（ordinal）x 軸，不是依實際時間比例繪製 —— 因為官方資料時間間隔不固定（17:00–20:00 每 30–60 分，21:00 起每 15 分），先用等間距簡化。
-- 沒有自動化測試，僅手動驗證 API 與畫面。
+

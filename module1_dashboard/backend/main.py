@@ -2,9 +2,9 @@
 Module 1 — Dynamic Time-Series Dashboard prototype API.
 
 執行方式（於 repo 根目錄）：
-    python -m uvicorn module1_dashboard.backend.main:app --reload
+    python -m uvicorn module1_dashboard.backend.main:app --reload --port 8004
 
-啟動後開 http://127.0.0.1:8000 即可看到前端 dashboard。
+啟動後開 http://127.0.0.1:8004 即可看到前端 dashboard。
 """
 
 import sys
