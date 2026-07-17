@@ -6,7 +6,6 @@
 ---
 
 ## 1. 資料依賴
-
 原則：**一律透過 `data/snapshot.py` 的 `get_snapshot(timestamp)` / `available_timestamps()` 取得資料，不直接讀 `data_source/` 原始檔**，欄位正規化（`Roaming_User_Pct` → 0-1 float、timestamp 格式）已在該層處理完成，Module 1 不用重做一次。
 
 | 官方原始檔 | 進入 `TrafficSnapshot` 的哪個欄位 | Module 1 用途 |
