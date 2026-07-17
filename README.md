@@ -46,14 +46,16 @@ sop/           # 官方 SOP 規則文件
 │   └── live_incidents.json         # 突發事件資料
 ├── data/
 │   ├── __init__.py
-│   └── snapshot.py                 # 讀 data_source，產生 TrafficSnapshot
+│   ├── snapshot.py                 # 讀 data_source，產生 TrafficSnapshot
+│   └── module3_demo_snapshot.py     # 模組 3 mock demo 快照 overlay
 ├── shared/
 │   ├── __init__.py
 │   ├── schemas.py                  # 共用 schema
 │   └── lookup.py                   # 路名、站名、場館別名查詢
 ├── docs/
 │   ├── shared_data_contract.md     # 共用資料說明
-│   └── module3_advisor_architecture.md
+│   ├── module3_advisor_architecture.md
+│   └── module3_test_checklist.md    # 模組 3 demo 測試清單
 ├── sop/
 │   └── emergency_traffic_sop.txt   # 主辦方官方 SOP 七條應變規則
 ├── app.py                          # 模組 3 demo API
@@ -61,6 +63,7 @@ sop/           # 官方 SOP 規則文件
 ├── llm/                            # LLM 抽象層
 ├── static/                         # 模組 3 demo UI
 ├── requirements.txt
+├── MODULE3_README.md               # 模組 3 專用快速導覽
 └── README.md
 ```
 
