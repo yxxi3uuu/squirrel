@@ -3,8 +3,6 @@
 > Branch: `module-3-advisory`
 > Version: v3（對齊 main 共用架構）
 
-給組員的快速導覽：模組 3 在做什麼、檔案在哪裡、資料怎麼流、現在做到哪、要用什麼技術、怎麼啟動來玩。詳細設計決策與逐條 SOP 判斷細節見 [`docs/module3_advisor_architecture.md`](docs/module3_advisor_architecture.md)；要逐題驗收見 [`docs/module3_test_checklist.md`](docs/module3_test_checklist.md)。
-
 <br>
 
 ## 概覽
@@ -172,7 +170,7 @@ http://localhost:8000?snapshot_timestamp=2026-05-20%2022:00
 
 <br>
 
-## 怎麼玩 chatbot
+## squirrel 使用指南
 
 畫面上半部是「選情境與地點」快捷區：
 
