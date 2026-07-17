@@ -167,7 +167,15 @@ def _commanderize_answer(answer: str) -> str:
     answer = re.sub(r"\bRD_[A-Z0-9_]+\b", "指定路段", answer)
     for token, original in protected_ids.items():
         answer = answer.replace(token, original)
-    return answer
+    return _space_cjk_latin(answer)
+
+
+def _space_cjk_latin(text: str) -> str:
+    # 英文站名（例如 ATT4FUN周邊）直接黏在中文字旁邊時很難讀，插入空格分開；
+    # 只處理英文字母的邊界，數字（如「台北101廣場」）維持原樣不加空格。
+    text = re.sub(r"([一-鿿])([A-Za-z])", r"\1 \2", text)
+    text = re.sub(r"([A-Za-z])([一-鿿])", r"\1 \2", text)
+    return text
 
 
 def _finalize_public_answer(answer: str) -> str:
