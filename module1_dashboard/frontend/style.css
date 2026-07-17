@@ -77,6 +77,47 @@ body {
   max-width: 880px;
 }
 
+/* --- overall layout: main content + fixed-size alert sidebar --- */
+.app-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+}
+
+.main-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.sidebar {
+  width: 300px;
+  flex-shrink: 0;
+  position: sticky;
+  top: 20px;
+  max-height: calc(100vh - 40px);
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-title {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 0 0 10px;
+  font-weight: 600;
+}
+
+@media (max-width: 900px) {
+  .app-layout {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    position: static;
+    max-height: none;
+  }
+}
+
 /* --- filter row: one row, above the charts --- */
 .filter-row {
   display: flex;
@@ -122,12 +163,18 @@ body {
   color: var(--text-muted);
 }
 
-/* --- alert panel --- */
+/* --- alert panel: fixed-size, scrolls internally so new alerts never reflow the page --- */
 .alert-panel {
-  margin-bottom: 20px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-1);
+  padding: 10px;
+  min-height: 200px;
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
 }
 
 .alert-panel:empty::before {
