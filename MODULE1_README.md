@@ -3,7 +3,7 @@
 > Branch: `module-1-dynamicTS`
 > Version: v1（全都 main 共用架構）
 
-範圍見 [SPEC.md](SPEC.md)。這是 FastAPI（後端 + API）＋純 HTML/JS（前端，無需 build）的 prototype。
+範圍見 [SPEC.md](module1_dashboard/SPEC.md)。這是 FastAPI（後端 + API）＋純 HTML/JS（前端，無需 build）的 prototype。
 
 ## 負責的 SOP 條款
 
@@ -12,7 +12,6 @@
 | 第 1 條 | 交通擁塞級別判定 | 全 15 路段依 `saturation_score` 分級（B 級 ≥0.85 黃燈、A 級 ≥0.95 紅燈）；`RD_TPE_001`／`RD_TPE_002` 額外觸發長綠燈時制建議 |
 | 第 3 條 | 捷運與接駁分流 | `BS_MRT_BL17` 人流成長率 >30% 或人數 >25,000 時觸發，建議北捷過站不停、通知公車處調度接駁專車 |
 
-**不負責的條款：** 事故路網重規劃（模組 2）、對話式策略諮詢（模組 3）、判定依據解釋鏈（模組 4）、多語通報（模組 5）。
 
 ## 安裝
 
@@ -46,7 +45,6 @@ python -m venv .venv
 ```text
 module1_dashboard/
 ├── SPEC.md
-├── README.md
 ├── requirements.txt
 ├── backend/
 │   ├── main.py          # FastAPI app：/api/* + 掛載 frontend/ 靜態檔
