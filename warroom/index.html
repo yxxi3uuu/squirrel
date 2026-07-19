@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>SQUIRREL 交通指揮中心</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+</head>
+<body>
+
+<!-- ══ TOP BAR ══════════════════════════════════════════════════════════════ -->
+<header id="topbar">
+  <div class="brand">
+    <span class="logo">🐿️</span>
+    <span class="title">SQUIRREL 交通指揮中心</span>
+  </div>
+  <nav class="tabs">
+    <button class="tab active" data-tab="dashboard">🖥️ 儀表板</button>
+    <button class="tab" data-tab="incident">⚡ 事件處置</button>
+  </nav>
+  <div class="top-right">
+    <span class="badge">LLM 模式: Ollama</span>
+    <button class="bell" id="bell-btn">🔔</button>
+  </div>
+</header>
+
+<!-- ══ MAIN CONTENT ════════════════════════════════════════════════════════ -->
+<main id="main">
+
+  <!-- TAB 1: Dashboard (Module 1) -->
+  <section class="tab-panel active" id="panel-dashboard">
+    <div class="grid-2">
+      <!-- Left: Map + KPI -->
+      <div class="panel">
+        <h3>📍 路段即時監控</h3>
+        <div id="leaflet-map" style="height:240px;border-radius:8px;border:1px solid var(--border);"></div>
+        <div class="kpi-row">
+          <div class="kpi-card critical"><div class="kpi-val">1</div><div class="kpi-lbl">A級癱瘓</div></div>
+          <div class="kpi-card caution"><div class="kpi-val">2</div><div class="kpi-lbl">B級壅擠</div></div>
+          <div class="kpi-card safe"><div class="kpi-val mono">31 km/h</div><div class="kpi-lbl">平均車速</div></div>
+        </div>
+      </div>
+      <!-- Right: Alert cards -->
+      <div class="panel">
+        <h3>🚨 即時警報</h3>
+        <div class="alert-card sop1">
+          <div class="alert-hdr"><span class="alert-tag">SOP-1 壅塞</span><span class="mono">22:30</span></div>
+          <div class="alert-body">
+            <b>忠孝東路四段 (RD_TPE_001)</b><br>
+            飽和度 <span class="mono critical-text">0.96</span> → A級癱瘓<br>
+            已啟動長綠燈時制、替代道路引導
+          </div>
+          <button class="btn-explain" onclick="openDrawer('sop1')">🔍 查看判斷依據</button>
+        </div>
+        <div class="alert-card sop1">
+          <div class="alert-hdr"><span class="alert-tag caution-bg">SOP-1 壅塞</span><span class="mono">22:30</span></div>
+          <div class="alert-body">
+            <b>基隆路一段 (RD_TPE_002)</b><br>
+            飽和度 <span class="mono caution-text">0.92</span> → B級壅擠
+          </div>
+          <button class="btn-explain" onclick="openDrawer('sop1b')">🔍 查看判斷依據</button>
+        </div>
+        <div class="alert-card sop6">
+          <div class="alert-hdr"><span class="alert-tag accent-bg">SOP-6 多語</span><span class="mono">22:15</span></div>
+          <div class="alert-body">
+            <b>台北101廣場 (BS_TPE_101)</b><br>
+            漫遊率 <span class="mono critical-text">45.0%</span> ≥ 30% → 觸發七語通報
+          </div>
+          <button class="btn-explain" onclick="openModule5Drawer()">🌐 查看多語通報</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TAB 2: Incident (Module 2) -->
+  <section class="tab-panel" id="panel-incident">
+    <div class="grid-2">
+      <div class="panel">
+        <h3>⚡ 事件注入</h3>
+        <div class="inject-tabs">
+          <button class="inject-tab active">情境事件</button>
+          <button class="inject-tab">自訂事件</button>
+        </div>
+        <div class="scenario-list">
+          <div class="scenario-item" onclick="injectIncident()">
+            <b>TPE_2026_ACC_001</b> — 路面塌陷<br>
+            <span class="mono">RD_TPE_001 · severity: Critical · Closed</span>
+          </div>
+          <div class="scenario-item">
+            <b>TPE_2026_EVT_003</b> — 號誌故障<br>
+            <span class="mono">RD_TPE_002 · severity: High · Restricted</span>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>📋 SOP 決策結果</h3>
+        <div id="decision-cards">
+          <div class="decision-card">
+            <div class="decision-hdr">
+              <span class="decision-tag">SOP-2 車禍與路障應變</span>
+              <span class="ete-badge mono">ETE 83.4 min</span>
+            </div>
+            <div class="decision-body">
+              <p><b>主疏散：</b>市民大道四段 (RD_TPE_003)</p>
+              <p><b>次疏散：</b>松高路、仁愛路四段</p>
+              <p><b>CMS：</b>忠孝東路封閉，請改道市民大道，預計延誤 83 分鐘</p>
+            </div>
+            <button class="btn-explain" onclick="openDrawer('sop2')">🔍 為什麼</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Module 5 已改為右側 Drawer -->
+
+</main>
+
+<!-- ══ OVERLAY: Module 4 Explanation Drawer ════════════════════════════════ -->
+<aside id="drawer" class="drawer hidden">
+  <div class="drawer-head">
+    <h3>🧠 判斷依據 — 解釋鏈</h3>
+    <button class="drawer-close" onclick="closeDrawer()">✕</button>
+  </div>
+  <div class="drawer-body">
+    <div class="chain">
+      <div class="chain-step active"><div class="node">1</div><div class="step-text"><span class="step-lbl">容量篩選</span> capacity_vph ≥ 1000</div></div>
+      <div class="chain-step active"><div class="node">2</div><div class="step-text"><span class="step-lbl">直接相交</span> 出現在 intersections 中</div></div>
+      <div class="chain-step active"><div class="node">3</div><div class="step-text"><span class="step-lbl">上游判定</span> 依 flow_direction 與路口排序</div></div>
+      <div class="chain-step active"><div class="node">4</div><div class="step-text"><span class="step-lbl">低飽和度</span> 市民大道四段 <span class="mono accent-text">0.61</span></div></div>
+    </div>
+    <div class="formula-box">
+      <div class="formula-title">ETE 公式</div>
+      <div class="formula mono">ETE = base_clearance + congestion_penalty</div>
+      <div class="formula-detail mono">= 60 + (0.89 − 0.5) × 60 = 83.4 min</div>
+    </div>
+  </div>
+</aside>
+<div id="drawer-backdrop" class="backdrop hidden" onclick="closeDrawer(); closeModule5Drawer();"></div>
+
+<!-- ══ OVERLAY: Module 5 多語通報 Drawer ══════════════════════════════════ -->
+<aside id="module5-drawer" class="drawer m5-drawer hidden">
+  <button class="m5-expand-btn" onclick="toggleModule5Expand()" title="展開/縮回">◀</button>
+  <div class="drawer-head">
+    <h3>🌐 多語化通報</h3>
+    <button class="drawer-close" onclick="closeModule5Drawer()">✕</button>
+  </div>
+  <div class="drawer-body">
+    <iframe id="m5-drawer-iframe" src="/module5/" style="width:100%;height:100%;border:none;"></iframe>
+  </div>
+</aside>
+
+<!-- ══ OVERLAY: Module 3 AI Advisor Orb ═══════════════════════════════════ -->
+<div id="advisor-orb" class="advisor-orb" onclick="toggleChat()">
+  <span>🐿️</span>
+</div>
+<div id="chat-panel" class="chat-panel hidden">
+  <div class="chat-head">
+    <b>策略顧問 SQ</b>
+    <button onclick="toggleChat()">✕</button>
+  </div>
+  <div class="chat-messages">
+    <div class="msg ai">你好！我是松鼠 AI 顧問，可以詢問 SOP 條款或假設情境分析。</div>
+    <div class="msg user">光復南路封閉會觸發什麼？</div>
+    <div class="msg ai">光復南路目前飽和度 0.72，事件 severity 為 Medium，<b>未達 SOP 第 2 條</b>要求的 High 或 Critical 等級，因此不觸發路網重規劃。建議持續監控。</div>
+  </div>
+  <div class="chat-input">
+    <input type="text" placeholder="輸入指揮官問題...">
+    <button>➤</button>
+  </div>
+</div>
+
+<!-- ══ OVERLAY: Module 5 Toast ═════════════════════════════════════════════ -->
+<div id="toast" class="toast hidden">
+  <div class="toast-content">
+    <span>🌐 多語通報門檻已達標 (45%)</span>
+    <button class="toast-btn" onclick="openModule5Drawer(); closeToast();">查看多語文案</button>
+    <button class="toast-close" onclick="closeToast()">✕</button>
+  </div>
+</div>
+
+<!-- ══ FOOTER ══════════════════════════════════════════════════════════════ -->
+<footer>SQUIRREL Traffic Control War Room · Module 1~5 整合展示 · Qwen 2.5</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

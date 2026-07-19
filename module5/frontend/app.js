@@ -1,5 +1,5 @@
 /* ── 常數 ──────────────────────────────────────────────────────────────────── */
-const API = '';   // 同 origin，FastAPI serve 前端
+const API = '/api';   // 對應 warroom server 的 API 端點
 const THRESHOLD = 0.30;
 
 const LANG_ORDER = ['zh_tw','en','ja','ko','th','vi','fr'];
@@ -35,7 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
 async function checkOllama() {
   const badge = document.getElementById('ollama-badge');
   try {
-    const res  = await fetch(`${API}/api/notify/ollama-status`);
+    const res  = await fetch(`${API}/notify/ollama-status`);
     const data = await res.json();
     badge.textContent = data.ok ? `✅ ${data.message}` : `⚠️ ${data.message}`;
     badge.className   = `badge ${data.ok ? 'badge-ok' : 'badge-error'}`;
@@ -48,7 +48,7 @@ async function checkOllama() {
 /* ── 載入站點資料 ────────────────────────────────────────────────────────────── */
 async function loadStations() {
   try {
-    const res  = await fetch(`${API}/api/signal/stations`);
+    const res  = await fetch(`${API}/signal/stations`);
     const data = await res.json();
     stations   = data.stations;
     renderKPI(stations);
@@ -167,7 +167,7 @@ async function generateAlerts() {
   document.getElementById('alerts-editor').classList.add('hidden');
 
   try {
-    const res  = await fetch(`${API}/api/notify/generate`, {
+    const res  = await fetch(`${API}/notify/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -241,7 +241,7 @@ async function publishAlerts() {
   const alerts = getEditedAlerts();
 
   try {
-    const res  = await fetch(`${API}/api/notify/publish`, {
+    const res  = await fetch(`${API}/notify/publish`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

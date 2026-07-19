@@ -3,8 +3,104 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>模組 5｜多語化全通路通報</title>
+  <title>多語化全通路通報</title>
   <link rel="stylesheet" href="/static/style.css" />
+  <style>
+    /* ── 深色配色覆蓋（保留原始排版）── */
+    body { background: #0d1117 !important; color: #e6edf3 !important; overflow-y: auto !important; }
+    header { background: #161b22 !important; border-bottom-color: #74b3a8 !important; box-shadow: none !important; }
+    header h1 { color: #74b3a8 !important; }
+    .header-sub { color: #8b949e !important; }
+    .badge-ok { background: #1a2e25 !important; color: #7ccf91 !important; }
+    .badge-error { background: #2e1a1a !important; color: #e2707a !important; }
+    .badge-loading { background: #1e2a3a !important; color: #8b949e !important; }
+
+    .card { background: #161b22 !important; box-shadow: 0 1px 4px rgba(0,0,0,.3) !important; }
+    .sec-title { color: #74b3a8 !important; border-left-color: #74b3a8 !important; background: rgba(116,179,168,.08) !important; }
+
+    .card-red { background: rgba(226,112,122,.07) !important; border-color: #e2707a !important; color: #e6edf3 !important; }
+    .card-yellow { background: rgba(214,164,93,.07) !important; border-color: #d6a45d !important; color: #e6edf3 !important; }
+    .alert-card { background: rgba(226,112,122,.07) !important; border-color: #e2707a !important; color: #e6edf3 !important; }
+    .normal-card { background: rgba(214,164,93,.07) !important; border-color: #d6a45d !important; color: #e6edf3 !important; }
+    .sop-card { color: #e6edf3 !important; }
+    .sop-triggered { background: rgba(226,112,122,.07) !important; border-color: #e2707a !important; }
+    .sop-normal { background: rgba(214,164,93,.07) !important; border-color: #d6a45d !important; }
+
+    .red { color: #e2707a !important; }
+    .yellow { color: #d6a45d !important; }
+    .green { color: #7ccf91 !important; }
+
+    .kpi-box, .metric-box { background: #1c2128 !important; }
+    table thead th { background: #1c2128 !important; color: #8b949e !important; border-bottom-color: #30363d !important; }
+    table tbody td { border-bottom-color: #21262d !important; color: #e6edf3 !important; }
+    table tbody tr:hover { background: #1c2128 !important; }
+    details summary { color: #8b949e !important; }
+
+    select, textarea, input[type="text"] { background: #0d1117 !important; color: #e6edf3 !important; border-color: #30363d !important; }
+    select:focus, textarea:focus, input:focus { border-color: #74b3a8 !important; }
+
+    .btn-primary { background: #74b3a8 !important; color: #0d1117 !important; }
+    .btn-danger { background: #e2707a !important; color: #fff !important; }
+
+    .lang-tab { background: #1c2128 !important; color: #8b949e !important; border-color: #30363d !important; }
+    .lang-tab.active { color: #74b3a8 !important; background: #0d1117 !important; }
+    .lang-panels { border-color: #30363d !important; }
+
+    .publish-success { background: #1a2e25 !important; border-color: #7ccf91 !important; color: #7ccf91 !important; }
+    .preview-lang-btn { background: #1c2128 !important; color: #8b949e !important; border-color: #30363d !important; }
+    .preview-lang-btn.active { background: #74b3a8 !important; color: #0d1117 !important; border-color: #74b3a8 !important; }
+
+    .iphone { background: #1c1c1e !important; border-color: #3a3a3c !important; box-shadow: 0 0 0 7px #2c2c2e, 0 8px 28px rgba(0,0,0,.7) !important; }
+    .notch { background: #3a3a3c !important; }
+    .bubble { background: #2980b9 !important; }
+    .iphone-header { color: #8e8e93 !important; }
+    .iphone-time { color: #636366 !important; }
+
+    .hint { color: #8b949e !important; }
+    .channel-info { color: #e6edf3 !important; }
+    footer { color: #8b949e !important; }
+
+    .tag-triggered { color: #e2707a !important; }
+
+    /* ── 間距放寬 ── */
+    main { max-width: 1000px !important; margin: 0 auto !important; padding: 32px 36px !important; }
+    .card { padding: 28px 32px !important; margin-bottom: 32px !important; border-radius: 12px !important; }
+    .sec-title { margin-bottom: 24px !important; padding: 6px 14px !important; font-size: 1.1rem !important; }
+    .kpi-row { gap: 20px !important; margin-bottom: 24px !important; }
+    .kpi-box { padding: 20px !important; border-radius: 10px !important; }
+    .kpi-val { font-size: 2.2rem !important; }
+    .kpi-label { font-size: .85rem !important; margin-top: 6px !important; }
+    .metrics-row { gap: 16px !important; margin-bottom: 20px !important; }
+    .metric-box { padding: 14px 18px !important; border-radius: 10px !important; }
+    .alert-card, .normal-card { padding: 16px 20px !important; margin-bottom: 14px !important; border-radius: 10px !important; }
+    .form-row { margin-bottom: 22px !important; }
+    select { padding: 12px 16px !important; font-size: 1rem !important; border-radius: 10px !important; }
+    .sop-card { margin: 20px 0 !important; padding: 14px 20px !important; border-radius: 10px !important; }
+    .btn-primary, .btn-danger { padding: 14px 24px !important; font-size: 1rem !important; border-radius: 10px !important; }
+    .editor-title { margin: 28px 0 16px !important; font-size: 1rem !important; }
+    .lang-tabs { gap: 8px !important; margin-bottom: 0 !important; }
+    .lang-tab { padding: 9px 16px !important; font-size: .88rem !important; }
+    .lang-panels { padding: 22px !important; border-radius: 0 10px 10px 10px !important; }
+    .lang-panel textarea { height: 150px !important; padding: 14px !important; font-size: .95rem !important; border-radius: 10px !important; }
+    .publish-row { margin-bottom: 28px !important; gap: 32px !important; }
+    .preview-grid { gap: 36px !important; margin-top: 20px !important; }
+    .preview-label { font-size: 1rem !important; margin-bottom: 14px !important; }
+    .lang-selector-row { margin-bottom: 22px !important; font-size: .95rem !important; }
+    .preview-lang-btns { gap: 8px !important; }
+    .preview-lang-btn { padding: 7px 16px !important; font-size: .88rem !important; }
+    header { padding: 16px 32px !important; }
+    .header-inner { gap: 18px !important; max-width: 1000px !important; margin: 0 auto !important; }
+    header h1 { font-size: 1.3rem !important; }
+    footer { padding: 28px !important; }
+    /* 嵌入 drawer 時隱藏重複的 badge */
+    #ollama-badge { display: none !important; }
+    header { display: none !important; }
+    table { font-size: .92rem !important; }
+    thead th { padding: 12px 14px !important; }
+    tbody td { padding: 10px 14px !important; }
+    .table-scroll { margin-top: 14px !important; }
+    details summary { padding: 10px 0 !important; font-size: .95rem !important; }
+  </style>
 </head>
 <body>
 
@@ -13,7 +109,7 @@
   <div class="header-inner">
     <span class="header-icon">🚨</span>
     <div>
-      <h1>模組 5｜多語化全通路通報指揮台</h1>
+      <h1>多語化全通路通報指揮台</h1>
       <p class="header-sub">SOP 第 6 條｜漫遊率 ≥ 30% 自動觸發多語化告警</p>
     </div>
     <div id="ollama-badge" class="badge badge-loading">⏳ 檢查 Ollama…</div>
