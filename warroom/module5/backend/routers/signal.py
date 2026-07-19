@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException
 
 router = APIRouter()
 
-DATA_PATH = os.path.join("data_source", "signaling_crowd_density.csv")
+DATA_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data_source", "signaling_crowd_density.csv")
 THRESHOLD = 0.30
 
 def _load():

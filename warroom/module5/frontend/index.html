@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>多語化全通路通報</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<h2 class="sec-title">📡 信令監控與警報狀態</h2>
+<div class="kpi-row">
+  <div class="kpi-box"><div class="kpi-val red" id="kpi-triggered">—</div><div class="kpi-label">🔴 觸發站點</div></div>
+  <div class="kpi-box"><div class="kpi-val yellow" id="kpi-total">—</div><div class="kpi-label">🛰️ 站點總數</div></div>
+  <div class="kpi-box"><div class="kpi-val" id="kpi-maxrate">—</div><div class="kpi-label">📊 最高漫遊率</div></div>
+</div>
+<div id="triggered-cards"></div>
+
+<details>
+  <summary>📋 最新快照完整表格</summary>
+  <table>
+    <thead><tr><th>站點 ID</th><th>名稱</th><th>人數</th><th>漫遊率</th><th>增幅</th></tr></thead>
+    <tbody id="station-tbody"></tbody>
+  </table>
+</details>
+
+<h2 class="sec-title" style="margin-top:28px">🌐 多語化告警生成</h2>
+<div class="form-row">
+  <label>選擇站點</label>
+  <select id="station-select"></select>
+</div>
+<div id="station-metrics" class="metrics-row"></div>
+<div id="sop-banner"></div>
+<button class="btn btn-primary" id="btn-generate" disabled>⚡ 生成多語告警</button>
+<div id="generate-spinner" class="spinner hidden">🤖 Ollama 推論中…</div>
+
+<div id="alerts-editor" class="hidden">
+  <p class="editor-title">✏️ 警告文字（可編輯後發布）</p>
+  <div id="lang-tabs" class="lang-tabs"></div>
+  <div id="lang-panels" class="lang-panels"></div>
+</div>
+
+<h2 class="sec-title" style="margin-top:28px">📣 全通路一鍵模擬發布</h2>
+<div class="publish-row">
+  <div>
+    <button class="btn btn-danger" id="btn-publish" disabled>🚀 一鍵發布通報</button>
+    <p id="publish-hint" class="hint">⬆️ 請先生成告警文字</p>
+  </div>
+  <div style="font-size:.9rem">
+    <b>發布渠道：</b><br>📱 Cell Broadcast<br>🖥️ CMS 電子看板
+  </div>
+</div>
+
+<div id="publish-result" class="hidden">
+  <div class="publish-success">✅ 通報已成功發布！<span id="publish-time"></span></div>
+  <div class="lang-selector-row">
+    <span>📺 顯示語言：</span>
+    <div id="preview-lang-btns" class="preview-lang-btns"></div>
+  </div>
+  <div class="preview-grid">
+    <div>
+      <p class="preview-label">📱 Cell Broadcast</p>
+      <div class="iphone"><div class="notch"></div>
+        <div class="iphone-header">緊急廣播通知</div>
+        <div class="bubble" id="iphone-msg">—</div>
+        <div class="iphone-time" id="iphone-time"></div>
+      </div>
+    </div>
+    <div>
+      <p class="preview-label">🖥️ CMS 電子看板</p>
+      <div class="cms-board">
+        <div class="cms-flag" id="cms-flag"></div>
+        <div class="cms-title" id="cms-title"></div>
+        <div class="cms-body" id="cms-body"></div>
+        <div class="cms-footer" id="cms-footer"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>多語化全通路通報 · SOP 第 6 條 · Qwen 2.5</footer>
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,93 @@
+/* ── Module 5 Frontend Style (嵌入戰情室用) ─── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Noto Sans TC', -apple-system, sans-serif;
+  background: #0d1117; color: #e6edf3;
+  font-size: 15px; line-height: 1.7; overflow-y: auto;
+  padding: 24px 28px;
+}
+.sec-title {
+  font-size: 1.05rem; font-weight: 700; color: #7ec8bc;
+  border-left: 4px solid #7ec8bc; padding: 4px 12px; margin: 20px 0 16px;
+  background: rgba(126,200,188,.08); border-radius: 0 6px 6px 0;
+}
+.card-red { background: rgba(242,122,132,.07); border: 1.5px solid #f27a84;
+            border-radius: 10px; padding: 14px 18px; margin-bottom: 14px; }
+.card-yellow { background: rgba(234,184,92,.07); border: 1.5px solid #eab85c;
+               border-radius: 10px; padding: 14px 18px; margin-bottom: 14px; }
+.kpi-row { display: flex; gap: 14px; margin-bottom: 20px; flex-wrap: wrap; }
+.kpi-box { flex:1; min-width:120px; background:#141d26; border:1px solid #2a3a4e;
+           border-radius:10px; padding:16px; text-align:center; }
+.kpi-val { font-size: 1.8rem; font-weight: 800; }
+.kpi-label { font-size: .82rem; color: #a0b3c4; margin-top: 4px; }
+.red { color: #f27a84; } .yellow { color: #eab85c; } .green { color: #85d99a; }
+.form-row { display:flex; align-items:center; gap:12px; margin-bottom:18px; }
+.form-row label { font-weight:600; white-space:nowrap; }
+select { flex:1; padding:10px 14px; background:#0d1117; border:1.5px solid #2a3a4e;
+         border-radius:10px; color:#e6edf3; font-size:.95rem; }
+select:focus { outline:none; border-color:#7ec8bc; }
+.metrics-row { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+.metric-box { flex:1; min-width:110px; background:#141d26; border:1px solid #2a3a4e;
+              border-radius:8px; padding:10px 14px; text-align:center; }
+.metric-val { font-size:1.2rem; font-weight:700; }
+.metric-label { font-size:.78rem; color:#a0b3c4; }
+.btn { display:inline-flex; align-items:center; justify-content:center;
+       padding:12px 22px; border:none; border-radius:10px;
+       font-size:.95rem; font-weight:700; cursor:pointer; transition:opacity .15s; }
+.btn:hover:not(:disabled) { opacity:.85; }
+.btn:disabled { opacity:.4; cursor:not-allowed; }
+.btn-primary { background:#7ec8bc; color:#0d1117; width:100%; }
+.btn-danger { background:#f27a84; color:#fff; }
+.spinner { text-align:center; padding:14px; color:#a0b3c4; font-style:italic; }
+.hidden { display:none !important; }
+.editor-title { font-weight:700; margin:22px 0 12px; }
+.lang-tabs { display:flex; gap:6px; flex-wrap:wrap; border-bottom:2px solid #2a3a4e; }
+.lang-tab { padding:7px 14px; border-radius:8px 8px 0 0; background:#141d26;
+            border:1.5px solid #2a3a4e; border-bottom:none; color:#a0b3c4;
+            cursor:pointer; font-size:.85rem; font-weight:600; }
+.lang-tab.active { background:#0d1117; color:#7ec8bc; }
+.lang-panels { border:1.5px solid #2a3a4e; border-radius:0 8px 8px 8px; padding:18px; }
+.lang-panel { display:none; } .lang-panel.active { display:block; }
+.lang-panel textarea { width:100%; height:130px; padding:10px; border:1.5px solid #2a3a4e;
+                       border-radius:8px; background:#0d1117; color:#e6edf3;
+                       font-size:.92rem; resize:vertical; }
+.publish-row { display:flex; gap:24px; align-items:flex-start; flex-wrap:wrap; margin:20px 0; }
+.hint { font-size:.82rem; color:#a0b3c4; margin-top:6px; }
+.publish-success { background:#1a2e25; border:1.5px solid #85d99a;
+                   border-radius:8px; padding:12px 18px; color:#85d99a;
+                   font-weight:700; margin-bottom:18px; }
+.lang-selector-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+                     margin-bottom:18px; font-weight:600; font-size:.9rem; }
+.preview-lang-btns { display:flex; gap:6px; flex-wrap:wrap; }
+.preview-lang-btn { padding:5px 14px; border-radius:20px; border:1.5px solid #2a3a4e;
+                    background:#141d26; color:#a0b3c4; cursor:pointer;
+                    font-size:.83rem; font-weight:600; }
+.preview-lang-btn.active { background:#7ec8bc; color:#0d1117; border-color:#7ec8bc; }
+.preview-grid { display:grid; grid-template-columns:1fr 1fr; gap:28px; align-items:start; }
+@media (max-width:600px) { .preview-grid { grid-template-columns:1fr; } }
+.preview-label { font-weight:700; margin-bottom:12px; }
+.iphone { background:#1c1c1e; border:3px solid #3a3a3c; border-radius:36px;
+          padding:40px 22px 28px; max-width:260px; margin:auto;
+          box-shadow:0 0 0 7px #2c2c2e,0 8px 28px rgba(0,0,0,.7); }
+.notch { width:80px; height:14px; background:#3a3a3c;
+         border-radius:0 0 10px 10px; margin:-30px auto 16px; }
+.iphone-header { text-align:center; font-size:.72rem; color:#8e8e93; margin-bottom:8px; }
+.bubble { background:#2980b9; border-radius:14px 14px 4px 14px;
+          padding:10px 12px; color:#fff; font-size:.85rem; line-height:1.5;
+          word-break:break-word; min-height:50px; }
+.iphone-time { text-align:right; font-size:.7rem; color:#636366; margin-top:6px; }
+.cms-board { background:#1a1a1a; border:2px solid #eab85c; border-radius:10px;
+             padding:20px 24px; text-align:center; font-family:'Courier New',monospace; }
+.cms-flag { color:#a0b3c4; font-size:.78rem; margin-bottom:4px; }
+.cms-title { color:#f27a84; font-size:1.2rem; font-weight:900;
+             letter-spacing:.08em; margin-bottom:10px; }
+.cms-body { color:#eab85c; font-size:.9rem; line-height:1.6; }
+.cms-footer { color:#555; font-size:.72rem; margin-top:12px; }
+table { width:100%; border-collapse:collapse; font-size:.88rem; margin-top:10px; }
+thead th { background:#141d26; padding:10px 12px; text-align:left;
+           color:#a0b3c4; border-bottom:2px solid #2a3a4e; }
+tbody td { padding:8px 12px; border-bottom:1px solid #1e2a3a; }
+tbody tr:hover { background:#141d26; }
+.tag-triggered { color:#f27a84; font-weight:700; }
+details summary { cursor:pointer; font-size:.9rem; color:#a0b3c4; padding:8px 0; }
+footer { text-align:center; padding:20px; color:#a0b3c4; font-size:.78rem; }

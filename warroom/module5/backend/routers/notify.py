@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from typing import Optional
 import datetime
 
-from module5.backend.services.llm import (
+from warroom.module5.backend.services.llm import (
     generate_alerts, mock_alerts, check_ollama, LANG_META
 )
 
