@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>SQUIRREL 交通指揮中心</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=20260721-custom-incident">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 </head>
 <body>
@@ -63,12 +63,9 @@
           <button class="btn-explain" onclick="openDrawer('sop1b')">🔍 查看判斷依據</button>
         </div>
         <div class="alert-card sop6">
-          <div class="alert-hdr"><span class="alert-tag accent-bg">SOP-6 多語</span><span class="mono">22:15</span></div>
-          <div class="alert-body">
-            <b>台北101廣場 (BS_TPE_101)</b><br>
-            漫遊率 <span class="mono critical-text">45.0%</span> ≥ 30% → 觸發七語通報
-          </div>
-          <button class="btn-explain" onclick="openModule5Drawer()">🌐 查看多語通報</button>
+          <div class="alert-hdr"><span class="alert-tag accent-bg">SOP-6 多語</span></div>
+          <div class="alert-body">載入中…</div>
+          <button class="btn-explain" onclick="openModule5Modal()">🌐 查看多語通報</button>
         </div>
       </div>
     </div>
@@ -80,10 +77,10 @@
       <div class="panel">
         <h3>⚡ 事件注入</h3>
         <div class="inject-tabs">
-          <button class="inject-tab active">情境事件</button>
-          <button class="inject-tab">自訂事件</button>
+          <button class="inject-tab active" data-inject-panel="scenario" onclick="switchInjectPanel('scenario')">情境事件</button>
+          <button class="inject-tab" data-inject-panel="custom" onclick="switchInjectPanel('custom')">自訂事件</button>
         </div>
-        <div class="scenario-list">
+        <div class="scenario-list" id="scenario-list">
           <div class="scenario-item" onclick="injectIncident()">
             <b>TPE_2026_ACC_001</b> — 路面塌陷<br>
             <span class="mono">RD_TPE_001 · severity: Critical · Closed</span>
@@ -93,21 +90,69 @@
             <span class="mono">RD_TPE_002 · severity: High · Restricted</span>
           </div>
         </div>
+        <form id="custom-incident-form" class="custom-incident-form hidden" onsubmit="submitCustomIncident(event)">
+          <div class="form-row stacked">
+            <label for="custom-event-id">事件 ID</label>
+            <input id="custom-event-id" type="text" placeholder="CUSTOM_001">
+          </div>
+          <div class="form-row stacked">
+            <label for="custom-type">事件類型</label>
+            <select id="custom-type">
+              <option value="Road_Collapse_Accident">道路事故 / 路障</option>
+              <option value="Power_Failure">號誌故障</option>
+              <option value="Crowd_Surge_Injury">人潮推擠 / 站點事件</option>
+            </select>
+          </div>
+          <div class="form-row stacked">
+            <label for="custom-segment">目標路段或站點 ID</label>
+            <input id="custom-segment" type="text" list="event-targets" placeholder="RD_TPE_002 或 BS_MRT_BL17" required>
+            <datalist id="event-targets">
+              <option value="RD_TPE_001">忠孝東路四段</option>
+              <option value="RD_TPE_002">光復南路</option>
+              <option value="RD_TPE_007">松高路</option>
+              <option value="BS_MRT_BL17">捷運國父紀念館站</option>
+              <option value="BS_XY_ATT">ATT4FUN周邊</option>
+            </datalist>
+          </div>
+          <div class="form-grid-2">
+            <div class="form-row stacked">
+              <label for="custom-severity">嚴重度</label>
+              <select id="custom-severity">
+                <option>Critical</option>
+                <option>High</option>
+                <option selected>Medium</option>
+                <option>Low</option>
+              </select>
+            </div>
+            <div class="form-row stacked">
+              <label for="custom-status">狀態</label>
+              <select id="custom-status">
+                <option>Closed</option>
+                <option>Blocked</option>
+                <option>Restricted</option>
+                <option selected>Caution</option>
+                <option>Open</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row stacked">
+            <label for="custom-location">位置描述</label>
+            <input id="custom-location" type="text" placeholder="光復南路與忠孝東路口">
+          </div>
+          <div class="form-row stacked">
+            <label for="custom-description">事件描述</label>
+            <textarea id="custom-description" rows="3" placeholder="請輸入現場狀況，例如：號誌故障、路段封閉、人潮推擠"></textarea>
+          </div>
+          <button class="btn btn-primary" type="submit">注入自訂事件</button>
+        </form>
       </div>
       <div class="panel">
         <h3>📋 SOP 決策結果</h3>
         <div id="decision-cards">
-          <div class="decision-card">
-            <div class="decision-hdr">
-              <span class="decision-tag">SOP-2 車禍與路障應變</span>
-              <span class="ete-badge mono">ETE 83.4 min</span>
-            </div>
+          <div class="decision-card decision-muted">
             <div class="decision-body">
-              <p><b>主疏散：</b>市民大道四段 (RD_TPE_003)</p>
-              <p><b>次疏散：</b>松高路、仁愛路四段</p>
-              <p><b>CMS：</b>忠孝東路封閉，請改道市民大道，預計延誤 83 分鐘</p>
+              <p>尚未注入事件。請從左側選擇情境事件，系統會即時計算 SOP-1 / SOP-2 / SOP-5 決策、替代路線與 ETE。</p>
             </div>
-            <button class="btn-explain" onclick="openDrawer('sop2')">🔍 為什麼</button>
           </div>
         </div>
       </div>
@@ -121,10 +166,10 @@
 <!-- ══ OVERLAY: Module 4 Explanation Drawer ════════════════════════════════ -->
 <aside id="drawer" class="drawer hidden">
   <div class="drawer-head">
-    <h3>🧠 判斷依據 — 解釋鏈</h3>
+    <h3 id="drawer-title">🧠 判斷依據 — 解釋鏈</h3>
     <button class="drawer-close" onclick="closeDrawer()">✕</button>
   </div>
-  <div class="drawer-body">
+  <div class="drawer-body" id="drawer-body-content">
     <div class="chain">
       <div class="chain-step active"><div class="node">1</div><div class="step-text"><span class="step-lbl">容量篩選</span> capacity_vph ≥ 1000</div></div>
       <div class="chain-step active"><div class="node">2</div><div class="step-text"><span class="step-lbl">直接相交</span> 出現在 intersections 中</div></div>
@@ -138,19 +183,7 @@
     </div>
   </div>
 </aside>
-<div id="drawer-backdrop" class="backdrop hidden" onclick="closeDrawer(); closeModule5Drawer();"></div>
-
-<!-- ══ OVERLAY: Module 5 多語通報 Drawer ══════════════════════════════════ -->
-<aside id="module5-drawer" class="drawer m5-drawer hidden">
-  <button class="m5-expand-btn" onclick="toggleModule5Expand()" title="展開/縮回">◀</button>
-  <div class="drawer-head">
-    <h3>🌐 多語化通報</h3>
-    <button class="drawer-close" onclick="closeModule5Drawer()">✕</button>
-  </div>
-  <div class="drawer-body">
-    <iframe id="m5-drawer-iframe" src="/m5/" style="width:100%;height:100%;border:none;"></iframe>
-  </div>
-</aside>
+<div id="drawer-backdrop" class="backdrop hidden" onclick="closeDrawer(); closeModule5Modal();"></div>
 
 <!-- ══ OVERLAY: Module 3 AI Advisor Orb ═══════════════════════════════════ -->
 <div id="advisor-orb" class="advisor-orb" onclick="toggleChat()">
@@ -158,26 +191,78 @@
 </div>
 <div id="chat-panel" class="chat-panel hidden">
   <div class="chat-head">
-    <b>策略顧問 SQ</b>
+    <div class="chat-brand-icon">🐿️</div>
+    <div class="chat-title-block">
+      <b>策略顧問 SQ</b>
+      <span><i class="mode-dot"></i> 整合版 · 讀取即時快照</span>
+    </div>
     <button onclick="toggleChat()">✕</button>
   </div>
-  <div class="chat-messages">
-    <div class="msg ai">你好！我是松鼠 AI 顧問，可以詢問 SOP 條款或假設情境分析。</div>
-    <div class="msg user">光復南路封閉會觸發什麼？</div>
-    <div class="msg ai">光復南路目前飽和度 0.72，事件 severity 為 Medium，<b>未達 SOP 第 2 條</b>要求的 High 或 Critical 等級，因此不觸發路網重規劃。建議持續監控。</div>
+  <div class="advisor-quick-panel">
+    <div class="advisor-category-row">
+      <button class="advisor-category active" data-advisor-set="incident" onclick="showAdvisorScenarioSet('incident')">車禍與路障應變</button>
+      <button class="advisor-category" data-advisor-set="signal" onclick="showAdvisorScenarioSet('signal')">號誌故障應變</button>
+      <button class="advisor-category" data-advisor-set="notification" onclick="showAdvisorScenarioSet('notification')">數位通報</button>
+    </div>
+    <div class="advisor-scenario-row">
+      <select id="advisor-scenario-select" aria-label="顧問情境"></select>
+      <button class="advisor-apply" onclick="askAdvisorScenario()">套用情境</button>
+    </div>
+    <div class="advisor-chip-row">
+      <button class="advisor-chip" onclick="advisorQuickAsk('交通壅塞級別如何判定？')">壅塞級別判定</button>
+      <button class="advisor-chip" onclick="advisorQuickAsk('忠孝東路四段 A 級壅塞，依 SOP-1 要怎麼處理？')">忠孝東路四段 A 級</button>
+      <button class="advisor-chip" onclick="advisorQuickAsk('光復南路 B 級壅塞，依 SOP-1 是否觸發應變？')">光復南路 B 級</button>
+      <button class="advisor-chip" onclick="advisorQuickAsk('假設捷運國父紀念館站人潮增至 40,000 人，依 SOP 要啟動哪些捷運與接駁措施？')">國父紀念館分流</button>
+      <button class="advisor-chip" onclick="advisorQuickAsk('假設大巨蛋人潮曾達 40,000 人且目前人流成長率為 -0.25，依 SOP 要啟動哪些措施並連動什麼檢查？')">大巨蛋散場啟動</button>
+      <button class="advisor-chip" onclick="advisorQuickAsk('目前哪些站點需要啟動多語通報？')">多語通報掃描</button>
+    </div>
+  </div>
+  <div class="chat-messages" id="chat-messages">
+    <div class="msg ai">你好！我是松鼠 AI 顧問，可以問我路段狀態、SOP 條款，或套用上方情境檢查是否觸發應變。</div>
   </div>
   <div class="chat-input">
-    <input type="text" placeholder="輸入指揮官問題...">
-    <button>➤</button>
+    <input id="advisor-input" type="text" placeholder="輸入假設性問題..." onkeydown="if(event.key==='Enter') sendAdvisorMessage()">
+    <button onclick="sendAdvisorMessage()">➤</button>
   </div>
 </div>
 
-<!-- ══ OVERLAY: Module 5 Toast ═════════════════════════════════════════════ -->
+<!-- ══ OVERLAY: Module 5 多語通報 Toast ════════════════════════════════════ -->
 <div id="toast" class="toast hidden">
   <div class="toast-content">
-    <span>🌐 多語通報門檻已達標 (45%)</span>
-    <button class="toast-btn" onclick="openModule5Drawer(); closeToast();">查看多語文案</button>
+    <span id="toast-text">🌐 多語通報狀態載入中…</span>
+    <button class="toast-btn" onclick="openModule5Modal(); closeToast();">查看多語文案</button>
     <button class="toast-close" onclick="closeToast()">✕</button>
+  </div>
+</div>
+
+<!-- ══ OVERLAY: Module 5 多語通報 Modal（原生，直接呼叫 /api/notify、/api/signal，接 Ollama）══ -->
+<div id="m5-modal-overlay" class="modal-overlay hidden" onclick="if(event.target===this) closeModule5Modal();">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-eyebrow">SOP-6 · 數位通報與多語化</div>
+      <h4 id="m5-modal-title">載入站點資料中…</h4>
+      <div class="modal-meta mono" id="m5-modal-meta"></div>
+      <button class="drawer-close modal-close" onclick="closeModule5Modal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <label>選擇站點</label>
+        <select id="m5-station-select"></select>
+      </div>
+      <div id="m5-sop-banner"></div>
+      <button class="btn btn-primary" id="m5-btn-generate" onclick="m5Generate()">⚡ 生成多語告警</button>
+      <div id="m5-spinner" class="spinner hidden">🤖 Ollama 推論中…</div>
+      <div id="m5-editor" class="hidden">
+        <p class="editor-title">✏️ 警告文字（可編輯後發布）</p>
+        <div id="m5-lang-tabs" class="lang-tabs"></div>
+        <div id="m5-lang-panels" class="lang-panels"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" onclick="m5CopyAll()">複製全部語言</button>
+        <button class="btn btn-danger" id="m5-btn-publish" disabled onclick="m5Publish()">發送簡訊＋看板</button>
+      </div>
+      <div id="m5-publish-result" class="hidden"></div>
+    </div>
   </div>
 </div>
 
@@ -185,6 +270,6 @@
 <footer>SQUIRREL Traffic Control War Room · Module 1~5 整合展示 · Qwen 2.5</footer>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<script src="app.js"></script>
+<script src="app.js?v=20260721-custom-incident"></script>
 </body>
 </html>
