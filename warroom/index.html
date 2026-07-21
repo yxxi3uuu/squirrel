@@ -105,14 +105,58 @@
           </div>
           <div class="form-row stacked">
             <label for="custom-segment">目標路段或站點 ID</label>
-            <input id="custom-segment" type="text" list="event-targets" placeholder="RD_TPE_002 或 BS_MRT_BL17" required>
-            <datalist id="event-targets">
-              <option value="RD_TPE_001">忠孝東路四段</option>
-              <option value="RD_TPE_002">光復南路</option>
-              <option value="RD_TPE_007">松高路</option>
-              <option value="BS_MRT_BL17">捷運國父紀念館站</option>
-              <option value="BS_XY_ATT">ATT4FUN周邊</option>
-            </datalist>
+            <select id="custom-segment">
+              <option value="">— 請選擇 —</option>
+              <optgroup label="道路路段">
+                <option value="RD_TPE_001">RD_TPE_001 — 忠孝東路四段</option>
+                <option value="RD_TPE_002">RD_TPE_002 — 光復南路</option>
+                <option value="RD_TPE_003">RD_TPE_003 — 基隆路一段</option>
+                <option value="RD_TPE_004">RD_TPE_004 — 市民大道四段</option>
+                <option value="RD_TPE_005">RD_TPE_005 — 仁愛路四段</option>
+                <option value="RD_TPE_006">RD_TPE_006 — 敦化南路一段</option>
+                <option value="RD_TPE_007">RD_TPE_007 — 松高路</option>
+                <option value="RD_TPE_008">RD_TPE_008 — 延吉街</option>
+                <option value="RD_TPE_009">RD_TPE_009 — 基隆路地下道</option>
+                <option value="RD_TPE_010">RD_TPE_010 — 市府路</option>
+                <option value="RD_TPE_011">RD_TPE_011 — 松壽路</option>
+                <option value="RD_TPE_012">RD_TPE_012 — 敦化南路二段</option>
+                <option value="RD_TPE_013">RD_TPE_013 — 信義路五段</option>
+                <option value="RD_TPE_014">RD_TPE_014 — 松智路</option>
+                <option value="RD_TPE_015">RD_TPE_015 — 復興南路一段</option>
+              </optgroup>
+              <optgroup label="基地台 / 站點">
+                <option value="BS_TPE_DOME">BS_TPE_DOME — 大巨蛋場館內</option>
+                <option value="BS_MRT_BL17">BS_MRT_BL17 — 捷運國父紀念館站</option>
+                <option value="BS_SS_PARK">BS_SS_PARK — 松山文創園區</option>
+                <option value="BS_MRT_BL16">BS_MRT_BL16 — 捷運忠孝敦化站</option>
+                <option value="BS_XY_VIESHOW">BS_XY_VIESHOW — 信義威秀商圈</option>
+                <option value="BS_TPE_101">BS_TPE_101 — 台北101廣場</option>
+                <option value="BS_BUS_TERM">BS_BUS_TERM — 市府轉運站</option>
+                <option value="BS_XY_ATT">BS_XY_ATT — ATT4FUN周邊</option>
+                <option value="BS_MRT_BL18">BS_MRT_BL18 — 捷運市政府站</option>
+              </optgroup>
+            </select>
+          </div>
+          <div class="form-row stacked">
+            <label for="custom-affected-road">受影響道路（選填）</label>
+            <select id="custom-affected-road">
+              <option value="">— 不指定 —</option>
+              <option value="RD_TPE_001">RD_TPE_001 — 忠孝東路四段</option>
+              <option value="RD_TPE_002">RD_TPE_002 — 光復南路</option>
+              <option value="RD_TPE_003">RD_TPE_003 — 基隆路一段</option>
+              <option value="RD_TPE_004">RD_TPE_004 — 市民大道四段</option>
+              <option value="RD_TPE_005">RD_TPE_005 — 仁愛路四段</option>
+              <option value="RD_TPE_006">RD_TPE_006 — 敦化南路一段</option>
+              <option value="RD_TPE_007">RD_TPE_007 — 松高路</option>
+              <option value="RD_TPE_008">RD_TPE_008 — 延吉街</option>
+              <option value="RD_TPE_009">RD_TPE_009 — 基隆路地下道</option>
+              <option value="RD_TPE_010">RD_TPE_010 — 市府路</option>
+              <option value="RD_TPE_011">RD_TPE_011 — 松壽路</option>
+              <option value="RD_TPE_012">RD_TPE_012 — 敦化南路二段</option>
+              <option value="RD_TPE_013">RD_TPE_013 — 信義路五段</option>
+              <option value="RD_TPE_014">RD_TPE_014 — 松智路</option>
+              <option value="RD_TPE_015">RD_TPE_015 — 復興南路一段</option>
+            </select>
           </div>
           <div class="form-grid-2">
             <div class="form-row stacked">
@@ -164,7 +208,8 @@
 </main>
 
 <!-- ══ OVERLAY: Module 4 Explanation Drawer ════════════════════════════════ -->
-<aside id="drawer" class="drawer hidden">
+<div id="drawer-backdrop" class="backdrop" onclick="closeDrawer()"></div>
+<aside id="drawer" class="drawer">
   <div class="drawer-head">
     <h3 id="drawer-title">🧠 判斷依據 — 解釋鏈</h3>
     <button class="drawer-close" onclick="closeDrawer()">✕</button>
@@ -183,7 +228,6 @@
     </div>
   </div>
 </aside>
-<div id="drawer-backdrop" class="backdrop hidden" onclick="closeDrawer(); closeModule5Modal();"></div>
 
 <!-- ══ OVERLAY: Module 3 AI Advisor Orb ═══════════════════════════════════ -->
 <div id="advisor-orb" class="advisor-orb" onclick="toggleChat()">

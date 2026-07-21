@@ -134,12 +134,33 @@ async function loadIncidentData() {
 function renderIncidentList(incidents) {
   const container = document.querySelector('.scenario-list');
   if (!container) return;
-  container.innerHTML = incidents.map(inc => `
+  // 用 event_id 去重，確保每個事件只顯示一次
+  const seen = new Set();
+  const unique = incidents.filter(inc => {
+    if (seen.has(inc.event_id)) return false;
+    seen.add(inc.event_id);
+    return true;
+  });
+  // 預設情境事件（JSON 檔案中的 3 筆）
+  const scenarios = unique.filter(inc => !inc.event_id.startsWith('CUSTOM'));
+  // 自訂注入的事件
+  const customs = unique.filter(inc => inc.event_id.startsWith('CUSTOM'));
+  let html = scenarios.map(inc => `
     <div class="scenario-item" onclick="injectIncident('${inc.event_id}')">
       <b>${inc.event_id}</b> — ${inc.type}<br>
       <span class="mono">${inc.affected_segment} · ${inc.severity} · ${inc.status}</span>
     </div>
   `).join('');
+  if (customs.length) {
+    html += `<div class="inject-section-divider">自訂事件紀錄</div>`;
+    html += customs.map(inc => `
+      <div class="scenario-item scenario-custom" onclick="injectIncident('${inc.event_id}')">
+        <b>${inc.event_id}</b> — ${inc.type}<br>
+        <span class="mono">${inc.affected_segment} · ${inc.severity} · ${inc.status}</span>
+      </div>
+    `).join('');
+  }
+  container.innerHTML = html;
 }
 
 function switchInjectPanel(panel) {
@@ -163,13 +184,13 @@ document.querySelectorAll('.tab').forEach(btn => {
 /* ── Drawer (Module 4) ────────────────────────────────────────────────────────
    SOP-1 直接查 /api/traffic；SOP-2/SOP-5 則讀最近一次事件注入後的真實 decisions。 */
 function openDrawer(type) {
-  document.getElementById('drawer').classList.remove('hidden');
-  document.getElementById('drawer-backdrop').classList.remove('hidden');
+  document.getElementById('drawer').classList.add('open');
+  document.getElementById('drawer-backdrop').classList.add('open');
   renderDrawerContent(type);
 }
 function closeDrawer() {
-  document.getElementById('drawer').classList.add('hidden');
-  document.getElementById('drawer-backdrop').classList.add('hidden');
+  document.getElementById('drawer').classList.remove('open');
+  document.getElementById('drawer-backdrop').classList.remove('open');
 }
 
 async function renderDrawerContent(type) {
@@ -284,14 +305,6 @@ function renderDecisionExplanation(decision) {
       <div class="formula mono">${ete.formula_note || 'ETE = base_clearance + congestion_penalty'}</div>
       <div class="formula-detail mono">= ${ete.base_clearance ?? '-'} + ${ete.congestion_penalty ?? '-'} = ${decision.ete_minutes} min</div>
       <div class="formula-detail">平均飽和度 ${ete.avg_saturation ?? '-'}；計算路段 ${(ete.affected_segments_used || []).join('、')}</div>
-    </div>` : ''}
-    ${decision.cms_text ? `<div class="formula-box align-left">
-      <div class="formula-title">CMS 文字</div>
-      <div>${decision.cms_text}</div>
-    </div>` : ''}
-    ${decision.guidance_text ? `<div class="formula-box align-left">
-      <div class="formula-title">指揮官摘要</div>
-      <div>${decision.guidance_text}</div>
     </div>` : ''}`;
 }
 
@@ -436,12 +449,10 @@ const M5_LANG_LABEL = { zh_tw: '🇹🇼 繁中', en: '🇺🇸 EN', ja: '🇯�
 
 async function openModule5Modal() {
   document.getElementById('m5-modal-overlay').classList.remove('hidden');
-  document.getElementById('drawer-backdrop').classList.remove('hidden');
   if (!m5Stations.length) await m5LoadStations();
 }
 function closeModule5Modal() {
   document.getElementById('m5-modal-overlay').classList.add('hidden');
-  document.getElementById('drawer-backdrop').classList.add('hidden');
 }
 
 async function m5LoadStations() {
@@ -562,12 +573,29 @@ function m5CopyAll() {
 }
 
 /* ── Incident Injection ────────────────────────────────────────────────────── */
+function showInjectLoading() {
+  const panel = document.querySelector('#panel-incident');
+  if (!panel) return;
+  // Remove existing overlay if any
+  const existing = panel.querySelector('.inject-loading-overlay');
+  if (existing) existing.remove();
+  const overlay = document.createElement('div');
+  overlay.className = 'inject-loading-overlay';
+  overlay.innerHTML = `<div class="loading-spinner"></div><div class="loading-text">SOP 規則引擎運算中…</div>`;
+  panel.appendChild(overlay);
+}
+function hideInjectLoading() {
+  const overlay = document.querySelector('.inject-loading-overlay');
+  if (overlay) overlay.remove();
+}
+
 async function injectIncident(eventId) {
+  showInjectLoading();
   try {
     const listRes = await fetch('/api/incidents/list');
     const listData = await listRes.json();
     const event = listData.incidents.find(i => i.event_id === eventId);
-    if (!event) { alert('找不到該事件'); return; }
+    if (!event) { hideInjectLoading(); alert('找不到該事件'); return; }
 
     const res = await fetch('/api/incidents/inject', {
       method: 'POST',
@@ -575,6 +603,7 @@ async function injectIncident(eventId) {
       body: JSON.stringify(event),
     });
     const data = await res.json();
+    hideInjectLoading();
     if (data.success) {
       latestIncident = data.event;
       latestDecisions = data.decisions || [];
@@ -582,6 +611,7 @@ async function injectIncident(eventId) {
       showInjectResult(data);
     }
   } catch (e) {
+    hideInjectLoading();
     alert('❌ 注入失敗：' + e.message);
   }
 }
@@ -591,26 +621,28 @@ async function submitCustomIncident(event) {
   const now = new Date();
   const fallbackId = `CUSTOM_${now.getHours()}${now.getMinutes()}${now.getSeconds()}`;
   const affected = document.getElementById('custom-segment').value.trim();
+  const affectedRoad = document.getElementById('custom-affected-road').value.trim() || null;
   const location = document.getElementById('custom-location').value.trim() || affected;
   const payload = {
     event_id: document.getElementById('custom-event-id').value.trim() || fallbackId,
     type: document.getElementById('custom-type').value,
     location,
     affected_segment: affected,
-    affected_road: affected.startsWith('RD_') ? location : null,
+    affected_road: affectedRoad,
     severity: document.getElementById('custom-severity').value,
     status: document.getElementById('custom-status').value,
     description: document.getElementById('custom-description').value.trim(),
     timestamp: latestSnapshot?.timestamp || '2026-05-20 22:30',
   };
   if (!payload.affected_segment) {
-    alert('請填目標路段或站點 ID');
+    alert('請選擇目標路段或站點');
     return;
   }
   await injectIncidentPayload(payload);
 }
 
 async function injectIncidentPayload(payload) {
+  showInjectLoading();
   try {
     const res = await fetch('/api/incidents/inject', {
       method: 'POST',
@@ -618,6 +650,7 @@ async function injectIncidentPayload(payload) {
       body: JSON.stringify(payload),
     });
     const data = await res.json();
+    hideInjectLoading();
     if (data.success) {
       latestIncident = data.event;
       latestDecisions = data.decisions || [];
@@ -628,6 +661,7 @@ async function injectIncidentPayload(payload) {
       alert('❌ 注入失敗');
     }
   } catch (e) {
+    hideInjectLoading();
     alert('❌ 注入失敗：' + e.message);
   }
 }
@@ -637,7 +671,40 @@ function showInjectResult(data) {
   const event = data.event;
   const decisions = data.decisions || [];
   const elapsed = data.processing_time_ms ?? 0;
+
+  // Extract CMS texts and guidance texts from all decisions, grouped by SOP clause
+  const highlightMap = {};
+  decisions.forEach(d => {
+    if (d.cms_text || d.guidance_text) {
+      const key = d.sop_clause || 'other';
+      if (!highlightMap[key]) highlightMap[key] = { clause: d.sop_clause, cms: null, guidance: null };
+      if (d.cms_text) highlightMap[key].cms = d.cms_text;
+      if (d.guidance_text) highlightMap[key].guidance = d.guidance_text;
+    }
+  });
+  const highlights = Object.values(highlightMap);
+
+  const highlightHtml = highlights.length ? `
+    <div class="decision-highlight">
+      <div class="decision-highlight-title">⚡ 關鍵決策摘要</div>
+      ${highlights.map(h => `
+        <div class="highlight-group" data-sop="${h.clause || ''}">
+          <div class="highlight-group-header">
+            <span class="highlight-sop-badge">${h.clause || '未分類'}</span>
+          </div>
+          ${h.cms ? `<div class="highlight-item">
+            <div class="highlight-label"><span class="hl-icon">📺</span> CMS 電子看板</div>
+            <div class="highlight-value">${h.cms}</div>
+          </div>` : ''}
+          ${h.guidance ? `<div class="highlight-item">
+            <div class="highlight-label"><span class="hl-icon">🎖️</span> 指揮官建議</div>
+            <div class="highlight-value">${h.guidance}</div>
+          </div>` : ''}
+        </div>`).join('')}
+    </div>` : '';
+
   container.innerHTML = `
+    ${highlightHtml}
     <div class="card-yellow" style="margin-bottom:14px">
       ✅ 事件 <b>${event.event_id}</b> 已注入（${event.affected_segment} · ${event.severity} · ${event.status}）。
       <span class="mono">規則運算 ${elapsed} ms</span>

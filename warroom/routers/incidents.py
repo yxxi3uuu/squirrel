@@ -65,7 +65,12 @@ def inject_incident(req: InjectRequest):
     """注入新事件，並用 Module 2 SOP engine 產生即時決策。"""
     t0 = time.monotonic()
     new_event = req.model_dump()
-    _incidents.append(new_event)
+
+    # 避免同一 event_id 重複加入清單
+    existing_ids = {inc.get("event_id") for inc in _incidents}
+    if new_event["event_id"] not in existing_ids:
+        _incidents.append(new_event)
+
     snapshot = _snapshot_at(new_event.get("timestamp"))
 
     # 使用完整 SOP 引擎（含上下游判定、LLM 引導文字）
