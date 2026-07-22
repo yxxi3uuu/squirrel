@@ -8,13 +8,15 @@ let latestIncident = null;
 document.addEventListener('DOMContentLoaded', () => {
   mapInstance = L.map('leaflet-map', { zoomControl: false }).setView([25.0336, 121.5636], 15);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(mapInstance);
-  L.control.zoom({ position: 'bottomright' }).addTo(mapInstance);
+  L.control.zoom({ position: 'topleft' }).addTo(mapInstance);
 
   // 模組 5 的觸發站點要先拿到，儀表板右側 SOP-6 卡片才能顯示真實資料
   loadModule5Status().then(() => {
     loadTrafficData();
     loadIncidentData();
   });
+  loadTimeline();
+  loadBaseStationPanel();
   showAdvisorScenarioSet('incident');
 });
 
@@ -23,24 +25,196 @@ async function loadTrafficData() {
   try {
     const res = await fetch('/api/traffic/segments');
     const data = await res.json();
-    renderTrafficKPI(data.summary);
+    renderTrafficKPI(computeTrafficSummary(data.segments));
     renderTrafficAlerts(data.segments);
     renderTrafficMap(data.segments);
   } catch (e) { console.error('車流資料載入失敗', e); }
 }
 
+/* ── 模組一：基地台狀態（左側常駐面板，資料來源與模組5共用 /api/signal/stations）── */
+async function loadBaseStationPanel() {
+  try {
+    const res = await fetch('/api/signal/stations');
+    const data = await res.json();
+    renderBaseStationPanel(data.stations || []);
+  } catch (e) {
+    console.error('基地台狀態載入失敗', e);
+    const el = document.getElementById('station-status-list');
+    if (el) el.innerHTML = '<div class="station-row">基地台狀態載入失敗</div>';
+  }
+}
+
+function renderBaseStationPanel(stations) {
+  const container = document.getElementById('station-status-list');
+  if (!container) return;
+  const rows = [...stations].sort((a, b) => b.roaming_rate - a.roaming_rate);
+  container.innerHTML = rows.map(s => {
+    const trig = s.roaming_rate >= 0.30;
+    const pct = Math.min(100, s.roaming_rate * 200);
+    return `
+      <div class="station-row ${trig ? 'trigger' : ''}">
+        <div>${s.station_name}</div>
+        <div class="sr-sub mono">${s.station_id} · ${s.user_count.toLocaleString()} 人</div>
+        <div class="sr-roam mono">${(s.roaming_rate * 100).toFixed(1)}%</div>
+        <div class="sr-bar-track"><div class="sr-bar-fill" style="width:${pct}%;background:${trig ? 'var(--critical)' : 'var(--accent)'}"></div></div>
+      </div>`;
+  }).join('');
+}
+
+/* ── 模組一：動態時序（時間軸）─────────────────────────────────────────────
+   資料來源：/api/timestamps + /api/snapshot?timestamp=（module1_dashboard 的
+   data/snapshot.py 共用資料層）。時間軸樣式比照戰情室原型設計稿（滑桿＋倍速
+   播放），切換時間點時沿用既有的 renderTrafficKPI / renderTrafficAlerts /
+   renderTrafficMap，不用另開頁面。 */
+let timelineTimestamps = [];
+let timelineIndex = -1;
+let timelinePlayTimer = null;
+let timelineSpeed = 1;
+
+async function loadTimeline() {
+  try {
+    const res = await fetch('/api/timestamps');
+    timelineTimestamps = await res.json();
+    if (!timelineTimestamps.length) return;
+    const slider = document.getElementById('timeline-slider');
+    slider.max = timelineTimestamps.length - 1;
+    timelineIndex = timelineTimestamps.length - 1;
+    slider.value = timelineIndex;
+    document.getElementById('timeline-range').textContent =
+      `${shortTime(timelineTimestamps[0])} ─ ${shortTime(timelineTimestamps[timelineTimestamps.length - 1])}`;
+    updateTimelineDisplay();
+  } catch (e) { console.error('時間軸載入失敗', e); }
+}
+
+function shortTime(ts) {
+  return ts ? ts.slice(11, 16) : '--:--';
+}
+
+function updateTimelineDisplay() {
+  document.getElementById('timeline-time').textContent = shortTime(timelineTimestamps[timelineIndex]);
+  const pct = timelineTimestamps.length > 1 ? (timelineIndex / (timelineTimestamps.length - 1)) * 100 : 0;
+  document.getElementById('timeline-slider').style.setProperty('--pct', pct + '%');
+}
+
+function onTimelineSlide(value) {
+  timelineIndex = Number(value);
+  updateTimelineDisplay();
+  loadSnapshotAt(timelineTimestamps[timelineIndex]);
+}
+
+function setTimelineSpeed(mult) {
+  timelineSpeed = mult;
+  document.querySelectorAll('.tl-speed-btn').forEach(btn => {
+    btn.classList.toggle('active', Number(btn.dataset.speed) === mult);
+  });
+  if (timelinePlayTimer) {
+    clearInterval(timelinePlayTimer);
+    startTimelinePlayLoop();
+  }
+}
+
+function toggleTimelinePlay() {
+  const btn = document.getElementById('timeline-play');
+  if (timelinePlayTimer) {
+    clearInterval(timelinePlayTimer);
+    timelinePlayTimer = null;
+    btn.classList.remove('playing');
+    btn.setAttribute('aria-pressed', 'false');
+    btn.textContent = '▶';
+    return;
+  }
+  btn.classList.add('playing');
+  btn.setAttribute('aria-pressed', 'true');
+  btn.textContent = '⏸';
+  startTimelinePlayLoop();
+}
+
+function startTimelinePlayLoop() {
+  timelinePlayTimer = setInterval(() => {
+    if (timelineIndex >= timelineTimestamps.length - 1) {
+      toggleTimelinePlay();
+      return;
+    }
+    timelineIndex += 1;
+    document.getElementById('timeline-slider').value = timelineIndex;
+    updateTimelineDisplay();
+    loadSnapshotAt(timelineTimestamps[timelineIndex]);
+  }, 1200 / timelineSpeed);
+}
+
+async function loadSnapshotAt(timestamp) {
+  try {
+    const res = await fetch(`/api/snapshot?timestamp=${encodeURIComponent(timestamp)}`);
+    const snapshot = await res.json();
+    const segments = snapshotToSegments(snapshot);
+    renderTrafficKPI(computeTrafficSummary(segments));
+    renderTrafficAlerts(segments);
+    renderTrafficMap(segments);
+  } catch (e) { console.error('快照載入失敗', e); }
+}
+
+function snapshotToSegments(snapshot) {
+  return Object.entries(snapshot.road_segments || {}).map(([id, seg]) => ({
+    Segment_ID: id,
+    Road_Name: seg.name,
+    Avg_Speed: seg.avg_speed,
+    Saturation_Score: seg.saturation_score,
+    Vehicle_Count: seg.vehicle_count,
+    Timestamp: snapshot.timestamp,
+    level: classifySaturation(seg.saturation_score),
+  }));
+}
+
+function classifySaturation(score) {
+  if (score == null) return 'OK';
+  if (score >= 0.95) return 'A';
+  if (score >= 0.85) return 'B';
+  return 'OK';
+}
+
+function computeTrafficSummary(segments) {
+  const a_count = segments.filter(s => s.level === 'A').length;
+  const b_count = segments.filter(s => s.level === 'B').length;
+  const speeds = segments.map(s => s.Avg_Speed).filter(v => v != null);
+  const avg_speed = speeds.length
+    ? Math.round((speeds.reduce((sum, v) => sum + v, 0) / speeds.length) * 10) / 10
+    : 0;
+  const saturations = segments.map(s => s.Saturation_Score).filter(v => v != null);
+  const avg_saturation = saturations.length
+    ? saturations.reduce((sum, v) => sum + v, 0) / saturations.length
+    : 0;
+  const impacted = segments
+    .filter(s => s.level !== 'OK')
+    .reduce((sum, s) => sum + (s.Vehicle_Count || 0), 0);
+  return { a_count, b_count, avg_speed, avg_saturation, impacted, total: segments.length };
+}
+
 function renderTrafficKPI(summary) {
-  document.querySelector('#panel-dashboard .kpi-card.critical .kpi-val').textContent = summary.a_count;
-  document.querySelector('#panel-dashboard .kpi-card.caution .kpi-val').textContent = summary.b_count;
-  document.querySelector('#panel-dashboard .kpi-card.safe .kpi-val').textContent = summary.avg_speed + ' km/h';
+  document.getElementById('ks-speed-value').textContent = summary.avg_speed;
+  const speedDelta = document.getElementById('ks-speed-delta');
+  speedDelta.textContent = summary.avg_speed < 25 ? '▲ 壅塞' : '▼ 順暢';
+  speedDelta.className = 'ks-delta ' + (summary.avg_speed < 25 ? 'up' : 'down');
+
+  document.getElementById('ks-sat-value').textContent = Math.round(summary.avg_saturation * 100);
+  const satDelta = document.getElementById('ks-sat-delta');
+  satDelta.textContent = summary.avg_saturation >= 0.85 ? '超過門檻' : '低於門檻';
+  satDelta.className = 'ks-delta ' + (summary.avg_saturation >= 0.85 ? 'up' : 'down');
+
+  const segCount = summary.a_count + summary.b_count;
+  document.getElementById('ks-seg-value').textContent = segCount;
+  const segDelta = document.getElementById('ks-seg-delta');
+  segDelta.textContent = segCount > 0 ? '需留意' : '全線正常';
+  segDelta.className = 'ks-delta ' + (segCount > 0 ? 'up' : 'down');
+
+  document.getElementById('ks-impact-value').textContent = (summary.impacted / 1000).toFixed(1);
 }
 
 function renderTrafficAlerts(segments) {
-  const container = document.querySelector('#panel-dashboard .grid-2 > .panel:nth-child(2)');
+  const container = document.querySelector('#panel-dashboard .grid-3 > .panel:nth-child(3)');
   const alerts = segments.filter(s => s.level === 'A' || s.level === 'B')
                          .sort((a, b) => b.Saturation_Score - a.Saturation_Score);
 
-  let html = '<h3>🚨 即時警報</h3>';
+  let html = '<h3>即時警報</h3><div class="alert-scroll">';
   alerts.forEach(s => {
     const isA = s.level === 'A';
     const tagClass = isA ? '' : 'caution-bg';
@@ -57,11 +231,12 @@ function renderTrafficAlerts(segments) {
           飽和度 <span class="mono ${textClass}">${s.Saturation_Score.toFixed(2)}</span>
           &nbsp;車速 <span class="mono">${s.Avg_Speed} km/h</span>
         </div>
-        <button class="btn-explain" onclick="openDrawer('${s.Segment_ID}')">🔍 查看判斷依據</button>
+        <button class="btn-explain" onclick="openDrawer('${s.Segment_ID}')">查看判斷依據</button>
       </div>`;
   });
 
   html += renderModule5AlertCard();
+  html += '</div>';
   container.innerHTML = html;
 }
 
@@ -72,7 +247,7 @@ function renderModule5AlertCard() {
     <div class="alert-card sop6">
       <div class="alert-hdr"><span class="alert-tag accent-bg">SOP-6 多語</span></div>
       <div class="alert-body">目前無站點外籍旅客比例達 30% 門檻</div>
-      <button class="btn-explain" onclick="openModule5Modal()">🌐 查看站點狀態</button>
+      <button class="btn-explain" onclick="openModule5Modal()">查看站點狀態</button>
     </div>`;
   }
   const top = [...m5Triggered].sort((a, b) => b.roaming_rate - a.roaming_rate)[0];
@@ -84,7 +259,7 @@ function renderModule5AlertCard() {
         <b>${top.station_name}</b> (${top.station_id})<br>
         漫遊率 <span class="mono critical-text">${(top.roaming_rate * 100).toFixed(1)}%</span> ≥ 30% → 觸發七語通報${more}
       </div>
-      <button class="btn-explain" onclick="openModule5Modal()">🌐 查看多語通報</button>
+      <button class="btn-explain" onclick="openModule5Modal()">查看多語通報</button>
     </div>`;
 }
 
@@ -128,7 +303,13 @@ async function loadIncidentData() {
     const res = await fetch('/api/incidents/list');
     const data = await res.json();
     renderIncidentList(data.incidents);
+    updateEventCountKPI(data.count ?? data.incidents.length);
   } catch (e) { console.error('事件資料載入失敗', e); }
+}
+
+function updateEventCountKPI(count) {
+  const el = document.getElementById('ks-alert-value');
+  if (el) el.textContent = count;
 }
 
 function renderIncidentList(incidents) {
@@ -177,14 +358,14 @@ async function renderDrawerContent(type) {
   const bodyEl = document.getElementById('drawer-body-content');
 
   if (type === 'sop2') {
-    titleEl.textContent = '🧠 判斷依據 — SOP-2 主疏散路徑';
+    titleEl.textContent = '判斷依據 — SOP-2 主疏散路徑';
     const decision = latestDecisions.find(d => d.sop_clause === 'SOP-2');
     bodyEl.innerHTML = decision ? renderDecisionExplanation(decision) : emptyDecisionHint('SOP-2');
     return;
   }
 
   if (type === 'sop5') {
-    titleEl.textContent = '🧠 判斷依據 — SOP-5 號誌故障應變';
+    titleEl.textContent = '判斷依據 — SOP-5 號誌故障應變';
     const decision = latestDecisions.find(d => d.sop_clause === 'SOP-5');
     bodyEl.innerHTML = decision ? renderDecisionExplanation(decision) : emptyDecisionHint('SOP-5');
     return;
@@ -193,13 +374,13 @@ async function renderDrawerContent(type) {
   if (type.startsWith('decision:')) {
     const index = Number(type.split(':')[1]);
     const decision = latestDecisions[index];
-    titleEl.textContent = '🧠 判斷依據 — 未觸發 / 轉交判斷';
+    titleEl.textContent = '判斷依據 — 未觸發 / 轉交判斷';
     bodyEl.innerHTML = decision ? renderDecisionExplanation(decision) : emptyDecisionHint('該決策');
     return;
   }
 
   // 其餘一律當成 SOP-1 壅塞分級的路段 ID 查詢
-  titleEl.textContent = '🧠 判斷依據 — SOP-1 壅塞分級';
+  titleEl.textContent = '判斷依據 — SOP-1 壅塞分級';
   bodyEl.innerHTML = `<div class="spinner">載入路段資料…</div>`;
   try {
     const [segRes, netRes] = await Promise.all([
@@ -412,14 +593,14 @@ async function loadModule5Status() {
       const top = [...m5Triggered].sort((a, b) => b.roaming_rate - a.roaming_rate)[0];
       const more = m5Triggered.length > 1 ? `等 ${m5Triggered.length} 個站點` : '';
       document.getElementById('toast-text').textContent =
-        `🌐 ${top.station_name}${more} 外籍旅客比例達 ${(top.roaming_rate * 100).toFixed(0)}%，超過 SOP 第 6 條 30% 門檻`;
+        `${top.station_name}${more} 外籍旅客比例達 ${(top.roaming_rate * 100).toFixed(0)}%，超過 SOP 第 6 條 30% 門檻`;
       document.getElementById('toast').classList.remove('hidden');
     } else {
-      document.getElementById('toast-text').textContent = '🌐 目前無站點外籍旅客比例達 30% 門檻';
+      document.getElementById('toast-text').textContent = '目前無站點外籍旅客比例達 30% 門檻';
     }
   } catch (e) {
     console.error('模組 5 狀態載入失敗', e);
-    document.getElementById('toast-text').textContent = '🌐 多語通報狀態載入失敗';
+    document.getElementById('toast-text').textContent = '多語通報狀態載入失敗';
   }
 }
 function closeToast() {
@@ -468,7 +649,7 @@ function m5SelectStation(sid) {
     `${m5Current.station_name} · 外籍旅客比例 ${(m5Current.roaming_rate * 100).toFixed(1)}%`;
   document.getElementById('m5-modal-meta').textContent = m5Current.timestamp || '';
   document.getElementById('m5-sop-banner').innerHTML = multi
-    ? `<div class="card-red">📌 SOP 第 6 條觸發｜將產出中英日韓泰越法七語版</div>`
+    ? `<div class="card-red">SOP 第 6 條觸發｜將產出中英日韓泰越法七語版</div>`
     : `<div class="card-yellow">ℹ️ 未達 30% 門檻｜僅產出繁體中文</div>`;
   m5Alerts = {};
   document.getElementById('m5-editor').classList.add('hidden');
@@ -498,7 +679,7 @@ async function m5Generate() {
     document.getElementById('m5-btn-publish').disabled = false;
     if (data.source === 'mock') {
       document.getElementById('m5-sop-banner').insertAdjacentHTML('beforeend',
-        `<div class="card-yellow" style="margin-top:8px">⚠️ Ollama 未連線，目前顯示為預設模板文字（${data.ollama_status?.message || ''}）</div>`);
+        `<div class="card-yellow" style="margin-top:8px">Ollama 未連線，目前顯示為預設模板文字（${data.ollama_status?.message || ''}）</div>`);
     }
   } catch (e) {
     alert('生成失敗：' + e.message);
@@ -546,7 +727,7 @@ async function m5Publish() {
       m5Alerts = alerts;
       document.getElementById('m5-publish-result').classList.remove('hidden');
       document.getElementById('m5-publish-result').innerHTML =
-        `<div class="publish-success">✅ 已發送簡訊＋看板　⏱ ${new Date().toLocaleTimeString()}</div>`;
+        `<div class="publish-success">已發送簡訊＋看板　 ${new Date().toLocaleTimeString()}</div>`;
     }
   } catch (e) {
     alert('發布失敗：' + e.message);
@@ -582,7 +763,7 @@ async function injectIncident(eventId) {
       showInjectResult(data);
     }
   } catch (e) {
-    alert('❌ 注入失敗：' + e.message);
+    alert('注入失敗：' + e.message);
   }
 }
 
@@ -625,10 +806,10 @@ async function injectIncidentPayload(payload) {
       showInjectResult(data);
       loadIncidentData();
     } else {
-      alert('❌ 注入失敗');
+      alert('注入失敗');
     }
   } catch (e) {
-    alert('❌ 注入失敗：' + e.message);
+    alert('注入失敗：' + e.message);
   }
 }
 
@@ -639,7 +820,7 @@ function showInjectResult(data) {
   const elapsed = data.processing_time_ms ?? 0;
   container.innerHTML = `
     <div class="card-yellow" style="margin-bottom:14px">
-      ✅ 事件 <b>${event.event_id}</b> 已注入（${event.affected_segment} · ${event.severity} · ${event.status}）。
+      事件 <b>${event.event_id}</b> 已注入（${event.affected_segment} · ${event.severity} · ${event.status}）。
       <span class="mono">規則運算 ${elapsed} ms</span>
     </div>
     ${decisions.map(renderDecisionCard).join('')}`;
@@ -674,7 +855,7 @@ function renderDecisionCard(decision, index) {
         ${cmsLine}
         ${actions}
       </div>
-      <button class="btn-explain" onclick="openDrawer('${explainType}')">🔍 為什麼</button>
+      <button class="btn-explain" onclick="openDrawer('${explainType}')">為什麼</button>
     </div>`;
 }
 

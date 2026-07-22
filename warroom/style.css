@@ -12,20 +12,24 @@
   --text: #f2f5f9;
   --text-dim: #a0b3c4;
   --radius: 10px;
+  --font-display: 'Space Grotesk', 'Noto Sans TC', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Consolas, monospace;
 }
 
 /* ── Reset ────────────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { height: 100%; }
 body {
   font-family: 'Noto Sans TC', sans-serif;
   background: var(--ink);
   color: var(--text);
   font-size: 15px;
   line-height: 1.75;
-  overflow-x: hidden;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
+  display: flex; flex-direction: column;
 }
-.mono { font-family: ui-monospace, 'SF Mono', Consolas, monospace; }
+.mono { font-family: var(--font-mono); }
 
 /* ── Top Bar ──────────────────────────────────────────────────────────────── */
 #topbar {
@@ -33,16 +37,17 @@ body {
   padding: 12px 24px;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
-  position: sticky; top: 0; z-index: 100;
+  box-shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 10px 24px -18px rgba(0,0,0,.6);
+  flex: none;
 }
 .brand { display: flex; align-items: center; gap: 10px; }
 .brand .logo { font-size: 1.5rem; }
-.brand .title { font-weight: 900; font-size: 1.1rem; letter-spacing: .5px; }
+.brand .title { font-family: var(--font-display); font-weight: 700; font-size: 1.1rem; letter-spacing: .3px; }
 .tabs { display: flex; gap: 4px; }
 .tab {
   padding: 7px 16px; border-radius: 8px;
   background: transparent; border: 1px solid var(--border);
-  color: var(--text-dim); font-size: .88rem; font-weight: 700;
+  color: var(--text-dim); font-family: var(--font-display); font-size: .85rem; font-weight: 600;
   cursor: pointer; transition: all .2s;
 }
 .tab.active, .tab:hover { background: var(--accent); color: var(--ink); border-color: var(--accent); }
@@ -53,19 +58,34 @@ body {
 }
 .bell { background: none; border: none; font-size: 1.2rem; cursor: pointer; }
 
-/* ── Main ─────────────────────────────────────────────────────────────────── */
-#main { padding: 28px 32px; }
-.tab-panel { display: none; }
-.tab-panel.active { display: block; }
-.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+/* ── Main（固定版面，不做整頁捲動，捲動交給各面板自己的清單）──────────────── */
+#main { padding: 28px 32px; flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+.tab-panel { display: none; flex: 1; min-height: 0; }
+.tab-panel.active { display: flex; flex-direction: column; min-height: 0; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; flex: 1; min-height: 0; }
 @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
+/* 儀表板 Tab：基地台狀態｜地圖｜即時警報 三欄 */
+.grid-3 { display: grid; grid-template-columns: 230px 2fr 1fr; gap: 24px; flex: 1; min-height: 0; }
+@media (max-width: 1100px) { .grid-3 { grid-template-columns: 1fr; } }
 
-/* ── Panel ────────────────────────────────────────────────────────────────── */
+/* ── Panel（固定高度，內容清單各自捲動，不撐開版面）─────────────────────── */
 .panel {
   background: var(--panel); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 24px 28px;
+  min-height: 0; overflow: hidden;
+  display: flex; flex-direction: column;
+  box-shadow: 0 1px 0 rgba(255,255,255,.025) inset, 0 14px 30px -22px rgba(0,0,0,.7);
 }
-.panel h3 { font-size: 1rem; color: var(--accent); margin-bottom: 18px; }
+.panel h3 {
+  font-family: var(--font-display); font-size: .92rem; font-weight: 700;
+  color: var(--text); letter-spacing: .2px; margin-bottom: 18px; flex: none;
+  display: flex; align-items: center; gap: 9px;
+}
+.panel h3::before { content: ''; width: 3px; height: 13px; border-radius: 2px; background: var(--accent); flex: none; }
+.map-wrap, .timeline-row { flex: none; }
+.alert-scroll, .station-scroll, #scenario-list, .custom-incident-form, #decision-cards {
+  flex: 1; min-height: 0; overflow-y: auto; padding-right: 4px;
+}
 
 /* ── Map Mock ─────────────────────────────────────────────────────────────── */
 .map-mock { margin-bottom: 16px; }
@@ -78,18 +98,89 @@ body {
 .map-placeholder span:first-child { font-size: 2rem; }
 .map-sub { font-size: .8rem; }
 
-/* ── KPI ──────────────────────────────────────────────────────────────────── */
-.kpi-row { display: flex; gap: 14px; margin-top: 18px; }
-.kpi-card {
-  flex: 1; text-align: center; padding: 16px;
-  background: rgba(255,255,255,.03); border-radius: 8px;
-  border: 1px solid var(--border);
+/* ── KPI Strip（模組 1・路網總覽，儀表板 Tab 底部，跨全寬）─────────────────── */
+.kpi-strip { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-top: 18px; flex: none; }
+.kpi-strip-card {
+  background: rgba(255,255,255,.03); border: 1px solid var(--border); border-radius: 10px;
+  padding: 12px 16px; position: relative; overflow: hidden;
 }
-.kpi-val { font-size: 1.8rem; font-weight: 900; }
-.kpi-lbl { font-size: .8rem; color: var(--text-dim); margin-top: 4px; }
-.kpi-card.critical .kpi-val { color: var(--critical); }
-.kpi-card.caution  .kpi-val { color: var(--caution); }
-.kpi-card.safe     .kpi-val { color: var(--safe); }
+.kpi-strip-card::before {
+  content: ''; position: absolute; inset: 0 0 auto 0; height: 2px;
+  background: linear-gradient(90deg, var(--accent), transparent); opacity: .6;
+}
+.ks-label { font-size: .76rem; color: var(--text-dim); letter-spacing: .2px; }
+.ks-value {
+  font-family: var(--font-mono); font-size: 1.5rem; font-weight: 700;
+  margin-top: 5px; display: flex; align-items: baseline; gap: 5px;
+}
+.ks-unit { font-size: .74rem; color: var(--text-dim); font-family: 'Noto Sans TC', sans-serif; font-weight: 400; }
+.ks-delta { font-size: .74rem; color: var(--text-dim); margin-top: 4px; }
+.ks-delta.up { color: var(--critical); }
+.ks-delta.down { color: var(--safe); }
+
+/* ── Base Station Panel（模組 1・基地台狀態，共用模組5 /api/signal/stations）── */
+.station-row {
+  background: rgba(255,255,255,.03); border: 1px solid var(--border); border-radius: 8px;
+  padding: 9px 11px; margin-bottom: 8px; font-size: .82rem;
+}
+.station-row .sr-sub { font-size: .7rem; color: var(--text-dim); margin-top: 2px; }
+.station-row .sr-roam { font-family: var(--font-mono); font-weight: 700; margin-top: 4px; }
+.station-row .sr-bar-track { height: 5px; border-radius: 4px; background: var(--border); overflow: hidden; margin-top: 5px; }
+.station-row .sr-bar-fill { height: 100%; border-radius: 4px; }
+.station-row.trigger { border-color: var(--critical); background: rgba(242,122,132,.08); }
+.station-row.trigger .sr-roam { color: var(--critical); }
+
+/* ── Map Legend（模組 1・地圖圖例，比照戰情室原型設計稿）─────────────────────
+   isolation:isolate 讓 Leaflet 內部 pane（tile/overlay/marker 等，z-index
+   200~700）與圖例的 z-index 只在 .map-wrap 內部互相比較，不會跟外層的
+   modal/drawer/toast 疊圖層衝突（之前圖例會蓋在多語通報 Modal 上面就是這個原因）。 */
+.map-wrap { position: relative; margin-bottom: 14px; isolation: isolate; }
+#leaflet-map {
+  width: 100%; aspect-ratio: 16 / 10; max-height: calc(100vh - 400px); min-height: 200px;
+  border-radius: 8px; border: 1px solid var(--border);
+}
+.map-legend {
+  position: absolute; bottom: 10px; right: 10px; z-index: 500;
+  background: rgba(10,14,23,.88); border: 1px solid var(--border); border-radius: 10px;
+  padding: 8px 10px; font-size: .72rem; color: var(--text-dim);
+  display: flex; flex-direction: column; gap: 4px;
+}
+.map-legend .lr { display: flex; align-items: center; gap: 6px; }
+.map-legend .sw { width: 14px; height: 3px; border-radius: 2px; flex: none; }
+.map-legend .thresh { margin-left: auto; font-family: ui-monospace, monospace; color: var(--text-dim); opacity: .7; }
+
+/* ── Timeline（模組 1・動態時序，滑桿＋倍速，比照戰情室原型設計稿）─────────── */
+.timeline-row {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 18px; flex-wrap: wrap;
+}
+.tl-play-btn {
+  width: 34px; height: 34px; border-radius: 8px; flex: none;
+  background: rgba(255,255,255,.03); border: 1px solid var(--border); color: var(--text);
+  cursor: pointer; font-size: .8rem; display: flex; align-items: center; justify-content: center;
+  transition: all .2s;
+}
+.tl-play-btn:hover { border-color: var(--accent); color: var(--accent); }
+.tl-play-btn.playing { background: var(--accent); color: var(--ink); border-color: var(--accent); }
+.tl-speed-select {
+  display: flex; gap: 3px; flex: none;
+  background: rgba(255,255,255,.03); border: 1px solid var(--border); border-radius: 8px; padding: 3px;
+}
+.tl-speed-btn {
+  background: transparent; border: none; color: var(--text-dim); cursor: pointer;
+  font-family: ui-monospace, monospace; font-size: .72rem; padding: 4px 8px; border-radius: 6px;
+}
+.tl-speed-btn.active { background: rgba(116,179,168,.18); color: var(--accent); font-weight: 700; }
+.tl-time { font-size: .85rem; font-weight: 700; min-width: 42px; flex: none; }
+#timeline-slider {
+  flex: 1; min-width: 100px; -webkit-appearance: none; height: 4px; border-radius: 4px; outline: none;
+  background: linear-gradient(90deg, var(--accent) 0%, var(--accent) var(--pct,0%), var(--border) var(--pct,0%));
+}
+#timeline-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
+  background: #fff; border: 3px solid var(--accent); cursor: pointer; margin-top: -1px;
+}
+.tl-range { font-size: .72rem; color: var(--text-dim); flex: none; }
 
 /* ── Alert Cards ──────────────────────────────────────────────────────────── */
 .alert-card {
@@ -99,7 +190,7 @@ body {
 .alert-card.sop6 { border-color: var(--accent); background: rgba(116,179,168,.06); }
 .alert-hdr { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
 .alert-tag {
-  font-size: .72rem; font-weight: 700; padding: 3px 8px;
+  font-family: var(--font-display); font-size: .72rem; font-weight: 700; padding: 3px 8px;
   border-radius: 4px; background: var(--sop1); color: var(--ink);
 }
 .caution-bg { background: var(--caution); }
@@ -160,9 +251,9 @@ body {
   border-color: var(--border);
 }
 .decision-hdr { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-.decision-tag { font-size: .75rem; font-weight: 700; padding: 3px 8px; border-radius: 4px; background: var(--sop2); color: var(--ink); }
+.decision-tag { font-family: var(--font-display); font-size: .75rem; font-weight: 700; padding: 3px 8px; border-radius: 4px; background: var(--sop2); color: var(--ink); }
 .decision-tag.muted { background: var(--border); color: var(--text-dim); }
-.ete-badge { background: rgba(226,112,122,.2); color: var(--critical); padding: 3px 10px; border-radius: 4px; font-size: .8rem; font-weight: 700; }
+.ete-badge { font-family: var(--font-mono); background: rgba(226,112,122,.2); color: var(--critical); padding: 3px 10px; border-radius: 4px; font-size: .8rem; font-weight: 700; }
 .decision-body { font-size: .88rem; line-height: 1.8; }
 .decision-body p { margin: 4px 0; }
 .action-list { padding-left: 18px; margin-top: 8px; color: var(--text-dim); }
@@ -182,7 +273,7 @@ body {
   display: flex; justify-content: space-between; align-items: center;
   padding: 16px 20px; border-bottom: 1px solid var(--border);
 }
-.drawer-head h3 { font-size: .95rem; color: var(--accent); }
+.drawer-head h3 { font-family: var(--font-display); font-weight: 700; font-size: .95rem; color: var(--text); }
 .drawer-close { background: none; border: none; color: var(--text-dim); font-size: 1.2rem; cursor: pointer; }
 .drawer-body { padding: 20px; overflow-y: auto; flex: 1; }
 .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 490; }
@@ -256,7 +347,7 @@ body {
 }
 .chat-title-block { display: flex; flex-direction: column; gap: 2px; }
 .chat-title-block span { color: var(--text-dim); font-size: .82rem; }
-.chat-head b { color: var(--text); font-size: 1.05rem; }
+.chat-head b { font-family: var(--font-display); color: var(--text); font-size: 1.05rem; }
 .chat-head button { margin-left: auto; background: none; border: none; color: var(--text-dim); font-size: 1.1rem; cursor: pointer; }
 .mode-dot {
   display: inline-block; width: 9px; height: 9px; border-radius: 50%;
@@ -364,7 +455,7 @@ body {
 }
 .modal-head { position: relative; padding: 18px 44px 16px 20px; border-bottom: 1px solid var(--border); }
 .modal-eyebrow { font-size: .72rem; font-weight: 750; letter-spacing: .06em; color: var(--caution); margin-bottom: 4px; }
-.modal-head h4 { font-size: 1rem; margin-bottom: 4px; }
+.modal-head h4 { font-family: var(--font-display); font-weight: 700; font-size: 1rem; margin-bottom: 4px; }
 .modal-meta { font-size: .76rem; color: var(--text-dim); }
 .modal-close { position: absolute; top: 14px; right: 16px; }
 .modal-body { padding: 18px 20px 22px; display: flex; flex-direction: column; gap: 14px; }

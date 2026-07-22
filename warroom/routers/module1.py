@@ -1,0 +1,74 @@
+"""模組一 API（整合自 module-1-dynamicTS）：動態時序戰情儀表板。
+
+沿用 module1_dashboard/backend 的 thresholds.py（SOP 第 1/3 條門檻判斷）與
+llm_summary.py（LLM 趨勢摘要），改以 APIRouter 掛進 warroom 主 server，
+路由路徑與原本 module1_dashboard/backend/main.py 保持一致，
+讓 module1_dashboard/frontend 不需修改即可直接呼叫。
+"""
+
+from typing import Optional
+
+from fastapi import APIRouter, HTTPException
+
+from data.snapshot import available_timestamps, get_snapshot
+from module1_dashboard.backend.llm_summary import generate_summary
+from module1_dashboard.backend.thresholds import evaluate_triggers, new_triggers
+
+router = APIRouter()
+
+
+@router.get("/timestamps")
+def api_timestamps() -> list:
+    return available_timestamps()
+
+
+@router.get("/snapshot")
+def api_snapshot(timestamp: Optional[str] = None) -> dict:
+    try:
+        return get_snapshot(timestamp)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.get("/history")
+def api_history(entity_id: str) -> dict:
+    """單一路段/站點跨時間軸的主要指標，供前端畫時間序列圖表用。"""
+    timestamps = available_timestamps()
+    points = []
+    for ts in timestamps:
+        snapshot = get_snapshot(ts)
+        if entity_id in snapshot["road_segments"]:
+            value = snapshot["road_segments"][entity_id]["saturation_score"]
+            metric = "saturation_score"
+        elif entity_id in snapshot["stations"]:
+            value = snapshot["stations"][entity_id]["user_count"]
+            metric = "user_count"
+        else:
+            raise HTTPException(status_code=404, detail=f"Unknown entity_id {entity_id!r}")
+        points.append({"timestamp": ts, "value": value})
+    return {"entity_id": entity_id, "metric": metric, "points": points}
+
+
+@router.get("/dashboard")
+def api_dashboard(timestamp: Optional[str] = None) -> dict:
+    """整合端點：快照 + 門檻判斷 + 本次新觸發 + LLM 摘要，前端只打這支即可。"""
+    timestamps = available_timestamps()
+    ts = timestamp or timestamps[-1]
+    if ts not in timestamps:
+        raise HTTPException(status_code=404, detail=f"Unknown timestamp {ts!r}")
+
+    snapshot = get_snapshot(ts)
+    triggers = evaluate_triggers(snapshot)
+
+    idx = timestamps.index(ts)
+    previous_triggers = evaluate_triggers(get_snapshot(timestamps[idx - 1])) if idx > 0 else []
+    newly_triggered = new_triggers(previous_triggers, triggers)
+
+    return {
+        "timestamp": ts,
+        "timestamps": timestamps,
+        "snapshot": snapshot,
+        "triggers": triggers,
+        "newly_triggered": newly_triggered,
+        "summary": generate_summary(snapshot, newly_triggered),
+    }
