@@ -704,11 +704,11 @@ function showInjectResult(data) {
     </div>` : '';
 
   container.innerHTML = `
-    ${highlightHtml}
     <div class="card-yellow" style="margin-bottom:14px">
       ✅ 事件 <b>${event.event_id}</b> 已注入（${event.affected_segment} · ${event.severity} · ${event.status}）。
       <span class="mono">規則運算 ${elapsed} ms</span>
     </div>
+    ${highlightHtml}
     ${decisions.map(renderDecisionCard).join('')}`;
 }
 

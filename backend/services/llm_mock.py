@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 # ── Ollama 設定 ────────────────────────────────────────────────────────────────
 OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
-OLLAMA_TIMEOUT: float = float(os.getenv("OLLAMA_TIMEOUT", "10"))
+OLLAMA_TIMEOUT: float = float(os.getenv("OLLAMA_TIMEOUT", "30"))
 
 SYSTEM_PROMPT = """你是台北市交通應變指揮中心的AI幕僚。
 以下所有數字與結論都已經由程式規則運算完成（見TriggerDecision物件），
@@ -72,7 +72,7 @@ def _mock_generate(decision: TriggerDecision) -> Dict[str, str]:
     if not decision.triggered:
         return {
             "guidance_text": (
-                f"[{decision.sop_clause or '無觸發'}] {decision.basis[:80]}"
+                f"[{decision.sop_clause or '無觸發'}] {decision.basis}"
             ),
             "_source": "mock",
         }
@@ -83,7 +83,7 @@ def _mock_generate(decision: TriggerDecision) -> Dict[str, str]:
         parts.append(f"預計 {decision.ete_minutes} 分鐘恢復")
     if decision.primary_route:
         parts.append(f"主疏散：{decision.primary_route}")
-    parts.append(decision.basis[:60] + "...")
+    parts.append(decision.basis)
 
     return {
         "guidance_text": " | ".join(parts),
