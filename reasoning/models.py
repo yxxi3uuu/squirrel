@@ -98,6 +98,19 @@ class ConfidenceScore(StrictBaseModel):
     explanation_items: List[str] = Field(default_factory=list)
 
 
+class ReliabilityScore(StrictBaseModel):
+    """Multi-dimensional decision reliability (設計文件 §16)."""
+
+    overall: float
+    label: Literal["high", "medium", "low"]
+    data_reliability: float
+    rule_reliability: float
+    decision_stability: float
+    evidence_coverage: float
+    warnings: List[str] = Field(default_factory=list)
+    explanation_items: List[str] = Field(default_factory=list)
+
+
 class EvidenceStep(StrictBaseModel):
     order: int
     title: str
@@ -141,6 +154,7 @@ class DecisionRecord(StrictBaseModel):
     route_candidates: List[RouteCandidate]
     data_quality: DataQuality
     confidence: ConfidenceScore
+    reliability: ReliabilityScore
     evidence_chain: List[EvidenceStep]
     explanation: DecisionExplanation
     validation_issues: List[ValidationIssue] = Field(default_factory=list)
@@ -158,3 +172,13 @@ class AskDecisionRequest(StrictBaseModel):
     question: str
     timestamp: Optional[str] = None
     event_id: Optional[str] = None
+
+
+class CounterfactualRequest(StrictBaseModel):
+    timestamp: Optional[str] = None
+    event_id: Optional[str] = None
+    target_segment: Optional[str] = None
+    target_field: str = "saturation_score"
+    direction: str = "increase"
+    step: float = 0.01
+    max_steps: int = 200

@@ -127,8 +127,32 @@ function renderConfidence(record) {
   elements.confidenceRing.style.setProperty("--ring-deg", `${Math.round(record.confidence.score * 360)}deg`);
   elements.confidenceLabel.textContent = `信心等級 ${record.confidence.label}`;
   elements.confidenceText.textContent = record.explanation.confidence_explanation;
-  const warnings = record.explanation.warnings.length ? record.explanation.warnings : ["目前沒有驗證錯誤。"];
-  elements.warningList.innerHTML = warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("");
+
+  // Render reliability bars
+  if (record.reliability) {
+    const rel = record.reliability;
+    setBar("relData", "relDataValue", rel.data_reliability);
+    setBar("relRule", "relRuleValue", rel.rule_reliability);
+    setBar("relStability", "relStabilityValue", rel.decision_stability);
+    setBar("relCoverage", "relCoverageValue", rel.evidence_coverage);
+    const allWarnings = [...(record.explanation.warnings || []), ...(rel.warnings || [])];
+    const warnings = allWarnings.length ? [...new Set(allWarnings)] : ["目前沒有驗證警告。"];
+    elements.warningList.innerHTML = warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("");
+  } else {
+    const warnings = record.explanation.warnings.length ? record.explanation.warnings : ["目前沒有驗證錯誤。"];
+    elements.warningList.innerHTML = warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("");
+  }
+}
+
+function setBar(barId, valueId, score) {
+  const fill = document.getElementById(barId);
+  const valueEl = document.getElementById(valueId);
+  if (fill && valueEl) {
+    const pct = Math.round(score * 100);
+    fill.style.width = `${pct}%`;
+    fill.className = `rel-bar-fill ${pct >= 80 ? "rel-high" : pct >= 60 ? "rel-medium" : "rel-low"}`;
+    valueEl.textContent = `${pct}%`;
+  }
 }
 
 function renderRawFacts(record) {
@@ -214,5 +238,41 @@ elements.askForm.addEventListener("submit", (event) => {
   event.preventDefault();
   ask(elements.questionInput.value);
 });
+
+document.getElementById("cfButton").addEventListener("click", runCounterfactual);
+
+async function runCounterfactual() {
+  const timestamp = elements.timestampSelect.value;
+  const cfResults = document.getElementById("cfResults");
+  cfResults.innerHTML = "<p>分析中…</p>";
+  try {
+    const response = await fetch("/api/decisions/counterfactual", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ timestamp, event_id: "TPE_2026_ACC_001" }),
+    });
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    const payload = await response.json();
+    if (payload.results && payload.results.length > 0) {
+      cfResults.innerHTML = payload.results.map((result) => `
+        <article class="cf-card">
+          <p class="cf-narrative">${escapeHtml(result.narrative)}</p>
+          <div class="cf-details">
+            <span>欄位：${escapeHtml(result.changed_field)}</span>
+            <span>原始值：${result.original_value}</span>
+            <span>翻轉值：${result.switch_value}</span>
+            <span>最小變化：${result.minimum_change}</span>
+          </div>
+        </article>
+      `).join("");
+    } else {
+      cfResults.innerHTML = `<p class="cf-empty">${escapeHtml(payload.summary || payload.message)}</p>`;
+    }
+  } catch (error) {
+    cfResults.innerHTML = `<p class="cf-error">${escapeHtml(error.message)}</p>`;
+  }
+}
 
 loadDecision();

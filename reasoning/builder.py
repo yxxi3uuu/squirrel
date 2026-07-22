@@ -26,6 +26,8 @@ from reasoning.rules import (
     classify_traffic_level,
     compare_candidate_routes,
 )
+from reasoning.reliability import calculate_reliability
+from reasoning.replay import replay_store
 from reasoning.validator import validate_decision_record
 
 
@@ -72,6 +74,10 @@ def build_decision_record(
     routes = compare_candidate_routes(snapshot, event, evidence_by_key)
     data_quality = calculate_data_quality(snapshot, event, evidence)
     confidence = calculate_confidence(data_quality, rule_hits, routes)
+    reliability = calculate_reliability(
+        snapshot, event, evidence_by_key,
+        data_quality, rule_hits, routes, evidence,
+    )
     snapshot_summary = SnapshotSummary(
         timestamp=snapshot["timestamp"],
         source_versions={
@@ -104,6 +110,7 @@ def build_decision_record(
         route_candidates=routes,
         data_quality=data_quality,
         confidence=confidence,
+        reliability=reliability,
         evidence_chain=_build_evidence_chain(classification.level, routes, ete.total_minutes),
         explanation=_empty_explanation(),
         validation_issues=[],
@@ -113,6 +120,7 @@ def build_decision_record(
     record.explanation = generate_deterministic_explanation(record)
     record.validation_issues = validate_decision_record(record, snapshot)
     record.execution_time_ms = round((time.perf_counter() - start) * 1000, 2)
+    replay_store.save(record)
     return record
 
 

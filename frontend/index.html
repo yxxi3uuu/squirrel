@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Squirrel 決策解釋儀表板</title>
-    <link rel="stylesheet" href="/assets/styles.css" />
+    <link rel="stylesheet" href="/assets/styles.css?v=2" />
   </head>
   <body>
     <div class="app-shell">
@@ -100,6 +100,18 @@
             <section class="panel ask-panel">
               <div class="panel-header">
                 <div>
+                  <p class="section-kicker">Counterfactual</p>
+                  <h3>反事實分析</h3>
+                </div>
+              </div>
+              <p class="cf-intro">什麼最小變化會讓系統改變推薦道路？</p>
+              <button id="cfButton" class="action-button">執行反事實分析</button>
+              <div id="cfResults" class="cf-results"></div>
+            </section>
+
+            <section class="panel ask-panel">
+              <div class="panel-header">
+                <div>
                   <p class="section-kicker">Why Panel</p>
                   <h3>為什麼？</h3>
                 </div>
@@ -153,8 +165,8 @@
             <section class="panel">
               <div class="panel-header">
                 <div>
-                  <p class="section-kicker">Data Quality</p>
-                  <h3>信心與限制</h3>
+                  <p class="section-kicker">Decision Reliability</p>
+                  <h3>決策可靠度</h3>
                 </div>
               </div>
               <div class="confidence-ring">
@@ -162,6 +174,28 @@
                 <div>
                   <strong id="confidenceLabel">--</strong>
                   <p id="confidenceText">--</p>
+                </div>
+              </div>
+              <div class="reliability-bars" id="reliabilityBars">
+                <div class="rel-bar-item">
+                  <span>資料可靠度</span>
+                  <div class="rel-bar"><div class="rel-bar-fill" id="relData"></div></div>
+                  <span class="rel-value" id="relDataValue">--</span>
+                </div>
+                <div class="rel-bar-item">
+                  <span>規則可靠度</span>
+                  <div class="rel-bar"><div class="rel-bar-fill" id="relRule"></div></div>
+                  <span class="rel-value" id="relRuleValue">--</span>
+                </div>
+                <div class="rel-bar-item">
+                  <span>決策穩定度</span>
+                  <div class="rel-bar"><div class="rel-bar-fill" id="relStability"></div></div>
+                  <span class="rel-value" id="relStabilityValue">--</span>
+                </div>
+                <div class="rel-bar-item">
+                  <span>證據覆蓋率</span>
+                  <div class="rel-bar"><div class="rel-bar-fill" id="relCoverage"></div></div>
+                  <span class="rel-value" id="relCoverageValue">--</span>
                 </div>
               </div>
               <ul id="warningList" class="warning-list"></ul>
@@ -182,6 +216,6 @@
     </div>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="/assets/app.js"></script>
+    <script src="/assets/app.js?v=2"></script>
   </body>
 </html>
