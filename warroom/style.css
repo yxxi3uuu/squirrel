@@ -59,31 +59,45 @@ body {
 .bell { background: none; border: none; font-size: 1.2rem; cursor: pointer; }
 
 /* ── Main（固定版面，不做整頁捲動，捲動交給各面板自己的清單）──────────────── */
-#main { padding: 28px 32px; flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+#main { padding: 18px 22px; flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
 .tab-panel { display: none; flex: 1; min-height: 0; }
 .tab-panel.active { display: flex; flex-direction: column; min-height: 0; }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; flex: 1; min-height: 0; }
 @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
-/* 儀表板 Tab：基地台狀態｜地圖｜即時警報 三欄 */
-.grid-3 { display: grid; grid-template-columns: 230px 2fr 1fr; gap: 24px; flex: 1; min-height: 0; }
-@media (max-width: 1100px) { .grid-3 { grid-template-columns: 1fr; } }
+/* 儀表板 Tab：左側（KPI 列＋基地台狀態｜地圖）／路段即時狀態／即時警報 三欄，
+   各自獨立一欄，即時警報跟路段狀態都佔滿整欄高度，不會因為左側疊了 KPI 列而被壓縮。 */
+.dash-layout { display: flex; gap: 18px; flex: 1; min-height: 0; }
+.dash-left { display: flex; flex-direction: column; flex: 2.8; min-height: 0; }
+.dash-segstatus { flex: .68; min-width: 190px; }
+.dash-alerts { flex: .6; min-width: 200px; }
+.grid-3 { display: grid; grid-template-columns: 190px 1fr; gap: 18px; flex: 1; min-height: 0; }
+@media (max-width: 1100px) {
+  .dash-layout { flex-direction: column; }
+  .grid-3 { grid-template-columns: 1fr; }
+}
 
 /* ── Panel（固定高度，內容清單各自捲動，不撐開版面）─────────────────────── */
 .panel {
   background: var(--panel); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 24px 28px;
+  border-radius: var(--radius); padding: 16px 18px;
   min-height: 0; overflow: hidden;
   display: flex; flex-direction: column;
   box-shadow: 0 1px 0 rgba(255,255,255,.025) inset, 0 14px 30px -22px rgba(0,0,0,.7);
 }
 .panel h3 {
-  font-family: var(--font-display); font-size: .92rem; font-weight: 700;
-  color: var(--text); letter-spacing: .2px; margin-bottom: 18px; flex: none;
-  display: flex; align-items: center; gap: 9px;
+  font-family: var(--font-display); font-size: .8rem; font-weight: 700;
+  color: var(--text); letter-spacing: .2px; margin-bottom: 11px; flex: none;
+  display: flex; align-items: center; gap: 8px;
 }
-.panel h3::before { content: ''; width: 3px; height: 13px; border-radius: 2px; background: var(--accent); flex: none; }
-.map-wrap, .timeline-row { flex: none; }
-.alert-scroll, .station-scroll, #scenario-list, .custom-incident-form, #decision-cards {
+.panel h3::before { content: ''; width: 3px; height: 11px; border-radius: 2px; background: var(--accent); flex: none; }
+.chart-toggle-btn {
+  margin-left: auto; font-family: 'Noto Sans TC', sans-serif; font-size: .66rem; font-weight: 700;
+  color: var(--accent); background: rgba(126,200,188,.12); border: 1px solid rgba(126,200,188,.35);
+  border-radius: 20px; padding: 4px 10px; cursor: pointer; white-space: nowrap;
+}
+.chart-toggle-btn:hover, .chart-toggle-btn.active { background: rgba(126,200,188,.25); }
+.timeline-row { flex: none; }
+.alert-scroll, .station-scroll, .segstat-scroll, #scenario-list, .custom-incident-form, #decision-cards {
   flex: 1; min-height: 0; overflow-y: auto; padding-right: 4px;
 }
 
@@ -99,44 +113,63 @@ body {
 .map-sub { font-size: .8rem; }
 
 /* ── KPI Strip（模組 1・路網總覽，儀表板 Tab 底部，跨全寬）─────────────────── */
-.kpi-strip { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-top: 18px; flex: none; }
+.kpi-strip { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 12px; flex: none; }
 .kpi-strip-card {
   background: rgba(255,255,255,.03); border: 1px solid var(--border); border-radius: 10px;
-  padding: 12px 16px; position: relative; overflow: hidden;
+  padding: 8px 13px; position: relative; overflow: hidden;
 }
 .kpi-strip-card::before {
   content: ''; position: absolute; inset: 0 0 auto 0; height: 2px;
   background: linear-gradient(90deg, var(--accent), transparent); opacity: .6;
 }
-.ks-label { font-size: .76rem; color: var(--text-dim); letter-spacing: .2px; }
+.ks-label { font-size: .66rem; color: var(--text-dim); letter-spacing: .2px; }
 .ks-value {
-  font-family: var(--font-mono); font-size: 1.5rem; font-weight: 700;
-  margin-top: 5px; display: flex; align-items: baseline; gap: 5px;
+  font-family: var(--font-mono); font-size: 1.15rem; font-weight: 700;
+  margin-top: 3px; display: flex; align-items: baseline; gap: 4px;
 }
-.ks-unit { font-size: .74rem; color: var(--text-dim); font-family: 'Noto Sans TC', sans-serif; font-weight: 400; }
-.ks-delta { font-size: .74rem; color: var(--text-dim); margin-top: 4px; }
+.ks-unit { font-size: .64rem; color: var(--text-dim); font-family: 'Noto Sans TC', sans-serif; font-weight: 400; }
+.ks-delta { font-size: .64rem; color: var(--text-dim); margin-top: 2px; }
 .ks-delta.up { color: var(--critical); }
 .ks-delta.down { color: var(--safe); }
 
 /* ── Base Station Panel（模組 1・基地台狀態，共用模組5 /api/signal/stations）── */
 .station-row {
-  background: rgba(255,255,255,.03); border: 1px solid var(--border); border-radius: 8px;
-  padding: 9px 11px; margin-bottom: 8px; font-size: .82rem;
+  background: rgba(255,255,255,.03); border: 1px solid var(--border); border-radius: 7px;
+  padding: 5px 8px; margin-bottom: 5px; font-size: .68rem;
 }
-.station-row .sr-sub { font-size: .7rem; color: var(--text-dim); margin-top: 2px; }
-.station-row .sr-roam { font-family: var(--font-mono); font-weight: 700; margin-top: 4px; }
-.station-row .sr-bar-track { height: 5px; border-radius: 4px; background: var(--border); overflow: hidden; margin-top: 5px; }
+.station-row .sr-sub {
+  font-size: .56rem; color: var(--text-dim); margin-top: 1px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.station-row .sr-roam { font-family: var(--font-mono); font-weight: 700; margin-top: 2px; font-size: .72rem; }
+.station-row .sr-bar-track { height: 3px; border-radius: 4px; background: var(--border); overflow: hidden; margin-top: 3px; }
 .station-row .sr-bar-fill { height: 100%; border-radius: 4px; }
 .station-row.trigger { border-color: var(--critical); background: rgba(242,122,132,.08); }
 .station-row.trigger .sr-roam { color: var(--critical); }
 
+/* ── Segment Status List（模組 1・路段即時狀態，15 路段速覽）─────────────── */
+.segstat-row {
+  display: flex; align-items: center; gap: 7px;
+  padding: 5px 4px; font-size: .74rem; border-bottom: 1px solid var(--border);
+}
+.segstat-row:last-child { border-bottom: none; }
+.segstat-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.segstat-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.segstat-speed { font-family: var(--font-mono); font-size: .68rem; color: var(--text-dim); flex: none; }
+.segstat-pct {
+  font-family: var(--font-mono); font-size: .68rem; font-weight: 700;
+  padding: 1px 6px; border-radius: 4px; flex: none; color: var(--ink);
+}
+
 /* ── Map Legend（模組 1・地圖圖例，比照戰情室原型設計稿）─────────────────────
    isolation:isolate 讓 Leaflet 內部 pane（tile/overlay/marker 等，z-index
    200~700）與圖例的 z-index 只在 .map-wrap 內部互相比較，不會跟外層的
-   modal/drawer/toast 疊圖層衝突（之前圖例會蓋在多語通報 Modal 上面就是這個原因）。 */
-.map-wrap { position: relative; margin-bottom: 14px; isolation: isolate; }
+   modal/drawer/toast 疊圖層衝突（之前圖例會蓋在多語通報 Modal 上面就是這個原因）。
+   地圖用 flex:1 填滿面板剩餘高度（而不是用 aspect-ratio + 猜測值的 max-height），
+   這樣不管視窗多高，時間軸列一定留得出空間，不會被 overflow:hidden 擠出面板外。 */
+.map-wrap { position: relative; margin-bottom: 14px; isolation: isolate; flex: 1; min-height: 160px; }
 #leaflet-map {
-  width: 100%; aspect-ratio: 16 / 10; max-height: calc(100vh - 400px); min-height: 200px;
+  width: 100%; height: 100%;
   border-radius: 8px; border: 1px solid var(--border);
 }
 .map-legend {
@@ -149,61 +182,90 @@ body {
 .map-legend .sw { width: 14px; height: 3px; border-radius: 2px; flex: none; }
 .map-legend .thresh { margin-left: auto; font-family: ui-monospace, monospace; color: var(--text-dim); opacity: .7; }
 
+/* ── Network Saturation/Speed Chart Popup（模組 1・飽和度／車速時序監測）──── */
+.chart-popup {
+  position: absolute; left: 10px; bottom: 10px; width: min(360px, calc(100% - 20px)); z-index: 500;
+  background: rgba(10,14,23,.92); border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px 12px 8px; backdrop-filter: blur(4px);
+  box-shadow: 0 12px 28px -10px rgba(0,0,0,.6);
+}
+.chart-popup-head { display: flex; align-items: center; gap: 12px; }
+.chart-popup-title { font-family: var(--font-display); font-size: .74rem; font-weight: 700; color: var(--text); }
+.chart-readouts { display: flex; gap: 14px; margin-left: auto; }
+.chart-readout { display: flex; flex-direction: column; align-items: flex-end; }
+.chart-readout .cr-val { font-family: var(--font-mono); font-size: 1.1rem; font-weight: 700; line-height: 1; }
+.chart-readout .cr-lbl { font-size: .6rem; color: var(--text-dim); margin-top: 2px; }
+.chart-readout.sat .cr-val { color: var(--caution); }
+.chart-readout.spd .cr-val { color: var(--safe); }
+.chart-popup-close { background: none; border: none; color: var(--text-dim); font-size: .85rem; cursor: pointer; flex: none; }
+.chart-popup-close:hover { color: var(--text); }
+.chart-svg { width: 100%; height: 90px; display: block; margin-top: 6px; overflow: visible; }
+
+/* ── Station Tooltip（模組 1・地圖站點 hover，整個提示框淡入）───────────────
+   只做透明度淡入，不加 scale/translate，避免看起來像在移動。 */
+.leaflet-tooltip.map-tooltip {
+  animation: stationTooltipFade .6s ease-out both;
+}
+@keyframes stationTooltipFade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
 /* ── Timeline（模組 1・動態時序，滑桿＋倍速，比照戰情室原型設計稿）─────────── */
 .timeline-row {
-  display: flex; align-items: center; gap: 10px;
-  margin-bottom: 18px; flex-wrap: wrap;
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 12px; flex-wrap: wrap;
 }
 .tl-play-btn {
-  width: 34px; height: 34px; border-radius: 8px; flex: none;
+  width: 28px; height: 28px; border-radius: 7px; flex: none;
   background: rgba(255,255,255,.03); border: 1px solid var(--border); color: var(--text);
-  cursor: pointer; font-size: .8rem; display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: .72rem; display: flex; align-items: center; justify-content: center;
   transition: all .2s;
 }
 .tl-play-btn:hover { border-color: var(--accent); color: var(--accent); }
 .tl-play-btn.playing { background: var(--accent); color: var(--ink); border-color: var(--accent); }
 .tl-speed-select {
   display: flex; gap: 3px; flex: none;
-  background: rgba(255,255,255,.03); border: 1px solid var(--border); border-radius: 8px; padding: 3px;
+  background: rgba(255,255,255,.03); border: 1px solid var(--border); border-radius: 7px; padding: 2px;
 }
 .tl-speed-btn {
   background: transparent; border: none; color: var(--text-dim); cursor: pointer;
-  font-family: ui-monospace, monospace; font-size: .72rem; padding: 4px 8px; border-radius: 6px;
+  font-family: ui-monospace, monospace; font-size: .64rem; padding: 3px 7px; border-radius: 5px;
 }
 .tl-speed-btn.active { background: rgba(116,179,168,.18); color: var(--accent); font-weight: 700; }
-.tl-time { font-size: .85rem; font-weight: 700; min-width: 42px; flex: none; }
+.tl-time { font-size: .74rem; font-weight: 700; min-width: 38px; flex: none; }
 #timeline-slider {
-  flex: 1; min-width: 100px; -webkit-appearance: none; height: 4px; border-radius: 4px; outline: none;
+  flex: 1; min-width: 100px; -webkit-appearance: none; height: 3px; border-radius: 4px; outline: none;
   background: linear-gradient(90deg, var(--accent) 0%, var(--accent) var(--pct,0%), var(--border) var(--pct,0%));
 }
 #timeline-slider::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
+  -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%;
   background: #fff; border: 3px solid var(--accent); cursor: pointer; margin-top: -1px;
 }
-.tl-range { font-size: .72rem; color: var(--text-dim); flex: none; }
+.tl-range { font-size: .64rem; color: var(--text-dim); flex: none; }
 
 /* ── Alert Cards ──────────────────────────────────────────────────────────── */
 .alert-card {
   background: rgba(169,155,219,.06); border: 1px solid var(--sop1);
-  border-radius: 10px; padding: 16px 20px; margin-bottom: 14px;
+  border-radius: 10px; padding: 11px 14px; margin-bottom: 10px;
 }
 .alert-card.sop6 { border-color: var(--accent); background: rgba(116,179,168,.06); }
-.alert-hdr { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.alert-hdr { display: flex; justify-content: space-between; align-items: center; margin-bottom: 7px; }
 .alert-tag {
-  font-family: var(--font-display); font-size: .72rem; font-weight: 700; padding: 3px 8px;
+  font-family: var(--font-display); font-size: .64rem; font-weight: 700; padding: 2px 7px;
   border-radius: 4px; background: var(--sop1); color: var(--ink);
 }
 .caution-bg { background: var(--caution); }
 .accent-bg  { background: var(--accent); }
-.alert-body { font-size: .9rem; line-height: 1.8; }
+.alert-body { font-size: .78rem; line-height: 1.6; }
 .critical-text { color: var(--critical); font-weight: 700; }
 .caution-text  { color: var(--caution); font-weight: 700; }
 .accent-text   { color: var(--accent); font-weight: 700; }
 
 .btn-explain {
-  margin-top: 10px; padding: 6px 14px; border-radius: 6px;
+  margin-top: 7px; padding: 5px 11px; border-radius: 6px;
   background: rgba(116,179,168,.15); border: 1px solid var(--accent);
-  color: var(--accent); font-size: .8rem; font-weight: 700; cursor: pointer;
+  color: var(--accent); font-size: .7rem; font-weight: 700; cursor: pointer;
   transition: background .2s;
 }
 .btn-explain:hover { background: rgba(116,179,168,.3); }
@@ -512,8 +574,6 @@ select:focus { outline: none; border-color: var(--accent); }
 .leaflet-control-container { z-index: 10 !important; }
 .leaflet-control-zoom { z-index: 10 !important; }
 .leaflet-control-attribution { z-index: 10 !important; }
-
-/* ── Footer ───────────────────────────────────────────────────────────────── */
-footer { text-align: center; padding: 20px; color: var(--text-dim); font-size: .78rem; }
+.leaflet-attribution-flag { display: none !important; }
 
 .hidden { display: none !important; }

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>SQUIRREL 交通指揮中心</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20260721-pro-polish">
+<link rel="stylesheet" href="style.css?v=20260722-network-chart">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 </head>
 <body>
@@ -31,39 +31,91 @@
 
   <!-- TAB 1: Dashboard (Module 1) -->
   <section class="tab-panel active" id="panel-dashboard">
-    <div class="grid-3">
-      <!-- Left: Base station status（signaling_crowd_density 9 站，與模組5共用資料）-->
-      <div class="panel">
-        <h3>基地台狀態</h3>
-        <div class="station-scroll" id="station-status-list">
-          <div class="station-row">載入中…</div>
-        </div>
-      </div>
-      <!-- Center: Map + Timeline -->
-      <div class="panel">
-        <h3>路段即時監控</h3>
-        <div class="map-wrap">
-          <div id="leaflet-map"></div>
-          <div class="map-legend">
-            <div class="lr"><span class="sw" style="background:var(--safe)"></span>正常路段<span class="thresh">&lt;0.85</span></div>
-            <div class="lr"><span class="sw" style="background:var(--caution)"></span>B級壅擠<span class="thresh">0.85–0.95</span></div>
-            <div class="lr"><span class="sw" style="background:var(--critical)"></span>A級癱瘓<span class="thresh">≥0.95</span></div>
+    <div class="dash-layout">
+      <!-- Left: KPI Strip 疊在基地台狀態／地圖上方，寬度不含右側即時警報欄 -->
+      <div class="dash-left">
+        <div class="kpi-strip">
+          <div class="kpi-strip-card">
+            <div class="ks-label">路網平均速度</div>
+            <div class="ks-value"><span id="ks-speed-value">--</span><span class="ks-unit">km/h</span></div>
+            <div class="ks-delta" id="ks-speed-delta"></div>
+          </div>
+          <div class="kpi-strip-card">
+            <div class="ks-label">平均飽和度</div>
+            <div class="ks-value"><span id="ks-sat-value">--</span><span class="ks-unit">%</span></div>
+            <div class="ks-delta" id="ks-sat-delta"></div>
+          </div>
+          <div class="kpi-strip-card">
+            <div class="ks-label">今日預警事件</div>
+            <div class="ks-value"><span id="ks-alert-value">--</span><span class="ks-unit">件</span></div>
+            <div class="ks-delta">累積自 17:00</div>
+          </div>
+          <div class="kpi-strip-card">
+            <div class="ks-label">重點壅塞路段</div>
+            <div class="ks-value"><span id="ks-seg-value">--</span><span class="ks-unit">/ 15</span></div>
+            <div class="ks-delta" id="ks-seg-delta"></div>
+          </div>
+          <div class="kpi-strip-card">
+            <div class="ks-label">估計影響人次</div>
+            <div class="ks-value"><span id="ks-impact-value">--</span><span class="ks-unit">k</span></div>
+            <div class="ks-delta">依路段車數估算</div>
           </div>
         </div>
-        <div class="timeline-row">
-          <button class="tl-play-btn" id="timeline-play" onclick="toggleTimelinePlay()" aria-pressed="false">▶</button>
-          <div class="tl-speed-select">
-            <button class="tl-speed-btn active" data-speed="1" onclick="setTimelineSpeed(1)">1×</button>
-            <button class="tl-speed-btn" data-speed="2" onclick="setTimelineSpeed(2)">2×</button>
-            <button class="tl-speed-btn" data-speed="4" onclick="setTimelineSpeed(4)">4×</button>
+        <div class="grid-3">
+          <!-- Base station status（signaling_crowd_density 9 站，與模組5共用資料）-->
+          <div class="panel">
+            <h3>基地台狀態</h3>
+            <div class="station-scroll" id="station-status-list">
+              <div class="station-row">載入中…</div>
+            </div>
           </div>
-          <span class="tl-time mono" id="timeline-time">--:--</span>
-          <input type="range" id="timeline-slider" min="0" max="0" value="0" step="1" oninput="onTimelineSlide(this.value)">
-          <span class="tl-range mono" id="timeline-range"></span>
+          <!-- Map + Timeline -->
+          <div class="panel">
+            <h3>路段即時監控
+              <button class="chart-toggle-btn" id="chart-toggle-btn" onclick="toggleNetworkChart()">飽和度／車速走勢</button>
+            </h3>
+            <div class="map-wrap">
+              <div id="leaflet-map"></div>
+              <div class="map-legend">
+                <div class="lr"><span class="sw" style="background:var(--safe)"></span>正常路段<span class="thresh">&lt;0.85</span></div>
+                <div class="lr"><span class="sw" style="background:var(--caution)"></span>B級壅擠<span class="thresh">0.85–0.95</span></div>
+                <div class="lr"><span class="sw" style="background:var(--critical)"></span>A級癱瘓<span class="thresh">≥0.95</span></div>
+              </div>
+              <div class="chart-popup hidden" id="chart-popup">
+                <div class="chart-popup-head">
+                  <span class="chart-popup-title">飽和度／車速 時序監測</span>
+                  <div class="chart-readouts">
+                    <div class="chart-readout sat"><span class="cr-val" id="chart-sat-value">--</span><span class="cr-lbl">全市飽和度</span></div>
+                    <div class="chart-readout spd"><span class="cr-val" id="chart-spd-value">--</span><span class="cr-lbl">均速 km/h</span></div>
+                  </div>
+                  <button class="chart-popup-close" onclick="toggleNetworkChart(false)">✕</button>
+                </div>
+                <svg class="chart-svg" id="network-chart-svg" viewBox="0 0 1000 100" preserveAspectRatio="none"></svg>
+              </div>
+            </div>
+            <div class="timeline-row">
+              <button class="tl-play-btn" id="timeline-play" onclick="toggleTimelinePlay()" aria-pressed="false">▶</button>
+              <div class="tl-speed-select">
+                <button class="tl-speed-btn active" data-speed="1" onclick="setTimelineSpeed(1)">1×</button>
+                <button class="tl-speed-btn" data-speed="2" onclick="setTimelineSpeed(2)">2×</button>
+                <button class="tl-speed-btn" data-speed="4" onclick="setTimelineSpeed(4)">4×</button>
+              </div>
+              <span class="tl-time mono" id="timeline-time">--:--</span>
+              <input type="range" id="timeline-slider" min="0" max="0" value="0" step="1" oninput="onTimelineSlide(this.value)">
+              <span class="tl-range mono" id="timeline-range"></span>
+            </div>
+          </div>
         </div>
       </div>
-      <!-- Right: Alert cards -->
-      <div class="panel">
+      <!-- 路段即時狀態：15 個路段的速度／飽和度速覽清單 -->
+      <div class="panel dash-segstatus">
+        <h3>路段即時狀態</h3>
+        <div class="segstat-scroll" id="segstat-list">
+          <div class="segstat-row">載入中…</div>
+        </div>
+      </div>
+      <!-- Right: Alert cards，獨立佔滿整欄高度，不受左側 KPI 列影響 -->
+      <div class="panel dash-alerts">
         <h3>即時警報</h3>
         <div class="alert-scroll">
           <div class="alert-card sop1">
@@ -89,34 +141,6 @@
             <button class="btn-explain" onclick="openModule5Modal()">查看多語通報</button>
           </div>
         </div>
-      </div>
-    </div>
-    <!-- Bottom: 路網總覽 KPI Strip -->
-    <div class="kpi-strip">
-      <div class="kpi-strip-card">
-        <div class="ks-label">路網平均速度</div>
-        <div class="ks-value"><span id="ks-speed-value">--</span><span class="ks-unit">km/h</span></div>
-        <div class="ks-delta" id="ks-speed-delta"></div>
-      </div>
-      <div class="kpi-strip-card">
-        <div class="ks-label">平均飽和度</div>
-        <div class="ks-value"><span id="ks-sat-value">--</span><span class="ks-unit">%</span></div>
-        <div class="ks-delta" id="ks-sat-delta"></div>
-      </div>
-      <div class="kpi-strip-card">
-        <div class="ks-label">今日預警事件</div>
-        <div class="ks-value"><span id="ks-alert-value">--</span><span class="ks-unit">件</span></div>
-        <div class="ks-delta">累積自 17:00</div>
-      </div>
-      <div class="kpi-strip-card">
-        <div class="ks-label">重點壅塞路段</div>
-        <div class="ks-value"><span id="ks-seg-value">--</span><span class="ks-unit">/ 15</span></div>
-        <div class="ks-delta" id="ks-seg-delta"></div>
-      </div>
-      <div class="kpi-strip-card">
-        <div class="ks-label">估計影響人次</div>
-        <div class="ks-value"><span id="ks-impact-value">--</span><span class="ks-unit">k</span></div>
-        <div class="ks-delta">依路段車數估算</div>
       </div>
     </div>
   </section>
@@ -316,10 +340,7 @@
   </div>
 </div>
 
-<!-- ══ FOOTER ══════════════════════════════════════════════════════════════ -->
-<footer>SQUIRREL Traffic Control War Room · Module 1~5 整合展示 · Qwen 2.5</footer>
-
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<script src="app.js?v=20260721-pro-polish"></script>
+<script src="app.js?v=20260722-network-chart"></script>
 </body>
 </html>

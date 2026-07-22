@@ -49,6 +49,21 @@ def api_history(entity_id: str) -> dict:
     return {"entity_id": entity_id, "metric": metric, "points": points}
 
 
+@router.get("/network-history")
+def api_network_history() -> dict:
+    """全市每個時間點的平均飽和度／平均車速，供飽和度／車速時序圖表使用。"""
+    timestamps = available_timestamps()
+    avg_saturation = []
+    avg_speed = []
+    for ts in timestamps:
+        segments = get_snapshot(ts)["road_segments"].values()
+        saturations = [s["saturation_score"] for s in segments if s["saturation_score"] is not None]
+        speeds = [s["avg_speed"] for s in segments if s["avg_speed"] is not None]
+        avg_saturation.append(sum(saturations) / len(saturations) if saturations else None)
+        avg_speed.append(sum(speeds) / len(speeds) if speeds else None)
+    return {"timestamps": timestamps, "avg_saturation": avg_saturation, "avg_speed": avg_speed}
+
+
 @router.get("/dashboard")
 def api_dashboard(timestamp: Optional[str] = None) -> dict:
     """整合端點：快照 + 門檻判斷 + 本次新觸發 + LLM 摘要，前端只打這支即可。"""

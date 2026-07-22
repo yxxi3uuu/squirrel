@@ -1,14 +1,31 @@
 /* ── Leaflet Map Init ──────────────────────────────────────────────────────── */
 let mapInstance = null;
 let roadPolylines = {};
+let stationMarkers = {};
 let latestDecisions = [];
 let latestSnapshot = null;
 let latestIncident = null;
+
+// 9 個人流站點的概略座標（需要真實地標經緯度，這裡用近似座標，跟路段 mockCoords 同一套做法）
+const STATION_COORDS = {
+  BS_TPE_DOME:   [25.0453, 121.5570],
+  BS_MRT_BL17:   [25.0400, 121.5577],
+  BS_SS_PARK:    [25.0442, 121.5605],
+  BS_MRT_BL16:   [25.0418, 121.5490],
+  BS_XY_VIESHOW: [25.0335, 121.5677],
+  BS_TPE_101:    [25.0339, 121.5645],
+  BS_BUS_TERM:   [25.0375, 121.5677],
+  BS_XY_ATT:     [25.0322, 121.5665],
+  BS_MRT_BL18:   [25.0408, 121.5654],
+};
 
 document.addEventListener('DOMContentLoaded', () => {
   mapInstance = L.map('leaflet-map', { zoomControl: false }).setView([25.0336, 121.5636], 15);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(mapInstance);
   L.control.zoom({ position: 'topleft' }).addTo(mapInstance);
+  // 地圖高度改用 flex:1 撐滿面板剩餘空間（見 style.css .map-wrap），視窗尺寸變動時
+  // 容器實際像素高度會跟著變，Leaflet 需要重新量測才不會顯示錯位/留白。
+  window.addEventListener('resize', () => mapInstance.invalidateSize());
 
   // 模組 5 的觸發站點要先拿到，儀表板右側 SOP-6 卡片才能顯示真實資料
   loadModule5Status().then(() => {
@@ -28,6 +45,7 @@ async function loadTrafficData() {
     renderTrafficKPI(computeTrafficSummary(data.segments));
     renderTrafficAlerts(data.segments);
     renderTrafficMap(data.segments);
+    renderSegmentStatusList(data.segments);
   } catch (e) { console.error('車流資料載入失敗', e); }
 }
 
@@ -37,11 +55,39 @@ async function loadBaseStationPanel() {
     const res = await fetch('/api/signal/stations');
     const data = await res.json();
     renderBaseStationPanel(data.stations || []);
+    renderStationMarkers(data.stations || []);
   } catch (e) {
     console.error('基地台狀態載入失敗', e);
     const el = document.getElementById('station-status-list');
     if (el) el.innerHTML = '<div class="station-row">基地台狀態載入失敗</div>';
   }
+}
+
+/* ── 模組一：地圖站點標記（滑鼠移上去顯示人流成長率等即時狀況）───────────────── */
+function renderStationMarkers(stations) {
+  stations.forEach(s => {
+    const coords = STATION_COORDS[s.station_id];
+    if (!coords) return;
+    const growthPct = ((s.growth_rate || 0) * 100).toFixed(0);
+    const growthSign = s.growth_rate > 0 ? '+' : '';
+    const roamingPct = ((s.roaming_rate || 0) * 100).toFixed(1);
+    const tooltipHtml = `
+      <b>${s.station_name}</b><br>
+      人流 ${s.user_count.toLocaleString()} 人 · 成長率 ${growthSign}${growthPct}%<br>
+      外籍旅客比例 ${roamingPct}%${s.roaming_rate >= 0.30 ? '（已達門檻）' : ''}`;
+
+    if (stationMarkers[s.station_id]) {
+      stationMarkers[s.station_id].setTooltipContent(tooltipHtml);
+    } else {
+      const marker = L.circleMarker(coords, {
+        radius: 6, color: '#fff', weight: 1.5,
+        fillColor: s.roaming_rate >= 0.30 ? '#f27a84' : '#7ec8bc',
+        fillOpacity: 0.9,
+      }).addTo(mapInstance);
+      marker.bindTooltip(tooltipHtml, { direction: 'top', offset: [0, -6], className: 'map-tooltip', opacity: 1 });
+      stationMarkers[s.station_id] = marker;
+    }
+  });
 }
 
 function renderBaseStationPanel(stations) {
@@ -94,6 +140,74 @@ function updateTimelineDisplay() {
   document.getElementById('timeline-time').textContent = shortTime(timelineTimestamps[timelineIndex]);
   const pct = timelineTimestamps.length > 1 ? (timelineIndex / (timelineTimestamps.length - 1)) * 100 : 0;
   document.getElementById('timeline-slider').style.setProperty('--pct', pct + '%');
+  if (networkChartOpen) renderNetworkChart();
+}
+
+/* ── 模組一：飽和度／車速時序圖（地圖左下角彈出，資料來源 /api/network-history）── */
+let networkHistory = null;
+let networkChartOpen = false;
+
+async function toggleNetworkChart(force) {
+  const popup = document.getElementById('chart-popup');
+  const btn = document.getElementById('chart-toggle-btn');
+  const open = force !== undefined ? force : popup.classList.contains('hidden');
+  if (open && !networkHistory) {
+    try {
+      const res = await fetch('/api/network-history');
+      networkHistory = await res.json();
+    } catch (e) { console.error('時序圖資料載入失敗', e); return; }
+  }
+  popup.classList.toggle('hidden', !open);
+  btn.classList.toggle('active', open);
+  networkChartOpen = open;
+  if (open) renderNetworkChart();
+}
+
+function renderNetworkChart() {
+  if (!networkHistory) return;
+  const { avg_saturation, avg_speed } = networkHistory;
+  const W = 1000, H = 100;
+  const satMin = 0.35, satMax = 1.0;
+  const validSpeeds = avg_speed.filter(v => v != null);
+  const spdMax = Math.max(...validSpeeds, 10) * 1.15;
+
+  const satPath = pathFromSeries(avg_saturation, W, H, satMin, satMax);
+  const spdPath = pathFromSeries(avg_speed, W, H, 0, spdMax);
+  const areaPath = `${satPath} L${W},${H} L0,${H} Z`;
+
+  const idx = Math.min(Math.max(timelineIndex, 0), avg_saturation.length - 1);
+  const playX = avg_saturation.length > 1 ? (idx / (avg_saturation.length - 1)) * W : 0;
+
+  const svg = document.getElementById('network-chart-svg');
+  svg.innerHTML = `
+    <defs>
+      <linearGradient id="satFill" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#eab85c" stop-opacity=".3"/>
+        <stop offset="100%" stop-color="#eab85c" stop-opacity="0"/>
+      </linearGradient>
+    </defs>
+    <path d="${areaPath}" fill="url(#satFill)"/>
+    <path d="${satPath}" fill="none" stroke="#eab85c" stroke-width="2" opacity=".9"/>
+    <path d="${spdPath}" fill="none" stroke="#85d99a" stroke-width="2"/>
+    <line x1="${playX}" y1="0" x2="${playX}" y2="${H}" stroke="#f2f5f9" stroke-width="1" opacity=".3"/>
+  `;
+  updateChartReadouts(idx);
+}
+
+function pathFromSeries(arr, W, H, yMin, yMax) {
+  return arr.map((v, i) => {
+    const x = arr.length > 1 ? (i / (arr.length - 1)) * W : 0;
+    const val = v == null ? yMin : v;
+    const y = H - ((val - yMin) / (yMax - yMin)) * H;
+    return (i === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + y.toFixed(1);
+  }).join(' ');
+}
+
+function updateChartReadouts(idx) {
+  const sat = networkHistory.avg_saturation[idx];
+  const spd = networkHistory.avg_speed[idx];
+  document.getElementById('chart-sat-value').textContent = sat != null ? Math.round(sat * 100) + '%' : '--';
+  document.getElementById('chart-spd-value').textContent = spd != null ? Math.round(spd) : '--';
 }
 
 function onTimelineSlide(value) {
@@ -150,6 +264,7 @@ async function loadSnapshotAt(timestamp) {
     renderTrafficKPI(computeTrafficSummary(segments));
     renderTrafficAlerts(segments);
     renderTrafficMap(segments);
+    renderSegmentStatusList(segments);
   } catch (e) { console.error('快照載入失敗', e); }
 }
 
@@ -210,7 +325,7 @@ function renderTrafficKPI(summary) {
 }
 
 function renderTrafficAlerts(segments) {
-  const container = document.querySelector('#panel-dashboard .grid-3 > .panel:nth-child(3)');
+  const container = document.querySelector('#panel-dashboard .dash-alerts');
   const alerts = segments.filter(s => s.level === 'A' || s.level === 'B')
                          .sort((a, b) => b.Saturation_Score - a.Saturation_Score);
 
@@ -291,10 +406,28 @@ function renderTrafficMap(segments) {
       roadPolylines[s.Segment_ID].setStyle({ color });
     } else {
       const line = L.polyline(pts, { color, weight: 5, opacity: 0.9 }).addTo(mapInstance);
-      line.bindTooltip(`${s.Road_Name} (${s.Segment_ID})<br>飽和: ${s.Saturation_Score.toFixed(2)}`);
+      line.bindTooltip(`${s.Road_Name} (${s.Segment_ID})<br>飽和: ${s.Saturation_Score.toFixed(2)}`, { className: 'map-tooltip', opacity: 1 });
       roadPolylines[s.Segment_ID] = line;
     }
   });
+}
+
+/* ── 模組一：路段即時狀態清單（15 路段速覽，色點＋速度＋飽和度）───────────── */
+function renderSegmentStatusList(segments) {
+  const container = document.getElementById('segstat-list');
+  if (!container) return;
+  const levelColor = { A: 'var(--critical)', B: 'var(--caution)', OK: 'var(--safe)' };
+  container.innerHTML = segments.map(s => {
+    const pct = s.Saturation_Score != null ? Math.round(s.Saturation_Score * 100) : null;
+    const color = s.Avg_Speed === 0 ? 'var(--text-dim)' : (levelColor[s.level] || 'var(--safe)');
+    return `
+      <div class="segstat-row">
+        <span class="segstat-dot" style="background:${color}"></span>
+        <span class="segstat-name">${s.Road_Name}</span>
+        <span class="segstat-speed">${s.Avg_Speed ?? '--'} km/h</span>
+        <span class="segstat-pct" style="background:${color}">${pct != null ? pct + '%' : '--'}</span>
+      </div>`;
+  }).join('');
 }
 
 /* ── 模組二：事件資料 ─────────────────────────────────────────────────────── */
