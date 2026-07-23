@@ -6,7 +6,7 @@ let latestSnapshot = null;
 let latestIncident = null;
 
 document.addEventListener('DOMContentLoaded', () => {
-  mapInstance = L.map('leaflet-map', { zoomControl: false }).setView([25.0336, 121.5636], 15);
+  mapInstance = L.map('leaflet-map', { zoomControl: false }).setView([25.0370, 121.5625], 14.5);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(mapInstance);
   L.control.zoom({ position: 'bottomright' }).addTo(mapInstance);
 
@@ -90,26 +90,26 @@ function renderModule5AlertCard() {
 
 function renderTrafficMap(segments) {
   const colorMap = { A: '#f27a84', B: '#eab85c', OK: '#85d99a' };
-  // 簡化：依 segment_id 畫路線（需要路網座標，這裡用 mock 座標）
-  const mockCoords = {
-    'RD_TPE_001': [[25.041,121.557],[25.040,121.572]],
-    'RD_TPE_002': [[25.040,121.551],[25.030,121.552]],
-    'RD_TPE_003': [[25.033,121.548],[25.028,121.549]],
-    'RD_TPE_004': [[25.046,121.560],[25.045,121.570]],
-    'RD_TPE_005': [[25.035,121.565],[25.033,121.566]],
-    'RD_TPE_006': [[25.034,121.564],[25.032,121.565]],
-    'RD_TPE_007': [[25.037,121.554],[25.036,121.569]],
-    'RD_TPE_008': [[25.033,121.556],[25.033,121.572]],
-    'RD_TPE_009': [[25.040,121.551],[25.030,121.552]],
-    'RD_TPE_010': [[25.040,121.561],[25.030,121.562]],
-    'RD_TPE_011': [[25.042,121.559],[25.037,121.560]],
-    'RD_TPE_012': [[25.038,121.566],[25.037,121.570]],
-    'RD_TPE_013': [[25.027,121.550],[25.020,121.550]],
-    'RD_TPE_014': [[25.026,121.556],[25.026,121.565]],
-    'RD_TPE_015': [[25.033,121.558],[25.030,121.559]],
+  // 使用 Module 2 TrafficMap 的真實路網座標
+  const roadCoords = {
+    'RD_TPE_001': [[25.0418, 121.5530], [25.0418, 121.5680]],
+    'RD_TPE_002': [[25.0460, 121.5575], [25.0330, 121.5575]],
+    'RD_TPE_003': [[25.0418, 121.5680], [25.0295, 121.5680]],
+    'RD_TPE_004': [[25.0460, 121.5480], [25.0460, 121.5575]],
+    'RD_TPE_005': [[25.0330, 121.5480], [25.0330, 121.5680]],
+    'RD_TPE_006': [[25.0460, 121.5480], [25.0330, 121.5480]],
+    'RD_TPE_007': [[25.0380, 121.5650], [25.0380, 121.5750]],
+    'RD_TPE_008': [[25.0418, 121.5530], [25.0330, 121.5530]],
+    'RD_TPE_009': [[25.0418, 121.5690], [25.0370, 121.5690]],
+    'RD_TPE_010': [[25.0380, 121.5750], [25.0310, 121.5750]],
+    'RD_TPE_011': [[25.0340, 121.5650], [25.0340, 121.5770]],
+    'RD_TPE_012': [[25.0330, 121.5480], [25.0250, 121.5480]],
+    'RD_TPE_013': [[25.0295, 121.5650], [25.0295, 121.5770]],
+    'RD_TPE_014': [[25.0380, 121.5770], [25.0295, 121.5770]],
+    'RD_TPE_015': [[25.0460, 121.5430], [25.0418, 121.5430]],
   };
   segments.forEach(s => {
-    const pts = mockCoords[s.Segment_ID];
+    const pts = roadCoords[s.Segment_ID];
     if (!pts) return;
     const color = colorMap[s.level] || '#85d99a';
     if (roadPolylines[s.Segment_ID]) {
@@ -120,6 +120,35 @@ function renderTrafficMap(segments) {
       roadPolylines[s.Segment_ID] = line;
     }
   });
+
+  // 加入站點標記（捷運站、地標、公車轉運站）— 來自 Module 2 TrafficMap
+  if (!window._stationMarkersAdded) {
+    window._stationMarkersAdded = true;
+    const stations = [
+      { id: "BS_MRT_BL17", name: "捷運國父紀念館站", type: "mrt", coords: [25.0408, 121.5576] },
+      { id: "BS_MRT_BL16", name: "捷運忠孝敦化站",   type: "mrt", coords: [25.0415, 121.5483] },
+      { id: "BS_MRT_BL18", name: "捷運市政府站",     type: "mrt", coords: [25.0406, 121.5659] },
+      { id: "BS_TPE_DOME", name: "大巨蛋",           type: "venue", coords: [25.0357, 121.5573] },
+      { id: "BS_TPE_101",  name: "台北101",           type: "landmark", coords: [25.0339, 121.5645] },
+      { id: "BS_XY_VIESHOW", name: "信義威秀",       type: "venue", coords: [25.0380, 121.5680] },
+      { id: "BS_XY_ATT",  name: "ATT4FUN",           type: "venue", coords: [25.0368, 121.5680] },
+      { id: "BS_BUS_TERM", name: "市府轉運站",       type: "bus",   coords: [25.0405, 121.5660] },
+      { id: "BS_SS_PARK", name: "松山文創園區",      type: "venue", coords: [25.0462, 121.5605] },
+    ];
+    stations.forEach(st => {
+      const color = st.type === 'mrt' ? '#00cec9' : st.type === 'bus' ? '#fdcb6e' : '#fd79a8';
+      const size = st.type === 'mrt' ? 14 : 12;
+      const radius = st.type === 'mrt' ? '50%' : st.type === 'venue' ? '3px' : '50%';
+      const icon = L.divIcon({
+        className: '',
+        html: `<div style="width:${size}px;height:${size}px;border-radius:${radius};background:${color};border:2px solid #fff;box-shadow:0 0 6px ${color}aa;"></div>`,
+        iconSize: [size, size], iconAnchor: [size/2, size/2],
+      });
+      const marker = L.marker(st.coords, { icon, zIndexOffset: 200 }).addTo(mapInstance);
+      const typeLabel = st.type === 'mrt' ? '[捷運]' : st.type === 'bus' ? '[公車]' : '[地標]';
+      marker.bindPopup(`<div style="font-family:sans-serif;min-width:140px"><b style="font-size:13px">${st.name}</b><div style="font-size:11px;color:#888;margin-top:4px">${typeLabel}</div></div>`);
+    });
+  }
 }
 
 /* ── 模組二：事件資料 ─────────────────────────────────────────────────────── */
