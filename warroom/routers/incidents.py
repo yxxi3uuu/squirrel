@@ -1,7 +1,7 @@
 """
 模組二 API：live_incidents.json + SOP 決策引擎（整合版）
 
-使用 backend.services.sop_engine 的完整 SOP 規則引擎，取代舊版簡化邏輯。
+使用 warroom.module2.backend.services.sop_engine 的完整 SOP 規則引擎，取代舊版簡化邏輯。
 包含上下游判定、LLM 引導文字、精確排除理由等進階功能。
 """
 
@@ -14,7 +14,7 @@ from typing import Any, Optional
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from backend.services.sop_engine import process_incident as _engine_process_incident
+from warroom.module2.backend.services.sop_engine import process_incident as _engine_process_incident
 from shared.schemas import TriggerDecision
 
 router = APIRouter()

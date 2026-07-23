@@ -15,7 +15,7 @@ from typing import List, Optional, Tuple
 
 from shared.lookup import find_entities_in_text
 from shared.schemas import TriggerDecision
-from backend.services.llm_mock import generate_guidance
+from .llm_mock import generate_guidance
 
 # ------------------------------------------------------------------
 # 常數

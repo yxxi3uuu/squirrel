@@ -16,14 +16,14 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from backend.services.sop_engine import process_incident
-from backend.store.incident_store import get_active, inject, resolve
+from warroom.module2.backend.services.sop_engine import process_incident
+from warroom.module2.backend.store.incident_store import get_active, inject, resolve
 from data.snapshot import get_snapshot, available_timestamps
 from shared.schemas import TriggerDecision
 
 router = APIRouter(prefix="/api/incidents", tags=["incidents"])
 
-DATA_SOURCE_DIR = Path(__file__).resolve().parents[2] / "data_source"
+DATA_SOURCE_DIR = Path(__file__).resolve().parents[4] / "data_source"
 INCIDENTS_PATH = DATA_SOURCE_DIR / "live_incidents.json"
 
 

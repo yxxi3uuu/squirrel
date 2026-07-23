@@ -14,6 +14,8 @@ _root = os.path.join(os.path.dirname(__file__), "..")
 sys.path.insert(0, _root)
 
 from warroom.module5.backend.routers import notify, signal
+from warroom.module2.backend.routers import incidents as _m2_incidents_module  # noqa: F401 — req 4.1 visibility
+from warroom.module2.backend.routers.incidents import router as m2_incidents_router  # noqa: F401 — req 4.1
 from warroom.routers import advisor, incidents, traffic
 
 app = FastAPI(title="Squirrel War Room")

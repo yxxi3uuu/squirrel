@@ -3,7 +3,7 @@ FastAPI application entry point — Module 2: Live Incident Response
 
 啟動方式（獨立執行）：
   cd d:\\REPOs\\squirrel
-  uvicorn backend.main:app --reload --port 8002
+  uvicorn warroom.module2.backend.main:app --reload --port 8002
 
 API 文件（Swagger UI）：
   http://localhost:8002/docs
@@ -14,7 +14,7 @@ API 文件（Swagger UI）：
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.routers.incidents import router as incidents_router
+from warroom.module2.backend.routers.incidents import router as incidents_router
 
 app = FastAPI(
     title="Module 2 — Live Incident Response",

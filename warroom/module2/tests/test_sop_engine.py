@@ -3,7 +3,7 @@
 
 執行方式：
   cd d:\\REPOs\\squirrel
-  python -m backend.tests.test_sop_engine
+  python -m warroom.module2.tests.test_sop_engine
 
 預期結果：
   案例A：陣列長度 2（SOP-1 + SOP-2）；ETE≈83.4
@@ -15,10 +15,10 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from data.snapshot import get_snapshot, available_timestamps
-from backend.services.sop_engine import process_incident
+from warroom.module2.backend.services.sop_engine import process_incident
 
 
 def _nearest_snapshot_ts(target_ts: str) -> str:
@@ -30,7 +30,7 @@ def _nearest_snapshot_ts(target_ts: str) -> str:
 
 
 def _load_incidents():
-    path = Path(__file__).resolve().parents[2] / "data_source" / "live_incidents.json"
+    path = Path(__file__).resolve().parents[3] / "data_source" / "live_incidents.json"
     with path.open("r", encoding="utf-8") as fh:
         return {inc["event_id"]: inc for inc in json.load(fh)}
 
