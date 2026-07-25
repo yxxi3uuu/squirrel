@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>SQUIRREL 交通指揮中心</title>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20260721-custom-incident">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=20260725-m5toast-restored">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 </head>
 <body>
@@ -17,11 +17,11 @@
     <span class="title">SQUIRREL 交通指揮中心</span>
   </div>
   <nav class="tabs">
-    <button class="tab active" data-tab="dashboard">🖥️ 儀表板</button>
-    <button class="tab" data-tab="incident">⚡ 事件處置</button>
+    <button class="tab active" data-tab="dashboard">儀表板</button>
+    <button class="tab" data-tab="incident">事件處置</button>
   </nav>
   <div class="top-right">
-    <span class="badge">LLM 模式: Ollama</span>
+    <span class="badge"><span class="status-dot pulse"></span>LLM 模式: Ollama</span>
     <button class="bell" id="bell-btn">🔔</button>
   </div>
 </header>
@@ -31,41 +31,115 @@
 
   <!-- TAB 1: Dashboard (Module 1) -->
   <section class="tab-panel active" id="panel-dashboard">
-    <div class="grid-2">
-      <!-- Left: Map + KPI -->
-      <div class="panel">
-        <h3>📍 路段即時監控</h3>
-        <div id="leaflet-map" style="height:600px;border-radius:8px;border:1px solid var(--border);"></div>
-        <div class="kpi-row">
-          <div class="kpi-card critical"><div class="kpi-val">1</div><div class="kpi-lbl">A級癱瘓</div></div>
-          <div class="kpi-card caution"><div class="kpi-val">2</div><div class="kpi-lbl">B級壅擠</div></div>
-          <div class="kpi-card safe"><div class="kpi-val mono">31 km/h</div><div class="kpi-lbl">平均車速</div></div>
+    <div class="dash-layout">
+      <!-- Left: KPI Strip 疊在基地台狀態／地圖上方，寬度不含右側即時警報欄 -->
+      <div class="dash-left">
+        <div class="kpi-strip">
+          <div class="kpi-strip-card">
+            <div class="ks-label">路網平均速度</div>
+            <div class="ks-value"><span id="ks-speed-value">--</span><span class="ks-unit">km/h</span></div>
+            <div class="ks-delta" id="ks-speed-delta"></div>
+          </div>
+          <div class="kpi-strip-card">
+            <div class="ks-label">平均飽和度</div>
+            <div class="ks-value"><span id="ks-sat-value">--</span><span class="ks-unit">%</span></div>
+            <div class="ks-delta" id="ks-sat-delta"></div>
+          </div>
+          <div class="kpi-strip-card">
+            <div class="ks-label">今日預警事件</div>
+            <div class="ks-value"><span id="ks-alert-value">--</span><span class="ks-unit">件</span></div>
+            <div class="ks-delta">累積自 17:00</div>
+          </div>
+          <div class="kpi-strip-card">
+            <div class="ks-label">重點壅塞路段</div>
+            <div class="ks-value"><span id="ks-seg-value">--</span><span class="ks-unit">/ 15</span></div>
+            <div class="ks-delta" id="ks-seg-delta"></div>
+          </div>
+          <div class="kpi-strip-card">
+            <div class="ks-label">估計影響人次</div>
+            <div class="ks-value"><span id="ks-impact-value">--</span><span class="ks-unit">k</span></div>
+            <div class="ks-delta">依路段車數估算</div>
+          </div>
+        </div>
+        <div class="grid-3">
+          <!-- Base station status（signaling_crowd_density 9 站，與模組5共用資料）-->
+          <div class="panel">
+            <h3>基地台狀態</h3>
+            <div class="station-scroll" id="station-status-list">
+              <div class="station-row">載入中…</div>
+            </div>
+          </div>
+          <!-- Map + Timeline -->
+          <div class="panel">
+            <h3>路段即時監控
+              <button class="chart-toggle-btn" id="chart-toggle-btn" onclick="toggleNetworkChart()">飽和度／車速走勢</button>
+            </h3>
+            <div class="map-wrap">
+              <div id="leaflet-map"></div>
+              <div class="map-legend">
+                <div class="lr"><span class="sw" style="background:var(--safe)"></span>正常路段<span class="thresh">&lt;0.85</span></div>
+                <div class="lr"><span class="sw" style="background:var(--caution)"></span>B級壅擠<span class="thresh">0.85–0.95</span></div>
+                <div class="lr"><span class="sw" style="background:var(--critical)"></span>A級癱瘓<span class="thresh">≥0.95</span></div>
+              </div>
+              <div class="chart-popup hidden" id="chart-popup">
+                <div class="chart-popup-head">
+                  <span class="chart-popup-title" id="chart-popup-title">飽和度／車速 時序監測</span>
+                  <div class="chart-readouts">
+                    <div class="chart-readout sat" id="chart-readout-sat"><span class="cr-val" id="chart-sat-value">--</span><span class="cr-lbl" id="chart-sat-label">全市飽和度</span></div>
+                    <div class="chart-readout spd" id="chart-readout-spd"><span class="cr-val" id="chart-spd-value">--</span><span class="cr-lbl" id="chart-spd-label">均速 km/h</span></div>
+                  </div>
+                  <button class="chart-popup-close" onclick="closeChartPopup()">✕</button>
+                </div>
+                <svg class="chart-svg" id="network-chart-svg" viewBox="0 0 1000 100" preserveAspectRatio="none"></svg>
+              </div>
+            </div>
+            <div class="timeline-row">
+              <button class="tl-play-btn" id="timeline-play" onclick="toggleTimelinePlay()" aria-pressed="false">▶</button>
+              <div class="tl-speed-select">
+                <button class="tl-speed-btn active" data-speed="1" onclick="setTimelineSpeed(1)">1×</button>
+                <button class="tl-speed-btn" data-speed="2" onclick="setTimelineSpeed(2)">2×</button>
+                <button class="tl-speed-btn" data-speed="4" onclick="setTimelineSpeed(4)">4×</button>
+              </div>
+              <span class="tl-time mono" id="timeline-time">--:--</span>
+              <input type="range" id="timeline-slider" min="0" max="0" value="0" step="1" oninput="onTimelineSlide(this.value)">
+              <span class="tl-range mono" id="timeline-range"></span>
+            </div>
+          </div>
         </div>
       </div>
-      <!-- Right: Alert cards -->
-      <div class="panel">
-        <h3>🚨 即時警報</h3>
-        <div class="alert-card sop1">
-          <div class="alert-hdr"><span class="alert-tag">SOP-1 壅塞</span><span class="mono">22:30</span></div>
-          <div class="alert-body">
-            <b>忠孝東路四段 (RD_TPE_001)</b><br>
-            飽和度 <span class="mono critical-text">0.96</span> → A級癱瘓<br>
-            已啟動長綠燈時制、替代道路引導
-          </div>
-          <button class="btn-explain" onclick="openDrawer('sop1')">🔍 查看判斷依據</button>
+      <!-- 路段即時狀態：15 個路段的速度／飽和度速覽清單 -->
+      <div class="panel dash-segstatus">
+        <h3>路段即時狀態</h3>
+        <div class="segstat-scroll" id="segstat-list">
+          <div class="segstat-row">載入中…</div>
         </div>
-        <div class="alert-card sop1">
-          <div class="alert-hdr"><span class="alert-tag caution-bg">SOP-1 壅塞</span><span class="mono">22:30</span></div>
-          <div class="alert-body">
-            <b>基隆路一段 (RD_TPE_002)</b><br>
-            飽和度 <span class="mono caution-text">0.92</span> → B級壅擠
+      </div>
+      <!-- Right: Alert cards，獨立佔滿整欄高度，不受左側 KPI 列影響 -->
+      <div class="panel dash-alerts">
+        <h3>即時警報</h3>
+        <div class="alert-scroll">
+          <div class="alert-card sop1">
+            <div class="alert-hdr"><span class="alert-tag">SOP-1 壅塞</span><span class="mono">22:30</span></div>
+            <div class="alert-body">
+              <b>忠孝東路四段 (RD_TPE_001)</b><br>
+              飽和度 <span class="mono critical-text">0.96</span> → A級癱瘓<br>
+              已啟動長綠燈時制、替代道路引導
+            </div>
+            <button class="btn-explain" onclick="openDrawer('sop1')">查看判斷依據</button>
           </div>
-          <button class="btn-explain" onclick="openDrawer('sop1b')">🔍 查看判斷依據</button>
-        </div>
-        <div class="alert-card sop6">
-          <div class="alert-hdr"><span class="alert-tag accent-bg">SOP-6 多語</span></div>
-          <div class="alert-body">載入中…</div>
-          <button class="btn-explain" onclick="openModule5Modal()">🌐 查看多語通報</button>
+          <div class="alert-card sop1">
+            <div class="alert-hdr"><span class="alert-tag caution-bg">SOP-1 壅塞</span><span class="mono">22:30</span></div>
+            <div class="alert-body">
+              <b>基隆路一段 (RD_TPE_002)</b><br>
+              飽和度 <span class="mono caution-text">0.92</span> → B級壅擠
+            </div>
+            <button class="btn-explain" onclick="openDrawer('sop1b')">查看判斷依據</button>
+          </div>
+          <div class="alert-card sop6">
+            <div class="alert-hdr"><span class="alert-tag accent-bg">SOP-6 多語</span></div>
+            <div class="alert-body">載入中…</div>
+            <button class="btn-explain" onclick="openModule5Modal()">查看多語通報</button>
+          </div>
         </div>
       </div>
     </div>
@@ -75,7 +149,7 @@
   <section class="tab-panel" id="panel-incident">
     <div class="grid-2">
       <div class="panel">
-        <h3>⚡ 事件注入</h3>
+        <h3>事件注入</h3>
         <div class="inject-tabs">
           <button class="inject-tab active" data-inject-panel="scenario" onclick="switchInjectPanel('scenario')">情境事件</button>
           <button class="inject-tab" data-inject-panel="custom" onclick="switchInjectPanel('custom')">自訂事件</button>
@@ -191,7 +265,7 @@
         </form>
       </div>
       <div class="panel">
-        <h3>📋 SOP 決策結果</h3>
+        <h3>SOP 決策結果</h3>
         <div id="decision-cards">
           <div class="decision-card decision-muted">
             <div class="decision-body">
@@ -211,7 +285,7 @@
 <div id="drawer-backdrop" class="backdrop" onclick="closeDrawer()"></div>
 <aside id="drawer" class="drawer">
   <div class="drawer-head">
-    <h3 id="drawer-title">🧠 判斷依據 — 解釋鏈</h3>
+    <h3 id="drawer-title">判斷依據 — 解釋鏈</h3>
     <button class="drawer-close" onclick="closeDrawer()">✕</button>
   </div>
   <div class="drawer-body" id="drawer-body-content">
@@ -282,11 +356,12 @@
 <!-- ══ OVERLAY: Module 5 多語通報 Toast ════════════════════════════════════ -->
 <div id="toast" class="toast hidden">
   <div class="toast-content">
-    <span id="toast-text">🌐 多語通報狀態載入中…</span>
+    <span id="toast-text">多語通報狀態載入中…</span>
     <button class="toast-btn" onclick="openModule5Modal(); closeToast();">查看多語文案</button>
     <button class="toast-close" onclick="closeToast()">✕</button>
   </div>
 </div>
+
 
 <!-- ══ OVERLAY: Module 5 多語通報 Modal（原生，直接呼叫 /api/notify、/api/signal，接 Ollama）══ -->
 <div id="m5-modal-overlay" class="modal-overlay hidden" onclick="if(event.target===this) closeModule5Modal();">
@@ -303,10 +378,10 @@
         <select id="m5-station-select"></select>
       </div>
       <div id="m5-sop-banner"></div>
-      <button class="btn btn-primary" id="m5-btn-generate" onclick="m5Generate()">⚡ 生成多語告警</button>
-      <div id="m5-spinner" class="spinner hidden">🤖 Ollama 推論中…</div>
+      <button class="btn btn-primary" id="m5-btn-generate" onclick="m5Generate()">生成多語告警</button>
+      <div id="m5-spinner" class="spinner hidden">Ollama 推論中…</div>
       <div id="m5-editor" class="hidden">
-        <p class="editor-title">✏️ 警告文字（可編輯後發布）</p>
+        <p class="editor-title">警告文字（可編輯後發布）</p>
         <div id="m5-lang-tabs" class="lang-tabs"></div>
         <div id="m5-lang-panels" class="lang-panels"></div>
       </div>
@@ -319,10 +394,7 @@
   </div>
 </div>
 
-<!-- ══ FOOTER ══════════════════════════════════════════════════════════════ -->
-<footer>SQUIRREL Traffic Control War Room · Module 1~5 整合展示 · Qwen 2.5</footer>
-
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<script src="app.js?v=20260721-custom-incident"></script>
+<script src="app.js?v=20260725-m5toast-restored"></script>
 </body>
 </html>

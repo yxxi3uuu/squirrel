@@ -1,47 +1,452 @@
 /* ── Leaflet Map Init ──────────────────────────────────────────────────────── */
 let mapInstance = null;
 let roadPolylines = {};
+let stationMarkers = {};
 let latestDecisions = [];
 let latestSnapshot = null;
 let latestIncident = null;
 
+// 9 個人流站點的概略座標（需要真實地標經緯度，這裡用近似座標，跟路段 roadCoords 同一套做法）
+const STATION_COORDS = {
+  BS_TPE_DOME:   [25.0453, 121.5570],
+  BS_MRT_BL17:   [25.0400, 121.5577],
+  BS_SS_PARK:    [25.0442, 121.5605],
+  BS_MRT_BL16:   [25.0418, 121.5490],
+  BS_XY_VIESHOW: [25.0335, 121.5677],
+  BS_TPE_101:    [25.0339, 121.5645],
+  BS_BUS_TERM:   [25.0375, 121.5677],
+  BS_XY_ATT:     [25.0322, 121.5665],
+  BS_MRT_BL18:   [25.0408, 121.5654],
+};
+
 document.addEventListener('DOMContentLoaded', () => {
   mapInstance = L.map('leaflet-map', { zoomControl: false }).setView([25.0370, 121.5625], 14.5);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(mapInstance);
-  L.control.zoom({ position: 'bottomright' }).addTo(mapInstance);
+  L.control.zoom({ position: 'topleft' }).addTo(mapInstance);
+  // 地圖高度改用 flex:1 撐滿面板剩餘空間（見 style.css .map-wrap），視窗尺寸變動時
+  // 容器實際像素高度會跟著變，Leaflet 需要重新量測才不會顯示錯位/留白。
+  window.addEventListener('resize', () => mapInstance.invalidateSize());
 
   // 模組 5 的觸發站點要先拿到，儀表板右側 SOP-6 卡片才能顯示真實資料
   loadModule5Status().then(() => {
+    showModule5Toast();
     loadTrafficData();
     loadIncidentData();
   });
+  loadTimeline();
+  loadBaseStationPanel();
   showAdvisorScenarioSet('incident');
+
+  // 點路段／站點清單可切換該實體自己的歷史時序（/api/history?entity_id=）
+  document.getElementById('segstat-list').addEventListener('click', e => {
+    const row = e.target.closest('.segstat-row');
+    if (row) showEntityHistory(row.dataset.entityId, row.dataset.entityName);
+  });
+  document.getElementById('station-status-list').addEventListener('click', e => {
+    const row = e.target.closest('.station-row');
+    if (row) showEntityHistory(row.dataset.entityId, row.dataset.entityName);
+  });
   checkAdvisorStatus();
 });
 
 /* ── 模組一：車流資料 ─────────────────────────────────────────────────────── */
 async function loadTrafficData() {
   try {
-    const res = await fetch('/api/traffic/segments');
-    const data = await res.json();
-    renderTrafficKPI(data.summary);
-    renderTrafficAlerts(data.segments);
+    const [segRes, dashRes] = await Promise.all([
+      fetch('/api/traffic/segments'),
+      fetch('/api/dashboard'),
+    ]);
+    const data = await segRes.json();
+    const dashboard = await dashRes.json().catch(() => null);
+    renderTrafficKPI(computeTrafficSummary(data.segments));
+    renderTrafficAlerts(data.segments, dashboard);
     renderTrafficMap(data.segments);
+    renderSegmentStatusList(data.segments);
   } catch (e) { console.error('車流資料載入失敗', e); }
 }
 
-function renderTrafficKPI(summary) {
-  document.querySelector('#panel-dashboard .kpi-card.critical .kpi-val').textContent = summary.a_count;
-  document.querySelector('#panel-dashboard .kpi-card.caution .kpi-val').textContent = summary.b_count;
-  document.querySelector('#panel-dashboard .kpi-card.safe .kpi-val').textContent = summary.avg_speed + ' km/h';
+/* ── 模組一：基地台狀態（左側常駐面板，資料來源與模組5共用 /api/signal/stations）── */
+async function loadBaseStationPanel(timestamp) {
+  try {
+    const url = timestamp ? `/api/signal/stations?timestamp=${encodeURIComponent(timestamp)}` : '/api/signal/stations';
+    const res = await fetch(url);
+    const data = await res.json();
+    renderBaseStationPanel(data.stations || []);
+    renderStationMarkers(data.stations || []);
+  } catch (e) {
+    console.error('基地台狀態載入失敗', e);
+    const el = document.getElementById('station-status-list');
+    if (el) el.innerHTML = '<div class="station-row">基地台狀態載入失敗</div>';
+  }
 }
 
-function renderTrafficAlerts(segments) {
-  const container = document.querySelector('#panel-dashboard .grid-2 > .panel:nth-child(2)');
+/* ── 模組一：地圖站點標記（滑鼠移上去顯示人流成長率等即時狀況）───────────────── */
+function renderStationMarkers(stations) {
+  stations.forEach(s => {
+    const coords = STATION_COORDS[s.station_id];
+    if (!coords) return;
+    const growthPct = ((s.growth_rate || 0) * 100).toFixed(0);
+    const growthSign = s.growth_rate > 0 ? '+' : '';
+    const roamingPct = ((s.roaming_rate || 0) * 100).toFixed(1);
+    const tooltipHtml = `
+      <b>${s.station_name}</b><br>
+      人流 ${s.user_count.toLocaleString()} 人 · 成長率 ${growthSign}${growthPct}%<br>
+      外籍旅客比例 ${roamingPct}%${s.roaming_rate >= 0.30 ? '（已達門檻）' : ''}`;
+
+    if (stationMarkers[s.station_id]) {
+      stationMarkers[s.station_id].setTooltipContent(tooltipHtml);
+    } else {
+      const marker = L.circleMarker(coords, {
+        radius: 6, color: '#fff', weight: 1.5,
+        fillColor: s.roaming_rate >= 0.30 ? '#f27a84' : '#7ec8bc',
+        fillOpacity: 0.9,
+      }).addTo(mapInstance);
+      marker.bindTooltip(tooltipHtml, { direction: 'top', offset: [0, -6], className: 'map-tooltip', opacity: 1 });
+      stationMarkers[s.station_id] = marker;
+    }
+  });
+}
+
+function renderBaseStationPanel(stations) {
+  const container = document.getElementById('station-status-list');
+  if (!container) return;
+  const rows = [...stations].sort((a, b) => b.roaming_rate - a.roaming_rate);
+  container.innerHTML = rows.map(s => {
+    const trig = s.roaming_rate >= 0.30;
+    const pct = Math.min(100, s.roaming_rate * 200);
+    return `
+      <div class="station-row ${trig ? 'trigger' : ''}" data-entity-id="${s.station_id}" data-entity-name="${s.station_name}">
+        <div>${s.station_name}</div>
+        <div class="sr-sub mono">${s.station_id} · ${s.user_count.toLocaleString()} 人</div>
+        <div class="sr-roam mono">${(s.roaming_rate * 100).toFixed(1)}%</div>
+        <div class="sr-bar-track"><div class="sr-bar-fill" style="width:${pct}%;background:${trig ? 'var(--critical)' : 'var(--accent)'}"></div></div>
+      </div>`;
+  }).join('');
+}
+
+/* ── 模組一：動態時序（時間軸）─────────────────────────────────────────────
+   資料來源：/api/timestamps + /api/snapshot?timestamp=（module1_dashboard 的
+   data/snapshot.py 共用資料層）。時間軸樣式比照戰情室原型設計稿（滑桿＋倍速
+   播放），切換時間點時沿用既有的 renderTrafficKPI / renderTrafficAlerts /
+   renderTrafficMap，不用另開頁面。 */
+let timelineTimestamps = [];
+let timelineIndex = -1;
+let timelinePlayTimer = null;
+let timelineSpeed = 1;
+
+async function loadTimeline() {
+  try {
+    const res = await fetch('/api/timestamps');
+    timelineTimestamps = await res.json();
+    if (!timelineTimestamps.length) return;
+    const slider = document.getElementById('timeline-slider');
+    slider.max = timelineTimestamps.length - 1;
+    timelineIndex = timelineTimestamps.length - 1;
+    slider.value = timelineIndex;
+    document.getElementById('timeline-range').textContent =
+      `${shortTime(timelineTimestamps[0])} ─ ${shortTime(timelineTimestamps[timelineTimestamps.length - 1])}`;
+    updateTimelineDisplay();
+  } catch (e) { console.error('時間軸載入失敗', e); }
+}
+
+function shortTime(ts) {
+  return ts ? ts.slice(11, 16) : '--:--';
+}
+
+function updateTimelineDisplay() {
+  document.getElementById('timeline-time').textContent = shortTime(timelineTimestamps[timelineIndex]);
+  const pct = timelineTimestamps.length > 1 ? (timelineIndex / (timelineTimestamps.length - 1)) * 100 : 0;
+  document.getElementById('timeline-slider').style.setProperty('--pct', pct + '%');
+  if (networkChartOpen) {
+    if (chartPopupMode === 'entity') renderEntityChart();
+    else renderNetworkChart();
+  }
+}
+
+/* ── 模組一：飽和度／車速時序圖（地圖左下角彈出，資料來源 /api/network-history，
+   也兼作單一路段／站點歷史趨勢彈窗，資料來源 /api/history?entity_id=）───────── */
+let networkHistory = null;
+let networkChartOpen = false;
+let chartPopupMode = 'network'; // 'network'（全市總覽）｜'entity'（單一路段/站點）
+let entityHistoryData = null;
+
+async function toggleNetworkChart(force) {
+  const popup = document.getElementById('chart-popup');
+  const btn = document.getElementById('chart-toggle-btn');
+  const open = force !== undefined ? force : popup.classList.contains('hidden');
+  if (open && !networkHistory) {
+    try {
+      const res = await fetch('/api/network-history');
+      networkHistory = await res.json();
+    } catch (e) { console.error('時序圖資料載入失敗', e); return; }
+  }
+  chartPopupMode = 'network';
+  setChartPopupHeader('飽和度／車速 時序監測', '全市飽和度', '均速 km/h', true);
+  popup.classList.toggle('hidden', !open);
+  btn.classList.toggle('active', open);
+  networkChartOpen = open;
+  if (open) renderNetworkChart();
+}
+
+function closeChartPopup() {
+  document.getElementById('chart-popup').classList.add('hidden');
+  document.getElementById('chart-toggle-btn').classList.remove('active');
+  networkChartOpen = false;
+}
+
+function setChartPopupHeader(title, satLabel, spdLabel, showSpeedReadout) {
+  document.getElementById('chart-popup-title').textContent = title;
+  document.getElementById('chart-sat-label').textContent = satLabel;
+  document.getElementById('chart-spd-label').textContent = spdLabel;
+  document.getElementById('chart-readout-spd').classList.toggle('hidden', !showSpeedReadout);
+}
+
+/* ── 模組一：單一路段／站點歷史趨勢（點路段即時狀態／基地台狀態清單觸發）
+   路段同時顯示飽和度＋車速雙線；站點同時顯示人流數＋成長率雙線。──────────── */
+async function showEntityHistory(entityId, label) {
+  try {
+    const res = await fetch(`/api/history?entity_id=${encodeURIComponent(entityId)}`);
+    if (!res.ok) throw new Error(`entity_id ${entityId} not found`);
+    entityHistoryData = await res.json();
+  } catch (e) { console.error('歷史資料載入失敗', e); return; }
+
+  chartPopupMode = 'entity';
+  if (entityHistoryData.entity_type === 'road_segment') {
+    setChartPopupHeader(`${label} 歷史趨勢`, '飽和度', '車速 km/h', true);
+  } else {
+    setChartPopupHeader(`${label} 歷史趨勢`, '人流數', '成長率', true);
+  }
+  document.getElementById('chart-popup').classList.remove('hidden');
+  document.getElementById('chart-toggle-btn').classList.remove('active');
+  networkChartOpen = true;
+  renderEntityChart();
+}
+
+function renderEntityChart() {
+  if (!entityHistoryData) return;
+  const { entity_type, points } = entityHistoryData;
+  const W = 1000, H = 100;
+  const idx = Math.min(Math.max(timelineIndex, 0), points.length - 1);
+  const playX = points.length > 1 ? (idx / (points.length - 1)) * W : 0;
+  const svg = document.getElementById('network-chart-svg');
+
+  if (entity_type === 'road_segment') {
+    const satValues = points.map(p => p.saturation_score);
+    const spdValues = points.map(p => p.avg_speed);
+    const satPath = pathFromSeries(satValues, W, H, 0.35, 1.0);
+    const spdMaxVal = Math.max(...spdValues.filter(v => v != null), 10) * 1.15;
+    const spdPath = pathFromSeries(spdValues, W, H, 0, spdMaxVal);
+    const areaPath = `${satPath} L${W},${H} L0,${H} Z`;
+    svg.innerHTML = `
+      <defs>
+        <linearGradient id="satFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#eab85c" stop-opacity=".3"/>
+          <stop offset="100%" stop-color="#eab85c" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <path d="${areaPath}" fill="url(#satFill)"/>
+      <path d="${satPath}" fill="none" stroke="#eab85c" stroke-width="2" opacity=".9"/>
+      <path d="${spdPath}" fill="none" stroke="#85d99a" stroke-width="2"/>
+      <line x1="${playX}" y1="0" x2="${playX}" y2="${H}" stroke="#f2f5f9" stroke-width="1" opacity=".3"/>
+    `;
+    document.getElementById('chart-sat-value').textContent = satValues[idx] != null ? Math.round(satValues[idx] * 100) + '%' : '--';
+    document.getElementById('chart-spd-value').textContent = spdValues[idx] != null ? Math.round(spdValues[idx]) : '--';
+  } else {
+    const userValues = points.map(p => p.user_count);
+    const growthValues = points.map(p => p.growth_rate);
+    const userMaxVal = Math.max(...userValues.filter(v => v != null), 1) * 1.15;
+    const userPath = pathFromSeries(userValues, W, H, 0, userMaxVal);
+    const growthAbsMax = Math.max(...growthValues.filter(v => v != null).map(Math.abs), 0.1) * 1.15;
+    const growthPath = pathFromSeries(growthValues, W, H, -growthAbsMax, growthAbsMax);
+    svg.innerHTML = `
+      <path d="${userPath}" fill="none" stroke="#5bd4ff" stroke-width="2.2"/>
+      <path d="${growthPath}" fill="none" stroke="#eba4c4" stroke-width="2"/>
+      <line x1="${playX}" y1="0" x2="${playX}" y2="${H}" stroke="#f2f5f9" stroke-width="1" opacity=".3"/>
+    `;
+    document.getElementById('chart-sat-value').textContent = userValues[idx] != null ? userValues[idx].toLocaleString() : '--';
+    document.getElementById('chart-spd-value').textContent = growthValues[idx] != null ? (growthValues[idx] >= 0 ? '+' : '') + Math.round(growthValues[idx] * 100) + '%' : '--';
+  }
+}
+
+function renderNetworkChart() {
+  if (!networkHistory) return;
+  const { avg_saturation, avg_speed } = networkHistory;
+  const W = 1000, H = 100;
+  const satMin = 0.35, satMax = 1.0;
+  const validSpeeds = avg_speed.filter(v => v != null);
+  const spdMax = Math.max(...validSpeeds, 10) * 1.15;
+
+  const satPath = pathFromSeries(avg_saturation, W, H, satMin, satMax);
+  const spdPath = pathFromSeries(avg_speed, W, H, 0, spdMax);
+  const areaPath = `${satPath} L${W},${H} L0,${H} Z`;
+
+  const idx = Math.min(Math.max(timelineIndex, 0), avg_saturation.length - 1);
+  const playX = avg_saturation.length > 1 ? (idx / (avg_saturation.length - 1)) * W : 0;
+
+  const svg = document.getElementById('network-chart-svg');
+  svg.innerHTML = `
+    <defs>
+      <linearGradient id="satFill" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#eab85c" stop-opacity=".3"/>
+        <stop offset="100%" stop-color="#eab85c" stop-opacity="0"/>
+      </linearGradient>
+    </defs>
+    <path d="${areaPath}" fill="url(#satFill)"/>
+    <path d="${satPath}" fill="none" stroke="#eab85c" stroke-width="2" opacity=".9"/>
+    <path d="${spdPath}" fill="none" stroke="#85d99a" stroke-width="2"/>
+    <line x1="${playX}" y1="0" x2="${playX}" y2="${H}" stroke="#f2f5f9" stroke-width="1" opacity=".3"/>
+  `;
+  updateChartReadouts(idx);
+}
+
+function pathFromSeries(arr, W, H, yMin, yMax) {
+  return arr.map((v, i) => {
+    const x = arr.length > 1 ? (i / (arr.length - 1)) * W : 0;
+    const val = v == null ? yMin : v;
+    const y = H - ((val - yMin) / (yMax - yMin)) * H;
+    return (i === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + y.toFixed(1);
+  }).join(' ');
+}
+
+function updateChartReadouts(idx) {
+  const sat = networkHistory.avg_saturation[idx];
+  const spd = networkHistory.avg_speed[idx];
+  document.getElementById('chart-sat-value').textContent = sat != null ? Math.round(sat * 100) + '%' : '--';
+  document.getElementById('chart-spd-value').textContent = spd != null ? Math.round(spd) : '--';
+}
+
+function onTimelineSlide(value) {
+  timelineIndex = Number(value);
+  updateTimelineDisplay();
+  loadSnapshotAt(timelineTimestamps[timelineIndex]);
+}
+
+function setTimelineSpeed(mult) {
+  timelineSpeed = mult;
+  document.querySelectorAll('.tl-speed-btn').forEach(btn => {
+    btn.classList.toggle('active', Number(btn.dataset.speed) === mult);
+  });
+  if (timelinePlayTimer) {
+    clearInterval(timelinePlayTimer);
+    startTimelinePlayLoop();
+  }
+}
+
+function toggleTimelinePlay() {
+  const btn = document.getElementById('timeline-play');
+  if (timelinePlayTimer) {
+    clearInterval(timelinePlayTimer);
+    timelinePlayTimer = null;
+    btn.classList.remove('playing');
+    btn.setAttribute('aria-pressed', 'false');
+    btn.textContent = '▶';
+    return;
+  }
+  btn.classList.add('playing');
+  btn.setAttribute('aria-pressed', 'true');
+  btn.textContent = '⏸';
+  startTimelinePlayLoop();
+}
+
+function startTimelinePlayLoop() {
+  timelinePlayTimer = setInterval(() => {
+    if (timelineIndex >= timelineTimestamps.length - 1) {
+      toggleTimelinePlay();
+      return;
+    }
+    timelineIndex += 1;
+    document.getElementById('timeline-slider').value = timelineIndex;
+    updateTimelineDisplay();
+    loadSnapshotAt(timelineTimestamps[timelineIndex]);
+  }, 1200 / timelineSpeed);
+}
+
+async function loadSnapshotAt(timestamp) {
+  try {
+    // /api/dashboard 是 /api/snapshot 的超集：同一份快照之外，還多附上門檻判斷
+    // （triggers）、這次新觸發的項目（newly_triggered）跟 LLM 趨勢摘要（summary），
+    // 一次打完不用再分開呼叫 /api/snapshot。
+    // 模組五（基地台狀態／SOP-6 多語卡）跟模組一原本是兩套獨立系統，這裡一起帶
+    // 同一個 timestamp，讓整個儀表板（含地圖站點標記）都跟著時間軸走，不會有
+    // 「時間軸調到 18:00，SOP-6 卡片卻還停在最新時間點」的不一致。
+    const [dashRes] = await Promise.all([
+      fetch(`/api/dashboard?timestamp=${encodeURIComponent(timestamp)}`),
+      loadModule5Status(timestamp),
+      loadBaseStationPanel(timestamp),
+    ]);
+    const dashboard = await dashRes.json();
+    const segments = snapshotToSegments(dashboard.snapshot);
+    renderTrafficKPI(computeTrafficSummary(segments));
+    renderTrafficAlerts(segments, dashboard);
+    renderTrafficMap(segments);
+    renderSegmentStatusList(segments);
+  } catch (e) { console.error('快照載入失敗', e); }
+}
+
+function snapshotToSegments(snapshot) {
+  return Object.entries(snapshot.road_segments || {}).map(([id, seg]) => ({
+    Segment_ID: id,
+    Road_Name: seg.name,
+    Avg_Speed: seg.avg_speed,
+    Saturation_Score: seg.saturation_score,
+    Vehicle_Count: seg.vehicle_count,
+    Timestamp: snapshot.timestamp,
+    level: classifySaturation(seg.saturation_score),
+  }));
+}
+
+function classifySaturation(score) {
+  if (score == null) return 'OK';
+  if (score >= 0.95) return 'A';
+  if (score >= 0.85) return 'B';
+  return 'OK';
+}
+
+function computeTrafficSummary(segments) {
+  const a_count = segments.filter(s => s.level === 'A').length;
+  const b_count = segments.filter(s => s.level === 'B').length;
+  const speeds = segments.map(s => s.Avg_Speed).filter(v => v != null);
+  const avg_speed = speeds.length
+    ? Math.round((speeds.reduce((sum, v) => sum + v, 0) / speeds.length) * 10) / 10
+    : 0;
+  const saturations = segments.map(s => s.Saturation_Score).filter(v => v != null);
+  const avg_saturation = saturations.length
+    ? saturations.reduce((sum, v) => sum + v, 0) / saturations.length
+    : 0;
+  const impacted = segments
+    .filter(s => s.level !== 'OK')
+    .reduce((sum, s) => sum + (s.Vehicle_Count || 0), 0);
+  return { a_count, b_count, avg_speed, avg_saturation, impacted, total: segments.length };
+}
+
+function renderTrafficKPI(summary) {
+  document.getElementById('ks-speed-value').textContent = summary.avg_speed;
+  const speedDelta = document.getElementById('ks-speed-delta');
+  speedDelta.textContent = summary.avg_speed < 25 ? '▲ 壅塞' : '▼ 順暢';
+  speedDelta.className = 'ks-delta ' + (summary.avg_speed < 25 ? 'up' : 'down');
+
+  document.getElementById('ks-sat-value').textContent = Math.round(summary.avg_saturation * 100);
+  const satDelta = document.getElementById('ks-sat-delta');
+  satDelta.textContent = summary.avg_saturation >= 0.85 ? '超過門檻' : '低於門檻';
+  satDelta.className = 'ks-delta ' + (summary.avg_saturation >= 0.85 ? 'up' : 'down');
+
+  const segCount = summary.a_count + summary.b_count;
+  document.getElementById('ks-seg-value').textContent = segCount;
+  const segDelta = document.getElementById('ks-seg-delta');
+  segDelta.textContent = segCount > 0 ? '需留意' : '全線正常';
+  segDelta.className = 'ks-delta ' + (segCount > 0 ? 'up' : 'down');
+
+  document.getElementById('ks-impact-value').textContent = (summary.impacted / 1000).toFixed(1);
+}
+
+function renderTrafficAlerts(segments, dashboard) {
+  const container = document.querySelector('#panel-dashboard .dash-alerts');
   const alerts = segments.filter(s => s.level === 'A' || s.level === 'B')
                          .sort((a, b) => b.Saturation_Score - a.Saturation_Score);
 
-  let html = '<h3>🚨 即時警報</h3>';
+  let html = '<h3>即時警報</h3><div class="alert-scroll">';
+  html += renderAiSummaryCard(dashboard);
+  html += renderSop3Card(dashboard);
   alerts.forEach(s => {
     const isA = s.level === 'A';
     const tagClass = isA ? '' : 'caution-bg';
@@ -58,12 +463,44 @@ function renderTrafficAlerts(segments) {
           飽和度 <span class="mono ${textClass}">${s.Saturation_Score.toFixed(2)}</span>
           &nbsp;車速 <span class="mono">${s.Avg_Speed} km/h</span>
         </div>
-        <button class="btn-explain" onclick="openDrawer('${s.Segment_ID}')">🔍 查看判斷依據</button>
+        <button class="btn-explain" onclick="openDrawer('${s.Segment_ID}')">查看判斷依據</button>
       </div>`;
   });
 
   html += renderModule5AlertCard();
+  html += '</div>';
   container.innerHTML = html;
+}
+
+/* ── 模組一：AI 趨勢摘要卡（LLM 產出，只有本次有新觸發門檻時才有內容）───────── */
+function renderAiSummaryCard(dashboard) {
+  if (!dashboard || !dashboard.summary) return '';
+  return `
+    <div class="alert-card ai-summary">
+      <div class="alert-hdr"><span class="alert-tag accent-bg">分析摘要</span><span class="mono">${(dashboard.timestamp || '').slice(11, 16)}</span></div>
+      <div class="alert-body">${escapeHtml(dashboard.summary).replace(/\n/g, '<br>')}</div>
+    </div>`;
+}
+
+/* ── 模組一：SOP-3 捷運分流門檻卡（BS_MRT_BL17 Growth_Rate>0.30 或 User_Count>25000）── */
+function renderSop3Card(dashboard) {
+  const sop3 = (dashboard?.triggers || []).find(t => t.sop_clause === '第 3 條');
+  if (sop3) {
+    return `
+      <div class="alert-card sop3">
+        <div class="alert-hdr"><span class="alert-tag safe-bg">SOP-3 捷運分流</span></div>
+        <div class="alert-body">
+          <b>${sop3.entity_name}</b><br>
+          ${sop3.basis}
+        </div>
+        <button class="btn-explain" onclick="showEntityHistory('${sop3.entity_id}', '${sop3.entity_name}')">查看歷史趨勢</button>
+      </div>`;
+  }
+  return `
+    <div class="alert-card sop3">
+      <div class="alert-hdr"><span class="alert-tag muted-bg">SOP-3 捷運分流</span></div>
+      <div class="alert-body">目前 BS_MRT_BL17（捷運國父紀念館站）未達分流門檻</div>
+    </div>`;
 }
 
 /* ── 模組五：多語通報卡片（真實資料，不是寫死文字）─────────────────────────── */
@@ -73,7 +510,7 @@ function renderModule5AlertCard() {
     <div class="alert-card sop6">
       <div class="alert-hdr"><span class="alert-tag accent-bg">SOP-6 多語</span></div>
       <div class="alert-body">目前無站點外籍旅客比例達 30% 門檻</div>
-      <button class="btn-explain" onclick="openModule5Modal()">🌐 查看站點狀態</button>
+      <button class="btn-explain" onclick="openModule5Modal()">查看站點狀態</button>
     </div>`;
   }
   const sorted = [...m5Triggered].sort((a, b) => b.roaming_rate - a.roaming_rate);
@@ -86,13 +523,14 @@ function renderModule5AlertCard() {
       <div class="alert-body">
         ${stationLines}
       </div>
-      <button class="btn-explain" onclick="openModule5Modal()">🌐 查看多語通報</button>
+      <button class="btn-explain" onclick="openModule5Modal()">查看多語通報</button>
     </div>`;
 }
 
 function renderTrafficMap(segments) {
   const colorMap = { A: '#f27a84', B: '#eab85c', OK: '#85d99a' };
-  // 使用 Module 2 TrafficMap 的真實路網座標
+  // 路段座標（15 條互相共用端點，組成連通網格，比舊版各自亂點的座標更接近真實路網外觀；
+  // 座標來源沿用 feature/module-2-incident-response 分支的 961071c 調整結果）
   const roadCoords = {
     'RD_TPE_001': [[25.0418, 121.5530], [25.0418, 121.5680]],
     'RD_TPE_002': [[25.0460, 121.5575], [25.0330, 121.5575]],
@@ -118,7 +556,7 @@ function renderTrafficMap(segments) {
       roadPolylines[s.Segment_ID].setStyle({ color });
     } else {
       const line = L.polyline(pts, { color, weight: 5, opacity: 0.9 }).addTo(mapInstance);
-      line.bindTooltip(`${s.Road_Name} (${s.Segment_ID})<br>飽和: ${s.Saturation_Score.toFixed(2)}`);
+      line.bindTooltip(`${s.Road_Name} (${s.Segment_ID})<br>飽和: ${s.Saturation_Score.toFixed(2)}`, { className: 'map-tooltip', opacity: 1 });
       roadPolylines[s.Segment_ID] = line;
     }
   });
@@ -153,13 +591,37 @@ function renderTrafficMap(segments) {
   }
 }
 
+/* ── 模組一：路段即時狀態清單（15 路段速覽，色點＋速度＋飽和度）───────────── */
+function renderSegmentStatusList(segments) {
+  const container = document.getElementById('segstat-list');
+  if (!container) return;
+  const levelColor = { A: 'var(--critical)', B: 'var(--caution)', OK: 'var(--safe)' };
+  container.innerHTML = segments.map(s => {
+    const pct = s.Saturation_Score != null ? Math.round(s.Saturation_Score * 100) : null;
+    const color = s.Avg_Speed === 0 ? 'var(--text-dim)' : (levelColor[s.level] || 'var(--safe)');
+    return `
+      <div class="segstat-row" data-entity-id="${s.Segment_ID}" data-entity-name="${s.Road_Name}">
+        <span class="segstat-dot" style="background:${color}"></span>
+        <span class="segstat-name">${s.Road_Name}</span>
+        <span class="segstat-speed">${s.Avg_Speed ?? '--'} km/h</span>
+        <span class="segstat-pct" style="background:${color}">${pct != null ? pct + '%' : '--'}</span>
+      </div>`;
+  }).join('');
+}
+
 /* ── 模組二：事件資料 ─────────────────────────────────────────────────────── */
 async function loadIncidentData() {
   try {
     const res = await fetch('/api/incidents/list');
     const data = await res.json();
     renderIncidentList(data.incidents);
+    updateEventCountKPI(data.count ?? data.incidents.length);
   } catch (e) { console.error('事件資料載入失敗', e); }
+}
+
+function updateEventCountKPI(count) {
+  const el = document.getElementById('ks-alert-value');
+  if (el) el.textContent = count;
 }
 
 function renderIncidentList(incidents) {
@@ -238,14 +700,14 @@ async function renderDrawerContent(type) {
   const bodyEl = document.getElementById('drawer-body-content');
 
   if (type === 'sop2') {
-    titleEl.textContent = '🧠 判斷依據 — SOP-2 主疏散路徑';
+    titleEl.textContent = '判斷依據 — SOP-2 主疏散路徑';
     const decision = latestDecisions.find(d => d.sop_clause === 'SOP-2');
     bodyEl.innerHTML = decision ? renderDecisionExplanation(decision) : emptyDecisionHint('SOP-2');
     return;
   }
 
   if (type === 'sop5') {
-    titleEl.textContent = '🧠 判斷依據 — SOP-5 號誌故障應變';
+    titleEl.textContent = '判斷依據 — SOP-5 號誌故障應變';
     const decision = latestDecisions.find(d => d.sop_clause === 'SOP-5');
     bodyEl.innerHTML = decision ? renderDecisionExplanation(decision) : emptyDecisionHint('SOP-5');
     return;
@@ -254,13 +716,13 @@ async function renderDrawerContent(type) {
   if (type.startsWith('decision:')) {
     const index = Number(type.split(':')[1]);
     const decision = latestDecisions[index];
-    titleEl.textContent = '🧠 判斷依據 — 未觸發 / 轉交判斷';
+    titleEl.textContent = '判斷依據 — 未觸發 / 轉交判斷';
     bodyEl.innerHTML = decision ? renderDecisionExplanation(decision) : emptyDecisionHint('該決策');
     return;
   }
 
   // 其餘一律當成 SOP-1 壅塞分級的路段 ID 查詢
-  titleEl.textContent = '🧠 判斷依據 — SOP-1 壅塞分級';
+  titleEl.textContent = '判斷依據 — SOP-1 壅塞分級';
   bodyEl.innerHTML = `<div class="spinner">載入路段資料…</div>`;
   try {
     const [segRes, netRes] = await Promise.all([
@@ -510,28 +972,33 @@ function escapeHtml(value) {
     .replace(/'/g, '&#039;');
 }
 
-/* ── Module 5：多語通報 Toast ─────────────────────────────────────────────────
-   真實資料來源：/api/signal/triggered。沒有站點跨過 30% 門檻時不彈 toast。 */
+/* ── 模組五：多語通報 Toast ─────────────────────────────────────────────────
+   真實資料來源：/api/signal/triggered，帶 timestamp 讓 m5Triggered（供即時警報
+   欄的 SOP-6 卡片使用）跟著模組一時間軸走。但 toast 本身「只在」頁面載入／按
+   鈴鐺時彈出，不會跟著時間軸每一格都跳，避免快速拖動時 toast 一直閃現互蓋。 */
 let m5Triggered = [];
 
-async function loadModule5Status() {
+async function loadModule5Status(timestamp) {
   try {
-    const res = await fetch('/api/signal/triggered');
+    const url = timestamp ? `/api/signal/triggered?timestamp=${encodeURIComponent(timestamp)}` : '/api/signal/triggered';
+    const res = await fetch(url);
     const data = await res.json();
     m5Triggered = data.triggered || [];
-    if (m5Triggered.length) {
-      const top = [...m5Triggered].sort((a, b) => b.roaming_rate - a.roaming_rate)[0];
-      const more = m5Triggered.length > 1 ? `等 ${m5Triggered.length} 個站點` : '';
-      document.getElementById('toast-text').textContent =
-        `🌐 ${top.station_name}${more} 外籍旅客比例達 ${(top.roaming_rate * 100).toFixed(0)}%，超過 SOP 第 6 條 30% 門檻`;
-      document.getElementById('toast').classList.remove('hidden');
-    } else {
-      document.getElementById('toast-text').textContent = '🌐 目前無站點外籍旅客比例達 30% 門檻';
-    }
   } catch (e) {
     console.error('模組 5 狀態載入失敗', e);
-    document.getElementById('toast-text').textContent = '🌐 多語通報狀態載入失敗';
   }
+}
+
+function showModule5Toast() {
+  if (m5Triggered.length) {
+    const top = [...m5Triggered].sort((a, b) => b.roaming_rate - a.roaming_rate)[0];
+    const more = m5Triggered.length > 1 ? `等 ${m5Triggered.length} 個站點` : '';
+    document.getElementById('toast-text').textContent =
+      `${top.station_name}${more} 外籍旅客比例達 ${(top.roaming_rate * 100).toFixed(0)}%，超過 SOP 第 6 條 30% 門檻`;
+  } else {
+    document.getElementById('toast-text').textContent = '目前無站點外籍旅客比例達 30% 門檻';
+  }
+  document.getElementById('toast').classList.remove('hidden');
 }
 function closeToast() {
   document.getElementById('toast').classList.add('hidden');
@@ -577,7 +1044,7 @@ function m5SelectStation(sid) {
     `${m5Current.station_name} · 外籍旅客比例 ${(m5Current.roaming_rate * 100).toFixed(1)}%`;
   document.getElementById('m5-modal-meta').textContent = m5Current.timestamp || '';
   document.getElementById('m5-sop-banner').innerHTML = multi
-    ? `<div class="card-red">📌 SOP 第 6 條觸發｜將產出中英日韓泰越法七語版</div>`
+    ? `<div class="card-red">SOP 第 6 條觸發｜將產出中英日韓泰越法七語版</div>`
     : `<div class="card-yellow">ℹ️ 未達 30% 門檻｜僅產出繁體中文</div>`;
   m5Alerts = {};
   document.getElementById('m5-editor').classList.add('hidden');
@@ -610,7 +1077,7 @@ async function m5Generate() {
     document.getElementById('m5-btn-publish').disabled = false;
     if (data.source === 'mock') {
       document.getElementById('m5-sop-banner').insertAdjacentHTML('beforeend',
-        `<div class="card-yellow" style="margin-top:8px">⚠️ Ollama 未連線，目前顯示為預設模板文字（${data.ollama_status?.message || ''}）</div>`);
+        `<div class="card-yellow" style="margin-top:8px">Ollama 未連線，目前顯示為預設模板文字（${data.ollama_status?.message || ''}）</div>`);
     }
   } catch (e) {
     alert('生成失敗：' + e.message);
@@ -660,7 +1127,7 @@ async function m5Publish() {
       m5Alerts = alerts;
       document.getElementById('m5-publish-result').classList.remove('hidden');
       document.getElementById('m5-publish-result').innerHTML =
-        `<div class="publish-success">✅ 已發送簡訊＋看板　⏱ ${new Date().toLocaleTimeString()}</div>`;
+        `<div class="publish-success">已發送簡訊＋看板　 ${new Date().toLocaleTimeString()}</div>`;
     }
   } catch (e) {
     alert('發布失敗：' + e.message);
@@ -714,8 +1181,7 @@ async function injectIncident(eventId) {
       showInjectResult(data);
     }
   } catch (e) {
-    hideInjectLoading();
-    alert('❌ 注入失敗：' + e.message);
+    alert('注入失敗：' + e.message);
   }
 }
 
@@ -761,11 +1227,10 @@ async function injectIncidentPayload(payload) {
       showInjectResult(data);
       loadIncidentData();
     } else {
-      alert('❌ 注入失敗');
+      alert('注入失敗');
     }
   } catch (e) {
-    hideInjectLoading();
-    alert('❌ 注入失敗：' + e.message);
+    alert('注入失敗：' + e.message);
   }
 }
 
@@ -808,7 +1273,7 @@ function showInjectResult(data) {
 
   container.innerHTML = `
     <div class="card-yellow" style="margin-bottom:14px">
-      ✅ 事件 <b>${event.event_id}</b> 已注入（${event.affected_segment} · ${event.severity} · ${event.status}）。
+      事件 <b>${event.event_id}</b> 已注入（${event.affected_segment} · ${event.severity} · ${event.status}）。
       <span class="mono">規則運算 ${elapsed} ms</span>
     </div>
     ${highlightHtml}
@@ -844,14 +1309,14 @@ function renderDecisionCard(decision, index) {
         ${cmsLine}
         ${actions}
       </div>
-      <button class="btn-explain" onclick="openDrawer('${explainType}')">🔍 為什麼</button>
+      <button class="btn-explain" onclick="openDrawer('${explainType}')">為什麼</button>
     </div>`;
 }
 
-/* ── Bell ──────────────────────────────────────────────────────────────────── */
+/* ── Bell：重新整理目前時間點的資料（含模組五），並跳出模組五 toast ───────── */
 document.getElementById('bell-btn').addEventListener('click', () => {
-  loadModule5Status();
-  document.getElementById('toast').classList.remove('hidden');
+  if (timelineTimestamps.length) loadSnapshotAt(timelineTimestamps[timelineIndex]);
+  loadModule5Status().then(showModule5Toast);
 });
 
 /* ── Draggable Advisor Orb ─────────────────────────────────────────────────── */
