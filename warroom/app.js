@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadIncidentData();
   });
   showAdvisorScenarioSet('incident');
+  checkAdvisorStatus();
 });
 
 /* ── 模組一：車流資料 ─────────────────────────────────────────────────────── */
@@ -75,14 +76,15 @@ function renderModule5AlertCard() {
       <button class="btn-explain" onclick="openModule5Modal()">🌐 查看站點狀態</button>
     </div>`;
   }
-  const top = [...m5Triggered].sort((a, b) => b.roaming_rate - a.roaming_rate)[0];
-  const more = m5Triggered.length > 1 ? `（共 ${m5Triggered.length} 站觸發）` : '';
+  const sorted = [...m5Triggered].sort((a, b) => b.roaming_rate - a.roaming_rate);
+  const stationLines = sorted.map(s =>
+    `<b>${s.station_name}</b> (${s.station_id}) — <span class="mono critical-text">${(s.roaming_rate * 100).toFixed(1)}%</span>`
+  ).join('<br>');
   return `
     <div class="alert-card sop6">
-      <div class="alert-hdr"><span class="alert-tag accent-bg">SOP-6 多語</span><span class="mono">${(top.timestamp || '').slice(11, 16)}</span></div>
+      <div class="alert-hdr"><span class="alert-tag accent-bg">SOP-6 多語</span><span class="mono">${sorted.length} 站觸發</span></div>
       <div class="alert-body">
-        <b>${top.station_name}</b> (${top.station_id})<br>
-        漫遊率 <span class="mono critical-text">${(top.roaming_rate * 100).toFixed(1)}%</span> ≥ 30% → 觸發七語通報${more}
+        ${stationLines}
       </div>
       <button class="btn-explain" onclick="openModule5Modal()">🌐 查看多語通報</button>
     </div>`;
@@ -363,16 +365,41 @@ const advisorScenarioSets = {
   })),
   signal: advisorRoadNames.map(name => ({
     label: name,
-    text: `如果${name}號誌故障，依 SOP 要怎麼派遣現場人力、發布 CMS，預計多久恢復？`,
+    text: `如果${name}號誌故障，依 SOP 要怎麼處理？`,
   })),
   notification: advisorStationNames.map(name => ({
     label: name,
-    text: `檢查${name}是否需要啟動多語通報。`,
+    text: `檢查目前${name}是否需要啟動多語通報？`,
   })),
 };
 
 function toggleChat() {
   document.getElementById('chat-panel').classList.toggle('hidden');
+  document.getElementById('chat-backdrop').classList.toggle('hidden');
+  // 首次開啟時檢查 Ollama 狀態
+  if (!window._advisorStatusChecked) {
+    window._advisorStatusChecked = true;
+    checkAdvisorStatus();
+  }
+}
+
+async function checkAdvisorStatus() {
+  const dot = document.getElementById('advisor-mode-dot');
+  const text = document.getElementById('advisor-mode-text');
+  try {
+    const res = await fetch('/api/advisor/status');
+    const data = await res.json();
+    if (data.mode === 'llm') {
+      dot.className = 'mode-dot mode-dot-llm';
+      text.textContent = 'LLM 模式 · Ollama 已連線';
+    } else {
+      dot.className = 'mode-dot mode-dot-rules';
+      text.textContent = data.message || '規則引擎 · 即時快照';
+    }
+  } catch (e) {
+    dot.className = 'mode-dot mode-dot-rules';
+    text.textContent = '規則引擎 · 即時快照';
+  }
 }
 
 function showAdvisorScenarioSet(key) {
@@ -401,7 +428,21 @@ async function sendAdvisorMessage(forcedMessage) {
   if (!message) return;
   input.value = '';
   appendChatMessage('user', message);
-  const pending = appendChatMessage('ai', '分析目前快照中…');
+  const pending = appendChatMessage('ai', '');
+  pending.innerHTML = `<div class="sq-thinking">
+    <div class="sq-track">
+      <svg class="sq-runner" viewBox="0 0 36 28">
+        <circle cx="8" cy="8" r="7" fill="currentColor" opacity=".75"/>
+        <ellipse cx="20" cy="17" rx="10" ry="7" fill="currentColor"/>
+        <circle cx="30" cy="12" r="5" fill="currentColor"/>
+        <circle cx="32" cy="11" r="1.2" fill="var(--ink)"/>
+        <line x1="15" y1="23" x2="15" y2="27" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        <line x1="25" y1="23" x2="25" y2="27" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <span class="sq-label">Squirrel 正在檢索 SOP…</span>
+  </div>`;
+  const startTime = Date.now();
   try {
     const res = await fetch('/api/advisor/chat', {
       method: 'POST',
@@ -413,7 +454,20 @@ async function sendAdvisorMessage(forcedMessage) {
       }),
     });
     const data = await res.json();
+    // 確保松鼠至少跑 800ms 再顯示答案
+    const elapsed = Date.now() - startTime;
+    if (elapsed < 800) await new Promise(r => setTimeout(r, 800 - elapsed));
     pending.innerHTML = formatAdvisorAnswer(data.answer);
+    // 更新模式指示
+    const dot = document.getElementById('advisor-mode-dot');
+    const text = document.getElementById('advisor-mode-text');
+    if (data.source === 'llm+rules') {
+      dot.className = 'mode-dot mode-dot-llm';
+      text.textContent = 'LLM 模式 · Ollama';
+    } else {
+      dot.className = 'mode-dot mode-dot-rules';
+      text.textContent = '規則引擎 · 即時快照';
+    }
   } catch (e) {
     pending.textContent = '顧問服務暫時無法回應：' + e.message;
   }
@@ -430,13 +484,19 @@ function appendChatMessage(role, text) {
 }
 
 function formatAdvisorAnswer(answer) {
-  const lines = String(answer || '').split('\n').map(line => line.trim()).filter(Boolean);
+  const lines = String(answer || '').split('\n')
+    .map(line => line.trim().replace(/^#{1,4}\s*/, '').replace(/^第[一二三四五六七八九十]行[：:]\s*/, ''))
+    .filter(Boolean);
   if (!lines.length) return '';
   return lines.map((line, index) => {
     const safe = escapeHtml(line);
-    if (index === 0) return `<div class="answer-lead">${safe}</div>`;
     if (line.startsWith('✓')) return `<div class="advisor-check">${safe}</div>`;
+    if (line.startsWith('■ 建議處置')) return `<div class="advisor-action advisor-action-treat"><span class="action-icon">🛠</span> ${safe.replace('■ ', '')}</div>`;
+    if (line.startsWith('■ 後續確認')) return `<div class="advisor-action advisor-action-followup"><span class="action-icon">🔎</span> ${safe.replace('■ ', '')}</div>`;
     if (line.startsWith('■')) return `<div class="advisor-action">${safe.replace('■ ', '')}</div>`;
+    if (index === 0 || (!line.startsWith('■') && !line.startsWith('✓') && index <= 2 && !lines.slice(0, index).some(l => l.startsWith('■')))) {
+      return `<div class="answer-lead">${safe}</div>`;
+    }
     return `<div class="answer-line">${safe}</div>`;
   }).join('');
 }
@@ -528,8 +588,11 @@ function m5SelectStation(sid) {
 async function m5Generate() {
   if (!m5Current) return;
   const s = m5Current, multi = s.roaming_rate >= M5_THRESHOLD;
+  const btn = document.getElementById('m5-btn-generate');
+  btn.disabled = true;
+  btn.classList.add('loading');
+  btn.textContent = '🤖 推論中，請稍候…';
   document.getElementById('m5-spinner').classList.remove('hidden');
-  document.getElementById('m5-btn-generate').disabled = true;
   try {
     const res = await fetch('/api/notify/generate', {
       method: 'POST',
@@ -553,7 +616,9 @@ async function m5Generate() {
     alert('生成失敗：' + e.message);
   } finally {
     document.getElementById('m5-spinner').classList.add('hidden');
-    document.getElementById('m5-btn-generate').disabled = false;
+    btn.disabled = false;
+    btn.classList.remove('loading');
+    btn.textContent = '⚡ 生成多語告警';
   }
 }
 
@@ -788,3 +853,59 @@ document.getElementById('bell-btn').addEventListener('click', () => {
   loadModule5Status();
   document.getElementById('toast').classList.remove('hidden');
 });
+
+/* ── Draggable Advisor Orb ─────────────────────────────────────────────────── */
+(function initDraggableOrb() {
+  const orb = document.getElementById('advisor-orb');
+  let isDragging = false, hasMoved = false;
+  let startX, startY, origX, origY;
+
+  orb.addEventListener('mousedown', dragStart);
+  orb.addEventListener('touchstart', dragStart, { passive: false });
+
+  function dragStart(e) {
+    isDragging = true;
+    hasMoved = false;
+    const point = e.touches ? e.touches[0] : e;
+    startX = point.clientX;
+    startY = point.clientY;
+    const rect = orb.getBoundingClientRect();
+    origX = rect.left;
+    origY = rect.top;
+    orb.style.transition = 'none';
+    document.addEventListener('mousemove', dragMove);
+    document.addEventListener('mouseup', dragEnd);
+    document.addEventListener('touchmove', dragMove, { passive: false });
+    document.addEventListener('touchend', dragEnd);
+  }
+
+  function dragMove(e) {
+    if (!isDragging) return;
+    e.preventDefault();
+    const point = e.touches ? e.touches[0] : e;
+    const dx = point.clientX - startX;
+    const dy = point.clientY - startY;
+    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) hasMoved = true;
+    if (!hasMoved) return;
+    const newX = Math.max(0, Math.min(window.innerWidth - 60, origX + dx));
+    const newY = Math.max(0, Math.min(window.innerHeight - 60, origY + dy));
+    orb.style.left = newX + 'px';
+    orb.style.top = newY + 'px';
+    orb.style.right = 'auto';
+    orb.style.bottom = 'auto';
+  }
+
+  function dragEnd() {
+    isDragging = false;
+    orb.style.transition = '';
+    document.removeEventListener('mousemove', dragMove);
+    document.removeEventListener('mouseup', dragEnd);
+    document.removeEventListener('touchmove', dragMove);
+    document.removeEventListener('touchend', dragEnd);
+    if (!hasMoved) {
+      toggleChat();
+    }
+  }
+
+  orb.removeAttribute('onclick');
+})();

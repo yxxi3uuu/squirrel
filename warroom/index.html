@@ -230,19 +230,22 @@
 </aside>
 
 <!-- ══ OVERLAY: Module 3 AI Advisor Orb ═══════════════════════════════════ -->
-<div id="advisor-orb" class="advisor-orb" onclick="toggleChat()">
+<div id="advisor-orb" class="advisor-orb">
   <span>🐿️</span>
 </div>
+<div id="chat-backdrop" class="chat-backdrop hidden" onclick="toggleChat()"></div>
 <div id="chat-panel" class="chat-panel hidden">
   <div class="chat-head">
     <div class="chat-brand-icon">🐿️</div>
     <div class="chat-title-block">
       <b>策略顧問 SQ</b>
-      <span><i class="mode-dot"></i> 整合版 · 讀取即時快照</span>
+      <span><i class="mode-dot" id="advisor-mode-dot"></i> <span id="advisor-mode-text">連線中…</span></span>
     </div>
-    <button onclick="toggleChat()">✕</button>
+    <button class="chat-close-btn" onclick="toggleChat()">✕</button>
   </div>
-  <div class="advisor-quick-panel">
+
+  <!-- 情境選擇區 -->
+  <div class="advisor-scenario-section">
     <div class="advisor-category-row">
       <button class="advisor-category active" data-advisor-set="incident" onclick="showAdvisorScenarioSet('incident')">車禍與路障應變</button>
       <button class="advisor-category" data-advisor-set="signal" onclick="showAdvisorScenarioSet('signal')">號誌故障應變</button>
@@ -252,21 +255,27 @@
       <select id="advisor-scenario-select" aria-label="顧問情境"></select>
       <button class="advisor-apply" onclick="askAdvisorScenario()">套用情境</button>
     </div>
-    <div class="advisor-chip-row">
-      <button class="advisor-chip" onclick="advisorQuickAsk('交通壅塞級別如何判定？')">壅塞級別判定</button>
-      <button class="advisor-chip" onclick="advisorQuickAsk('忠孝東路四段 A 級壅塞，依 SOP-1 要怎麼處理？')">忠孝東路四段 A 級</button>
-      <button class="advisor-chip" onclick="advisorQuickAsk('光復南路 B 級壅塞，依 SOP-1 是否觸發應變？')">光復南路 B 級</button>
-      <button class="advisor-chip" onclick="advisorQuickAsk('假設捷運國父紀念館站人潮增至 40,000 人，依 SOP 要啟動哪些捷運與接駁措施？')">國父紀念館分流</button>
-      <button class="advisor-chip" onclick="advisorQuickAsk('假設大巨蛋人潮曾達 40,000 人且目前人流成長率為 -0.25，依 SOP 要啟動哪些措施並連動什麼檢查？')">大巨蛋散場啟動</button>
-      <button class="advisor-chip" onclick="advisorQuickAsk('目前哪些站點需要啟動多語通報？')">多語通報掃描</button>
-    </div>
   </div>
+
+  <!-- 對話訊息區 -->
   <div class="chat-messages" id="chat-messages">
     <div class="msg ai">你好！我是松鼠 AI 顧問，可以問我路段狀態、SOP 條款，或套用上方情境檢查是否觸發應變。</div>
   </div>
-  <div class="chat-input">
-    <input id="advisor-input" type="text" placeholder="輸入假設性問題..." onkeydown="if(event.key==='Enter') sendAdvisorMessage()">
-    <button onclick="sendAdvisorMessage()">➤</button>
+
+  <!-- 快捷假設 + 輸入框 -->
+  <div class="chat-bottom">
+    <div class="advisor-chip-row">
+      <button class="advisor-chip" onclick="advisorQuickAsk('如果忠孝東路四段壅塞程度達 0.96，依 SOP 要啟動哪些措施？')">忠孝東路四段 A 級</button>
+      <button class="advisor-chip" onclick="advisorQuickAsk('如果光復南路壅塞程度達 0.90，依 SOP 是否觸發應變？')">光復南路 B 級</button>
+      <button class="advisor-chip" onclick="advisorQuickAsk('如果捷運國父紀念館站目前有 40,000 人，應該怎麼分流？')">國父紀念館分流</button>
+      <button class="advisor-chip" onclick="advisorQuickAsk('如果大巨蛋人潮達 40,000 人且現在人潮成長率為 -0.25，依 SOP 要啟動哪些措施？')">大巨蛋散場啟動</button>
+      <button class="advisor-chip" onclick="advisorQuickAsk('目前哪些站點需要啟動多語通報？')">多語通報掃描</button>
+      <button class="advisor-chip" onclick="advisorQuickAsk('交通壅塞級別如何判定？')">壅塞級別判定</button>
+    </div>
+    <div class="chat-input">
+      <input id="advisor-input" type="text" placeholder="輸入假設性問題..." onkeydown="if(event.key==='Enter') sendAdvisorMessage()">
+      <button onclick="sendAdvisorMessage()">➤</button>
+    </div>
   </div>
 </div>
 
