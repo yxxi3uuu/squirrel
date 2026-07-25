@@ -129,6 +129,12 @@ body {
   margin-bottom: 10px; cursor: pointer; transition: border-color .2s;
 }
 .scenario-item:hover { border-color: var(--accent); }
+.scenario-custom { border-left: 3px solid var(--caution); }
+.inject-section-divider {
+  font-size: .76rem; font-weight: 700; color: var(--text-dim);
+  padding: 8px 0 6px; margin-top: 6px;
+  border-top: 1px solid var(--border);
+}
 .hidden { display: none !important; }
 .custom-incident-form {
   display: flex; flex-direction: column; gap: 12px;
@@ -170,23 +176,26 @@ body {
 
 /* ── Drawer (Module 4) ────────────────────────────────────────────────────── */
 .drawer {
-  position: fixed; top: 0; right: 0; width: 380px; height: 100vh;
+  position: fixed; top: 0; right: 0; width: 520px; max-width: 90vw; height: 100vh;
   background: var(--panel); border-left: 1px solid var(--border);
-  z-index: 200; transform: translateX(0);
-  transition: transform .3s ease;
+  z-index: 500; transform: translateX(100%);
+  transition: transform .35s cubic-bezier(.4,0,.2,1), opacity .35s ease;
+  opacity: 0;
   display: flex; flex-direction: column;
   box-shadow: -8px 0 30px rgba(0,0,0,.5);
 }
-.drawer.hidden { transform: translateX(100%); }
+.drawer.open { transform: translateX(0); opacity: 1; }
 .drawer-head {
   display: flex; justify-content: space-between; align-items: center;
-  padding: 16px 20px; border-bottom: 1px solid var(--border);
+  padding: 18px 24px; border-bottom: 1px solid var(--border);
 }
-.drawer-head h3 { font-size: .95rem; color: var(--accent); }
-.drawer-close { background: none; border: none; color: var(--text-dim); font-size: 1.2rem; cursor: pointer; }
-.drawer-body { padding: 20px; overflow-y: auto; flex: 1; }
-.backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 490; }
-.backdrop.hidden { display: none; }
+.drawer-head h3 { font-size: 1rem; color: var(--accent); }
+.drawer-close { background: none; border: none; color: var(--text-dim); font-size: 1.3rem; cursor: pointer; transition: color .2s; }
+.drawer-close:hover { color: var(--text); }
+.drawer-body { padding: 24px; overflow-y: auto; flex: 1; }
+.backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 490;
+  opacity: 0; transition: opacity .3s ease; pointer-events: none; }
+.backdrop.open { opacity: 1; pointer-events: auto; }
 
 /* Chain */
 .chain { display: flex; flex-direction: column; gap: 0; margin-bottom: 20px; }
@@ -504,7 +513,123 @@ select:focus { outline: none; border-color: var(--accent); }
 .leaflet-pane { z-index: 10 !important; }
 .leaflet-top, .leaflet-bottom { z-index: 10 !important; }
 
+/* ── Loading Overlay (事件注入) ────────────────────────────────────────────── */
+.inject-loading-overlay {
+  position: absolute; inset: 0; z-index: 50;
+  background: rgba(11,16,23,.82);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 16px; border-radius: var(--radius);
+  backdrop-filter: blur(4px);
+  animation: fadeIn .2s ease;
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.inject-loading-overlay .loading-spinner {
+  width: 40px; height: 40px; border: 3px solid var(--border);
+  border-top-color: var(--accent); border-radius: 50%;
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.inject-loading-overlay .loading-text {
+  font-size: .9rem; color: var(--text-dim); font-weight: 600;
+}
+
+/* ── Decision Summary Highlight (CMS + 指揮官建議) ──────────────────────────── */
+.decision-highlight {
+  background: linear-gradient(135deg, rgba(116,179,168,.08), rgba(116,179,168,.02));
+  border: 1.5px solid var(--accent); border-radius: 10px;
+  padding: 18px 20px; margin-bottom: 16px;
+}
+.decision-highlight-title {
+  font-size: .78rem; font-weight: 750; color: var(--accent);
+  letter-spacing: .03em; margin-bottom: 14px;
+}
+.highlight-group {
+  padding: 14px 16px; border-radius: 8px;
+  background: rgba(255,255,255,.025); border: 1px solid var(--border);
+  margin-bottom: 12px;
+}
+.highlight-group:last-child { margin-bottom: 0; }
+.highlight-group-header { margin-bottom: 10px; }
+.highlight-sop-badge {
+  display: inline-block; padding: 3px 10px; border-radius: 5px;
+  font-size: .74rem; font-weight: 800; letter-spacing: .04em;
+  background: var(--sop2); color: var(--ink);
+}
+.highlight-group[data-sop="SOP-1"] .highlight-sop-badge { background: var(--sop1); }
+.highlight-group[data-sop="SOP-2"] .highlight-sop-badge { background: var(--sop2); }
+.highlight-group[data-sop="SOP-3"] .highlight-sop-badge { background: var(--caution); }
+.highlight-group[data-sop="SOP-5"] .highlight-sop-badge { background: var(--critical); color: #fff; }
+.highlight-group[data-sop="SOP-6"] .highlight-sop-badge { background: var(--accent); }
+.highlight-item { margin-bottom: 8px; }
+.highlight-item:last-child { margin-bottom: 0; }
+.highlight-label {
+  font-size: .74rem; font-weight: 700; color: var(--text-dim);
+  margin-bottom: 3px; display: flex; align-items: center; gap: 6px;
+}
+.highlight-label .hl-icon { font-size: .9rem; }
+.highlight-value { font-size: .88rem; line-height: 1.7; color: var(--text); }
+
+/* ── Panel position relative for loading overlay ──────────────────────────── */
+#panel-incident .panel { position: relative; }
+#panel-incident { position: relative; }
+#panel-incident .grid-2 { grid-template-columns: 2fr 3fr; }
+#panel-incident .grid-2 > .panel { min-width: 0; }
+
 /* ── Footer ───────────────────────────────────────────────────────────────── */
 footer { text-align: center; padding: 20px; color: var(--text-dim); font-size: .78rem; }
+
+/* ── Incident Tooltip (hover 顯示完整事件參數) ─────────────────────────────── */
+.scenario-item.has-tooltip {
+  position: relative;
+}
+.incident-tooltip {
+  display: none;
+  position: absolute;
+  left: 105%;
+  top: 0;
+  z-index: 200;
+  min-width: 300px;
+  max-width: 420px;
+  background: var(--panel);
+  border: 1.5px solid var(--accent);
+  border-radius: 10px;
+  padding: 14px 16px;
+  box-shadow: 0 8px 28px rgba(0,0,0,.55);
+  pointer-events: none;
+}
+.scenario-item.has-tooltip:hover .incident-tooltip {
+  display: block;
+}
+.tooltip-row {
+  display: flex;
+  gap: 10px;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255,255,255,.05);
+  font-size: .82rem;
+  line-height: 1.5;
+}
+.tooltip-row:last-child { border-bottom: none; }
+.tooltip-key {
+  flex-shrink: 0;
+  min-width: 110px;
+  color: var(--accent);
+  font-weight: 700;
+  font-family: ui-monospace, 'SF Mono', Consolas, monospace;
+  font-size: .78rem;
+}
+.tooltip-val {
+  color: var(--text);
+  word-break: break-word;
+}
+.scenario-list { overflow: visible; width: 100%; box-sizing: border-box; }
+#custom-incident-form { width: 100%; box-sizing: border-box; }
+
+/* 當 tooltip 超出右側邊界時，改顯示在左側 */
+@media (max-width: 1200px) {
+  .incident-tooltip {
+    left: auto;
+    right: 105%;
+  }
+}
 
 .hidden { display: none !important; }

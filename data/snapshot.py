@@ -20,16 +20,7 @@ from typing import Dict, List, Optional
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
-
-# 支援環境變數切換資料來源路徑
-_custom_dir = os.environ.get("DATA_SOURCE_DIR")
-if _custom_dir:
-    DATA_SOURCE_DIR = Path(_custom_dir)
-else:
-    # 預設: warroom/data_source（向後相容）
-    DATA_SOURCE_DIR = ROOT_DIR / "warroom" / "data_source"
-    if not DATA_SOURCE_DIR.exists():
-        DATA_SOURCE_DIR = ROOT_DIR / "data_source"
+DATA_SOURCE_DIR = ROOT_DIR / "warroom" / "data_source"
 
 TRAFFIC_FLOW_PATH = DATA_SOURCE_DIR / "city_traffic_flow.csv"
 CROWD_DENSITY_PATH = DATA_SOURCE_DIR / "signaling_crowd_density.csv"

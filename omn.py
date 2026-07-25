@@ -94,7 +94,7 @@ html, body, [data-testid="stAppViewContainer"] {
 """, unsafe_allow_html=True)
 
 # ── 常數 ──────────────────────────────────────────────────────────────────────
-DATA_PATH         = os.path.join("data_source", "signaling_crowd_density.csv")
+DATA_PATH         = os.path.join("warroom", "data_source", "signaling_crowd_density.csv")
 ROAMING_THRESHOLD = 0.30
 OLLAMA_URL        = os.environ.get("OLLAMA_URL",   "http://localhost:11434")
 OLLAMA_MODEL      = os.environ.get("OLLAMA_MODEL", "qwen2.5:3b")
@@ -307,7 +307,7 @@ st.markdown(
 )
 
 if not data_ok:
-    st.error("資料未載入，請確認 `data_source/signaling_crowd_density.csv` 存在。")
+    st.error("資料未載入，請確認 `warroom/data_source/signaling_crowd_density.csv` 存在。")
     st.stop()
 
 # ── 區塊一：信令監控 ──────────────────────────────────────────────────────────
