@@ -30,7 +30,7 @@ def _nearest_snapshot_ts(target_ts: str) -> str:
 
 
 def _load_incidents():
-    path = Path(__file__).resolve().parents[3] / "data_source" / "live_incidents.json"
+    path = Path(__file__).resolve().parents[2] / "data_source" / "live_incidents.json"
     with path.open("r", encoding="utf-8") as fh:
         return {inc["event_id"]: inc for inc in json.load(fh)}
 

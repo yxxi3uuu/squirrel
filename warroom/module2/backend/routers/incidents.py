@@ -23,7 +23,7 @@ from shared.schemas import TriggerDecision
 
 router = APIRouter(prefix="/api/incidents", tags=["incidents"])
 
-DATA_SOURCE_DIR = Path(__file__).resolve().parents[4] / "data_source"
+DATA_SOURCE_DIR = Path(__file__).resolve().parents[3] / "data_source"
 INCIDENTS_PATH = DATA_SOURCE_DIR / "live_incidents.json"
 
 
