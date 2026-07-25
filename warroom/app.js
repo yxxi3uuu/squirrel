@@ -76,14 +76,15 @@ function renderModule5AlertCard() {
       <button class="btn-explain" onclick="openModule5Modal()">🌐 查看站點狀態</button>
     </div>`;
   }
-  const top = [...m5Triggered].sort((a, b) => b.roaming_rate - a.roaming_rate)[0];
-  const more = m5Triggered.length > 1 ? `（共 ${m5Triggered.length} 站觸發）` : '';
+  const sorted = [...m5Triggered].sort((a, b) => b.roaming_rate - a.roaming_rate);
+  const stationLines = sorted.map(s =>
+    `<b>${s.station_name}</b> (${s.station_id}) — <span class="mono critical-text">${(s.roaming_rate * 100).toFixed(1)}%</span>`
+  ).join('<br>');
   return `
     <div class="alert-card sop6">
-      <div class="alert-hdr"><span class="alert-tag accent-bg">SOP-6 多語</span><span class="mono">${(top.timestamp || '').slice(11, 16)}</span></div>
+      <div class="alert-hdr"><span class="alert-tag accent-bg">SOP-6 多語</span><span class="mono">${sorted.length} 站觸發</span></div>
       <div class="alert-body">
-        <b>${top.station_name}</b> (${top.station_id})<br>
-        漫遊率 <span class="mono critical-text">${(top.roaming_rate * 100).toFixed(1)}%</span> ≥ 30% → 觸發七語通報${more}
+        ${stationLines}
       </div>
       <button class="btn-explain" onclick="openModule5Modal()">🌐 查看多語通報</button>
     </div>`;
@@ -495,12 +496,12 @@ const M5_LANG_LABEL = { zh_tw: '🇹🇼 繁中', en: '🇺🇸 EN', ja: '🇯�
 
 async function openModule5Modal() {
   document.getElementById('m5-modal-overlay').classList.remove('hidden');
-  document.getElementById('drawer-backdrop').classList.remove('hidden');
+  document.querySelectorAll('.leaflet-control-container').forEach(el => el.style.display = 'none');
   if (!m5Stations.length) await m5LoadStations();
 }
 function closeModule5Modal() {
   document.getElementById('m5-modal-overlay').classList.add('hidden');
-  document.getElementById('drawer-backdrop').classList.add('hidden');
+  document.querySelectorAll('.leaflet-control-container').forEach(el => el.style.display = '');
 }
 
 async function m5LoadStations() {
@@ -538,8 +539,11 @@ function m5SelectStation(sid) {
 async function m5Generate() {
   if (!m5Current) return;
   const s = m5Current, multi = s.roaming_rate >= M5_THRESHOLD;
+  const btn = document.getElementById('m5-btn-generate');
+  btn.disabled = true;
+  btn.classList.add('loading');
+  btn.textContent = '🤖 推論中，請稍候…';
   document.getElementById('m5-spinner').classList.remove('hidden');
-  document.getElementById('m5-btn-generate').disabled = true;
   try {
     const res = await fetch('/api/notify/generate', {
       method: 'POST',
@@ -563,7 +567,9 @@ async function m5Generate() {
     alert('生成失敗：' + e.message);
   } finally {
     document.getElementById('m5-spinner').classList.add('hidden');
-    document.getElementById('m5-btn-generate').disabled = false;
+    btn.disabled = false;
+    btn.classList.remove('loading');
+    btn.textContent = '⚡ 生成多語告警';
   }
 }
 
