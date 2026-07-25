@@ -32,21 +32,32 @@ def api_snapshot(timestamp: Optional[str] = None) -> dict:
 
 @router.get("/history")
 def api_history(entity_id: str) -> dict:
-    """單一路段/站點跨時間軸的主要指標，供前端畫時間序列圖表用。"""
+    """單一路段/站點跨時間軸的指標，供前端畫時間序列圖表用。
+    路段回傳飽和度＋車速雙指標；站點回傳人流數＋成長率雙指標。"""
     timestamps = available_timestamps()
     points = []
+    entity_type = None
     for ts in timestamps:
         snapshot = get_snapshot(ts)
         if entity_id in snapshot["road_segments"]:
-            value = snapshot["road_segments"][entity_id]["saturation_score"]
-            metric = "saturation_score"
+            entity_type = "road_segment"
+            seg = snapshot["road_segments"][entity_id]
+            points.append({
+                "timestamp": ts,
+                "saturation_score": seg["saturation_score"],
+                "avg_speed": seg["avg_speed"],
+            })
         elif entity_id in snapshot["stations"]:
-            value = snapshot["stations"][entity_id]["user_count"]
-            metric = "user_count"
+            entity_type = "station"
+            station = snapshot["stations"][entity_id]
+            points.append({
+                "timestamp": ts,
+                "user_count": station["user_count"],
+                "growth_rate": station["growth_rate"],
+            })
         else:
             raise HTTPException(status_code=404, detail=f"Unknown entity_id {entity_id!r}")
-        points.append({"timestamp": ts, "value": value})
-    return {"entity_id": entity_id, "metric": metric, "points": points}
+    return {"entity_id": entity_id, "entity_type": entity_type, "points": points}
 
 
 @router.get("/network-history")

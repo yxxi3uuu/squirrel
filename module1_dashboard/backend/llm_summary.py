@@ -26,6 +26,8 @@ SYSTEM_PROMPT = (
     "以及程式已經判斷觸發的 SOP 門檻項目。請針對每個觸發項目，用一到兩句中文"
     "說明發生了什麼異常趨勢、需要留意什麼，語氣簡潔、給第一線人員看。"
     "不要重新計算或質疑門檻數值，只根據提供的數據做摘要與提示。"
+    "不要給出調度、派遣、引導路線或分流等行動建議，那是其他模組的職責，"
+    "這裡只做狀態說明與預警提示。"
 )
 
 
@@ -76,10 +78,9 @@ def _call_ollama(snapshot: dict, triggers: List[dict]) -> str:
 
 
 def _fallback_summary(triggers: List[dict]) -> str:
-    """LLM 呼叫失敗/未設定時的規則式佔位摘要（非最終 LLM 輸出品質）。"""
-    lines = []
-    for t in triggers:
-        lines.append(f"【{t['sop_clause']} {t['clause_name']}】{t['entity_name']}：{t['basis']}。")
-        if t.get("actions"):
-            lines.append(f"　建議動作：{'；'.join(t['actions'])}")
-    return "\n".join(lines)
+    """LLM 呼叫失敗/未設定時的規則式佔位摘要（非最終 LLM 輸出品質）。
+    只做狀態說明，不含行動建議——那是其他模組的職責。"""
+    return "\n".join(
+        f"【{t['sop_clause']} {t['clause_name']}】{t['entity_name']}：{t['basis']}。"
+        for t in triggers
+    )

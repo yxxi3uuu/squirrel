@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>SQUIRREL 交通指揮中心</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20260722-network-chart">
+<link rel="stylesheet" href="style.css?v=20260725-m5toast-restored">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 </head>
 <body>
@@ -21,7 +21,7 @@
     <button class="tab" data-tab="incident">事件處置</button>
   </nav>
   <div class="top-right">
-    <span class="badge">LLM 模式: Ollama</span>
+    <span class="badge"><span class="status-dot pulse"></span>LLM 模式: Ollama</span>
     <button class="bell" id="bell-btn">🔔</button>
   </div>
 </header>
@@ -83,12 +83,12 @@
               </div>
               <div class="chart-popup hidden" id="chart-popup">
                 <div class="chart-popup-head">
-                  <span class="chart-popup-title">飽和度／車速 時序監測</span>
+                  <span class="chart-popup-title" id="chart-popup-title">飽和度／車速 時序監測</span>
                   <div class="chart-readouts">
-                    <div class="chart-readout sat"><span class="cr-val" id="chart-sat-value">--</span><span class="cr-lbl">全市飽和度</span></div>
-                    <div class="chart-readout spd"><span class="cr-val" id="chart-spd-value">--</span><span class="cr-lbl">均速 km/h</span></div>
+                    <div class="chart-readout sat" id="chart-readout-sat"><span class="cr-val" id="chart-sat-value">--</span><span class="cr-lbl" id="chart-sat-label">全市飽和度</span></div>
+                    <div class="chart-readout spd" id="chart-readout-spd"><span class="cr-val" id="chart-spd-value">--</span><span class="cr-lbl" id="chart-spd-label">均速 km/h</span></div>
                   </div>
-                  <button class="chart-popup-close" onclick="toggleNetworkChart(false)">✕</button>
+                  <button class="chart-popup-close" onclick="closeChartPopup()">✕</button>
                 </div>
                 <svg class="chart-svg" id="network-chart-svg" viewBox="0 0 1000 100" preserveAspectRatio="none"></svg>
               </div>
@@ -309,6 +309,7 @@
   </div>
 </div>
 
+
 <!-- ══ OVERLAY: Module 5 多語通報 Modal（原生，直接呼叫 /api/notify、/api/signal，接 Ollama）══ -->
 <div id="m5-modal-overlay" class="modal-overlay hidden" onclick="if(event.target===this) closeModule5Modal();">
   <div class="modal">
@@ -341,6 +342,6 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<script src="app.js?v=20260722-network-chart"></script>
+<script src="app.js?v=20260725-m5toast-restored"></script>
 </body>
 </html>

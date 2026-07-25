@@ -2,6 +2,7 @@
 :root {
   --ink: #0b1017;
   --panel: #141d26;
+  --panel-2: #1a2634;
   --border: #2a3a4e;
   --accent: #7ec8bc;
   --safe: #85d99a;
@@ -21,7 +22,10 @@
 html { height: 100%; }
 body {
   font-family: 'Noto Sans TC', sans-serif;
-  background: var(--ink);
+  background:
+    radial-gradient(ellipse 1200px 600px at 15% -10%, rgba(126,200,188,.06), transparent 60%),
+    radial-gradient(ellipse 900px 500px at 100% 0%, rgba(133,217,154,.045), transparent 55%),
+    var(--ink);
   color: var(--text);
   font-size: 15px;
   line-height: 1.75;
@@ -35,7 +39,7 @@ body {
 #topbar {
   display: flex; align-items: center; justify-content: space-between;
   padding: 12px 24px;
-  background: var(--panel);
+  background: linear-gradient(180deg, var(--panel), var(--panel-2));
   border-bottom: 1px solid var(--border);
   box-shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 10px 24px -18px rgba(0,0,0,.6);
   flex: none;
@@ -53,9 +57,16 @@ body {
 .tab.active, .tab:hover { background: var(--accent); color: var(--ink); border-color: var(--accent); }
 .top-right { display: flex; align-items: center; gap: 12px; }
 .badge {
+  display: inline-flex; align-items: center; gap: 7px;
   background: var(--border); padding: 4px 12px; border-radius: 16px;
   font-size: .78rem; color: var(--text-dim);
 }
+.status-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex: none;
+  background: var(--safe); box-shadow: 0 0 8px var(--safe);
+}
+.status-dot.pulse { animation: statusPulse 1.6s infinite; }
+@keyframes statusPulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
 .bell { background: none; border: none; font-size: 1.2rem; cursor: pointer; }
 
 /* ── Main（固定版面，不做整頁捲動，捲動交給各面板自己的清單）──────────────── */
@@ -122,7 +133,7 @@ body {
   content: ''; position: absolute; inset: 0 0 auto 0; height: 2px;
   background: linear-gradient(90deg, var(--accent), transparent); opacity: .6;
 }
-.ks-label { font-size: .66rem; color: var(--text-dim); letter-spacing: .2px; }
+.ks-label { font-size: .64rem; color: var(--text-dim); letter-spacing: .4px; text-transform: uppercase; font-weight: 500; }
 .ks-value {
   font-family: var(--font-mono); font-size: 1.15rem; font-weight: 700;
   margin-top: 3px; display: flex; align-items: baseline; gap: 4px;
@@ -136,7 +147,9 @@ body {
 .station-row {
   background: rgba(255,255,255,.03); border: 1px solid var(--border); border-radius: 7px;
   padding: 5px 8px; margin-bottom: 5px; font-size: .68rem;
+  cursor: pointer; transition: border-color .15s;
 }
+.station-row:hover { border-color: var(--accent); }
 .station-row .sr-sub {
   font-size: .56rem; color: var(--text-dim); margin-top: 1px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -151,7 +164,9 @@ body {
 .segstat-row {
   display: flex; align-items: center; gap: 7px;
   padding: 5px 4px; font-size: .74rem; border-bottom: 1px solid var(--border);
+  cursor: pointer; transition: background .15s;
 }
+.segstat-row:hover { background: rgba(255,255,255,.04); }
 .segstat-row:last-child { border-bottom: none; }
 .segstat-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
 .segstat-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -257,6 +272,8 @@ body {
 }
 .caution-bg { background: var(--caution); }
 .accent-bg  { background: var(--accent); }
+.safe-bg    { background: var(--safe); }
+.muted-bg   { background: var(--border); color: var(--text-dim); }
 .alert-body { font-size: .78rem; line-height: 1.6; }
 .critical-text { color: var(--critical); font-weight: 700; }
 .caution-text  { color: var(--caution); font-weight: 700; }
@@ -494,6 +511,7 @@ body {
   background: var(--accent); color: var(--ink); border: none; cursor: pointer;
 }
 .toast-close { background: none; border: none; color: var(--text-dim); font-size: 1rem; cursor: pointer; }
+
 
 /* ── 示範內容標籤（尚未接上其他模組真實引擎的區塊都要標這個）── */
 .stub-badge {

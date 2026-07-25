@@ -15,8 +15,7 @@ from shared.schemas import TriggerDecision
 
 SaturationLevel = Literal["info", "yellow", "red"]
 
-# SOP 第 1 條：城市應變觸發路段，達 B 級以上才額外觸發「長綠燈時制」建議
-CLAUSE1_ESCALATION_SEGMENTS = {"RD_TPE_001", "RD_TPE_002"}
+# SOP 第 1 條
 CLAUSE1_B_LEVEL_THRESHOLD = 0.85
 CLAUSE1_A_LEVEL_THRESHOLD = 0.95
 
@@ -49,15 +48,8 @@ def evaluate_clause1(snapshot: dict) -> List[dict]:
             continue
 
         level_label = "A 級 (癱瘓)" if level == "red" else "B 級 (壅擠)"
-        actions: List[str] = []
-        if segment_id in CLAUSE1_ESCALATION_SEGMENTS:
-            alt_names = [
-                road_segments.get(alt_id, {}).get("name", alt_id)
-                for alt_id in segment.get("alternatives", [])
-            ]
-            actions.append(
-                f"啟動長綠燈時制：替代道路（{'、'.join(alt_names) or '無'}）綠燈配時 +25%，並調度警力淨空路口"
-            )
+        # 模組一只做門檻判斷與預警提示，不產出調度/引導等行動建議
+        # （那是模組二事件處置的職責），所以這裡不填 actions。
 
         decisions.append(
             TriggerDecision(
@@ -67,7 +59,6 @@ def evaluate_clause1(snapshot: dict) -> List[dict]:
                 entity_id=segment_id,
                 entity_name=segment.get("name", segment_id),
                 basis=f"Saturation_Score {score:.2f} 達 {level_label}",
-                actions=actions,
                 severity=level,
                 timestamp=snapshot.get("timestamp"),
             ).model_dump()
@@ -96,6 +87,8 @@ def evaluate_clause3(snapshot: dict) -> List[dict]:
     if count_exceeded:
         basis_parts.append(f"User_Count {user_count:,} > 門檻 {CLAUSE3_USER_COUNT_THRESHOLD:,}")
 
+    # 模組一只做門檻判斷與預警提示，不產出分流/調度等行動建議
+    # （引導旅客走哪個出口、接駁車調度是模組二事件處置的職責），所以不填 actions。
     return [
         TriggerDecision(
             triggered=True,
@@ -104,7 +97,6 @@ def evaluate_clause3(snapshot: dict) -> List[dict]:
             entity_id=CLAUSE3_STATION_ID,
             entity_name=station.get("name", CLAUSE3_STATION_ID),
             basis="；".join(basis_parts),
-            actions=["北捷過站不停", "通知公車處調度接駁專車", "引導群眾步行至 BS_MRT_BL18"],
             severity="yellow",
             timestamp=snapshot.get("timestamp"),
         ).model_dump()
