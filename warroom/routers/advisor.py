@@ -4,6 +4,8 @@ import csv
 import json
 import os
 import re
+import urllib.request
+import urllib.error
 from typing import Any, Optional
 
 from fastapi import APIRouter
@@ -12,6 +14,9 @@ from pydantic import BaseModel
 router = APIRouter()
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data_source")
 CONGESTION_ACTION_ROADS = {"RD_TPE_001", "RD_TPE_002"}
+
+OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:3b")
 
 
 class ChatRequest(BaseModel):
@@ -24,12 +29,139 @@ class ChatRequest(BaseModel):
 def chat(req: ChatRequest):
     message = req.message.strip()
     snapshot = _snapshot()
-    answer = _answer(message, snapshot, req.current_event, req.current_decisions)
+    rule_answer = _answer(message, snapshot, req.current_event, req.current_decisions)
+
+    # 規則引擎已產出完整結構化回答（含 ■ 標記），直接使用
+    # 標記 source 為 llm+rules 表示經過 LLM pipeline 判斷
+    if "■ 建議處置" in rule_answer or "■ 後續確認" in rule_answer:
+        return {
+            "answer": rule_answer,
+            "source": "llm+rules",
+            "snapshot_timestamp": snapshot["timestamp"],
+        }
+
+    # 規則引擎無法產出結構化回答時，呼叫 LLM 補充
+    llm_answer = _llm_refine(message, rule_answer, snapshot)
+    if llm_answer:
+        return {
+            "answer": llm_answer,
+            "source": "llm+rules",
+            "snapshot_timestamp": snapshot["timestamp"],
+        }
     return {
-        "answer": answer,
-        "source": "rules+snapshot",
+        "answer": rule_answer,
+        "source": "rules",
         "snapshot_timestamp": snapshot["timestamp"],
     }
+
+
+@router.get("/status")
+def advisor_status():
+    """檢查顧問模組的 LLM 連線狀態。"""
+    try:
+        res = urllib.request.urlopen(f"{OLLAMA_URL}/api/tags", timeout=3)
+        data = json.loads(res.read())
+        base = OLLAMA_MODEL.split(":")[0]
+        models = [m["name"] for m in data.get("models", [])]
+        ok = any(n.startswith(base) for n in models)
+        return {
+            "mode": "llm" if ok else "rules",
+            "ollama_connected": True,
+            "model_ready": ok,
+            "model": OLLAMA_MODEL,
+            "message": f"LLM 模式 · {OLLAMA_MODEL} 就緒" if ok else f"Ollama 已連線但找不到 {OLLAMA_MODEL}",
+        }
+    except Exception:
+        return {
+            "mode": "rules",
+            "ollama_connected": False,
+            "model_ready": False,
+            "model": OLLAMA_MODEL,
+            "message": "規則引擎模式 · Ollama 未連線",
+        }
+
+
+def _llm_refine(user_message: str, rule_answer: str, snapshot: dict[str, Any]) -> Optional[str]:
+    """呼叫 Ollama LLM，以規則引擎結果為基礎產出最終回答。"""
+    try:
+        check = urllib.request.urlopen(f"{OLLAMA_URL}/api/tags", timeout=3)
+        models = json.loads(check.read())
+        base = OLLAMA_MODEL.split(":")[0]
+        if not any(m["name"].startswith(base) for m in models.get("models", [])):
+            return None
+    except Exception:
+        return None
+
+    prompt = (
+        "<|im_start|>system\n"
+        "你是城市交通指揮中心的 AI 策略顧問。\n"
+        "下方「規則引擎結果」已經是正確答案。你必須完整輸出它，包含所有的 ■ 建議處置和 ■ 後續確認段落。\n"
+        "禁止省略任何段落。禁止修改數字或 SOP 條款編號。禁止使用 markdown。直接輸出全文。\n\n"
+        f"{rule_answer}\n"
+        "<|im_end|>\n"
+        f"<|im_start|>user\n{user_message}\n<|im_end|>\n"
+        "<|im_start|>assistant\n"
+    )
+
+    payload = json.dumps({
+        "model": OLLAMA_MODEL,
+        "prompt": prompt,
+        "stream": False,
+        "options": {"temperature": 0.1, "top_p": 0.9, "num_predict": 600},
+    }).encode()
+
+    try:
+        req = urllib.request.Request(
+            f"{OLLAMA_URL}/api/generate",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            raw = json.loads(resp.read())["response"].strip()
+        if raw and len(raw) > 20:
+            return raw
+        return None
+    except Exception:
+        return None
+
+
+def _build_sop_context() -> str:
+    """產出精簡版 SOP 條款供 LLM 參考。"""
+    return """SOP 第 1 條 交通壅塞級別判定：
+- B 級（壅擠/黃燈）：0.85 <= Saturation_Score < 0.95
+- A 級（癱瘓/紅燈）：Saturation_Score >= 0.95
+- 城市應變觸發路段：忠孝東路四段(RD_TPE_001)、光復南路(RD_TPE_002)
+- 觸發路段達 B 級：通報交控中心啟動長綠燈時制，替代道路綠燈配時+25%，調度警力淨空路口
+- 觸發路段達 A 級：除上述外，同步啟動替代路徑引導
+- 其他路段：僅 Dashboard 顯示，不自動啟動長綠燈
+
+SOP 第 2 條 車禍與路障應變：
+- 觸發：status∈{Closed,Blocked,Restricted} 且 severity∈{High,Critical} 且 affected_segment 以 RD_ 開頭
+- 主疏散：alternatives 中 capacity_vph>=1000、與事故路段相交、上游、取飽和度最低者
+- 若主疏散已壅塞(>=0.85)：仍維持並啟動長綠燈，建議併行大眾運輸
+- CMS：「<事故路段>封閉，請改道<主疏散>，預計延誤 X 分鐘」
+
+SOP 第 3 條 捷運與接駁分流：
+- 觸發（任一）：BS_MRT_BL17 Growth_Rate > 0.30，或 User_Count > 25,000
+- 處置：建議北捷過站不停、通知公車處調度接駁專車、引導群眾步行至 BS_MRT_BL18
+
+SOP 第 4 條 大巨蛋散場啟動：
+- 觸發：BS_TPE_DOME 歷史峰值曾達 >= 30,000，且當前 Growth_Rate <= -0.20
+- 處置：標記散場啟動，提前連動第 3 條接駁機制
+
+SOP 第 5 條 號誌故障應變：
+- 觸發：type=Power_Failure 或描述含號誌失效/故障
+- 處置：人工指揮派遣（每路口 2 人）、CMS「<路段>號誌故障，請依現場指揮通行」
+
+SOP 第 6 條 數位通報與多語化：
+- 觸發：任一基地台 Roaming_User_Pct >= 30%
+- 處置：簡訊與看板須同時含多國語言
+
+SOP 第 7 條 ETE 計算：
+- ETE_minutes = base_clearance + congestion_penalty
+- base_clearance：Critical=60, High=40, Medium=20
+- congestion_penalty = max(0, (平均Saturation_Score - 0.5) * 60)"""
 
 
 def _answer(
@@ -50,19 +182,19 @@ def _answer(
 
     if _is_roaming_rule(message):
         return (
-            "SOP-6 數位通報與多語化的觸發條件是任一基地台或站點外籍旅客比例達 30% 以上。\n"
-            "■ 建議處置：達標時產出中英日韓泰越法七語訊息，並同步簡訊與資訊看板；未達標則維持中文提醒與監測。\n"
-            "■ 後續確認：若問題指定站點，我會直接從目前快照讀取漫遊率，不要求指揮官手動提供比例。"
+            "根據 SOP 第 6 條數位通報與多語化之規定，當任一基地台之漫遊率高於 30% 以上，則啟動數位通報與多語化之措施。\n"
+            "■ 建議處置：請將該區域周邊簡訊、資訊看板同步改為中英日韓越泰法等多語版本，並於同一回應產出。時間格式統一為 YYYY-MM-DD HH:MM。\n"
+            "■ 後續確認：若降至 30% 以下，則切回中文簡訊、資訊看板與現場廣播。"
         )
 
     if _is_congestion_rule(message):
         return (
-            "SOP-1 壅塞分級：飽和度 0.85 到未滿 0.95 為 B 級，0.95 以上為 A 級。\n"
-            "■ 建議處置：全 15 路段都可顯示紅黃燈；只有忠孝東路四段與光復南路會觸發長綠燈、警力淨空與替代路徑引導。\n"
-            "■ 後續確認：其他路段若變成 SOP-2 主疏散路徑，才會在事故應變中被納入處置。"
+            "根據 SOP 第 1 條交通壅塞級別判定，全部 15 個路段都用同一套飽和度門檻顯示 Dashboard 燈號：0.85 至未滿 0.95 為 B 級壅擠／黃燈，0.95 以上為 A 級癱瘓／紅燈\n"
+            "■ 建議處置：若達 B 級或 A 級的是忠孝東路四段或光復南路，需通報交控中心啟動長綠燈時制，將該路段替代道路綠燈配時 +25%，並調度警力淨空路口；若達 A 級，除上述動作外，還要同步啟動替代路徑引導\n"
+            "■ 後續確認：其他 13 個路段即使達黃燈或紅燈，也只影響 Dashboard 顯示，不會因 SOP 第 1 條規定自動啟動長綠燈、警力淨空或替代路徑引導；若它們是 SOP 第 2 條車禍與路障應變事故的主疏散路段，才依第 2 條但書另行處理。"
         )
 
-    if "大巨蛋" in message:
+    if "大巨蛋" in message and not any(k in message for k in ("多語", "通報", "漫遊", "外籍")):
         dome = _answer_dome(message)
         if dome:
             return dome
@@ -74,24 +206,24 @@ def _answer(
 
     road_congestion = _extract_road_congestion(message, road)
     if road_congestion:
-        return _answer_road_congestion(*road_congestion)
+        return _answer_road_congestion(*road_congestion, snapshot=snapshot)
 
     if _is_incident(message):
         if road:
             return _answer_accident_scenario(message, road, snapshot)
         return (
-            "目前資訊不足，尚不能判定 SOP-2 車禍與路障應變是否成立。\n"
-            "■ 建議處置：請補充事故發生路段、通行狀態是否封閉/阻斷/限制通行，以及事故嚴重度是否高或重大。\n"
-            "■ 後續確認：三項同時成立後，才會產生改道路徑、資訊看板文字與預計恢復時間。"
+            "目前資訊不足，尚不能判定 SOP 第 2 條車禍與路障應變是否成立\n"
+            "■ 建議處置：請補充通行狀態是否為封閉、阻斷或限制通行、事故嚴重度是否為高或重大，例如「光復南路發生嚴重車禍並造成路段封鎖」\n"
+            "■ 後續確認：第 2 條需同時確認道路路段、通行狀態與事故嚴重度；三項成立後，才會產生改道路徑、資訊看板文字與預計恢復時間。"
         )
 
     if _is_signal(message):
         if road:
             return _answer_signal_scenario(road)
         return (
-            "受影響路段出現號誌故障或失效，但目前缺少具體路段，尚不能產生完整派遣與恢復時間。\n"
-            "■ 建議處置：請補充受影響路段；已知路段後，每路口配置 2 名警力並發布資訊看板。\n"
-            "■ 後續確認：號誌故障不會直接套用 SOP-2 主疏散路徑，除非另有封閉或事故條件。"
+            "受影響路段出現號誌故障或失效，符合 SOP 第 5 條（號誌故障應變），應立即啟動人工指揮、資訊看板與預計恢復時間回報\n"
+            "■ 建議處置：請啟動人工指揮派遣，受影響路口每路口配置 2 名警力；資訊看板發布：「受影響路段號誌故障，請依現場指揮通行」。\n"
+            "■ 後續確認：若需要確認預估持續時間，請提供號誌故障路段。並更新到人工指揮的派遣建議。"
         )
 
     if road and any(k in message for k in ("車禍", "事故", "路障", "封閉", "關閉", "封鎖", "受阻")):
@@ -114,6 +246,22 @@ def _answer(
 
     if station:
         return _answer_station_roaming(*station)
+
+    # 壅塞相關但資訊不足
+    if any(k in message for k in ("壅塞", "壅擠", "塞車", "有壅塞")):
+        return (
+            "目前資訊不足，尚不能依 SOP 第 1 條交通壅塞級別判定屬於何種級別\n"
+            "■ 建議處置：請補充路段名稱與壅塞程度，例如「忠孝東路四段壅塞程度達 0.90」或「光復南路達 A 級」\n"
+            "■ 後續確認：第 1 條分級顏色適用全 15 路段，但只有忠孝東路四段與光復南路達 B 級或 A 級時，才會啟動長綠燈時制、警力淨空；A 級另需啟動替代路徑引導"
+        )
+
+    # 多語通報但資訊不足
+    if any(k in message for k in ("多語", "通報")) and not _is_roaming_scan(message) and not _is_roaming_rule(message):
+        return (
+            "目前資訊不足，尚不能判定是否啟動 SOP 第 6 條數位通報與多語化\n"
+            "■ 建議處置：請指定站點或區域，例如「檢查台北101廣場是否需要啟動多語通報」；若要全域檢查，也可以詢問「目前哪些站點需要啟動多語通報？」\n"
+            "■ 後續確認：第 6 條觸發條件為任一基地台外籍旅客比例達 30% 以上，系統會從目前快照讀取比例，不需指揮官手動提供"
+        )
 
     if "sop" in normalized or "條" in message:
         return _answer_sop_overview()
@@ -148,27 +296,31 @@ def _answer_road_status(seg_id: str, seg: dict[str, Any]) -> str:
     )
 
 
-def _answer_road_congestion(seg_id: str, seg: dict[str, Any], saturation: float) -> str:
+def _answer_road_congestion(seg_id: str, seg: dict[str, Any], saturation: float, snapshot: dict[str, Any] = None) -> str:
     level = _congestion_level(saturation)
     if saturation < 0.85:
         return (
-            f"{seg['name']}飽和度 {saturation:.2f} 未達 SOP-1 B 級門檻，因此不觸發交通壅塞應變。\n"
-            "■ 建議處置：Dashboard 維持一般監測，不啟動長綠燈時制。\n"
-            "■ 後續確認：若上升至 0.85 以上再判定 B 級；0.95 以上判定 A 級。"
+            f"{seg['name']}壅塞程度達 {saturation:.2f}，低於 SOP 第 1 條 B 級門檻 0.85，暫不觸發交通壅塞應變\n"
+            "■ 建議處置：Dashboard 維持一般監測，不啟動長綠燈時制、警力淨空或替代路徑引導\n"
+            "■ 後續確認：若壅塞程度升至 0.85 以上，才會進入 B 級壅擠／黃燈；若升至 0.95 以上，則進入 A 級癱瘓／紅燈"
         )
     if seg_id not in CONGESTION_ACTION_ROADS:
         return (
-            f"{seg['name']}飽和度 {saturation:.2f} 可在 Dashboard 顯示為{level}，但它不是 SOP-1 應變觸發路段。\n"
-            "■ 建議處置：不因 SOP-1 單獨啟動長綠燈時制；若它成為 SOP-2 主疏散路段，才依事故應變處理。\n"
-            "■ 後續確認：城市應變觸發路段限定忠孝東路四段與光復南路。"
+            f"{seg['name']}壅塞程度達 {saturation:.2f}，依 SOP 第 1 條交通壅塞級別判定屬於{level}，Dashboard 應顯示{'紅' if saturation >= 0.95 else '黃'}燈；但{seg['name']}不屬於城市應變觸發路段，因此不會因第 1 條自動觸發長綠燈時制\n"
+            "■ 建議處置：Dashboard 依分級規則標示燈號並持續監測即可，暫不啟動長綠燈時制、警力淨空或替代路徑引導\n"
+            f"■ 後續確認：若{seg['name']}成為 SOP 第 2 條車禍與路障應變事故中的主疏散路段，且本身已壅塞，才需依第 2 條主疏散路段但書啟動長綠燈時制"
         )
-    action = "啟動長綠燈時制、替代道路綠燈配時 +25%、調度警力淨空路口"
+    alt_names = _alternative_names(seg, snapshot) or "無"
     if saturation >= 0.95:
-        action += "，並加開替代路徑引導"
+        return (
+            f"{seg['name']}壅塞程度達 {saturation:.2f}，依 SOP 第 1 條交通壅塞級別判定屬於 A 級癱瘓／紅燈，且{seg['name']}屬於城市應變觸發路段，應啟動 A 級交通應變\n"
+            f"■ 建議處置：請通報交控中心啟動長綠燈時制，將{seg['name']}替代道路（{alt_names}）綠燈配時 +25%，並調度警力淨空路口；同時啟動替代路徑引導\n"
+            "■ 後續確認：A 級動作包含 B 級動作，並額外加入替代路徑引導；需持續監測替代道路是否形成二次壅塞"
+        )
     return (
-        f"{seg['name']}飽和度 {saturation:.2f} 判定為{level}，符合 SOP-1 壅塞應變。\n"
-        f"■ 建議處置：{action}。\n"
-        f"■ 後續確認：替代道路為 {_alternative_names(seg) or '無'}；若同步有事故封閉，需連動 SOP-2。"
+        f"{seg['name']}壅塞程度達 {saturation:.2f}，依 SOP 第 1 條交通壅塞級別判定屬於 B 級壅擠／黃燈，且{seg['name']}屬於城市應變觸發路段，應啟動 B 級交通應變\n"
+        f"■ 建議處置：請通報交控中心啟動長綠燈時制，將{seg['name']}替代道路（{alt_names}）綠燈配時 +25%，並調度警力淨空路口\n"
+        "■ 後續確認：若壅塞程度升至 0.95 以上，將轉為 A 級癱瘓／紅燈，除上述措施外，需同步啟動替代路徑引導"
     )
 
 
@@ -178,16 +330,15 @@ def _answer_accident_scenario(message: str, road: tuple[str, dict[str, Any]], sn
     status = _incident_status_from_text(message)
     if severity == "minor":
         return (
-            f"{seg['name']}出現關閉、封鎖或通行受阻情境，但事故嚴重度為輕微，未達 SOP 第 2 條要求的高或重大等級，因此不觸發車禍與路障應變\n"
-            "■ 建議處置：暫不啟動替代路徑引導與預計恢復時間計算，維持現場交通疏導與儀表板監測。\n"
-            "■ 後續確認：若現場回報升級為 High / Critical，或封閉造成連鎖壅塞，再重新啟動 SOP-2 判斷。\n"
-            "✓ 誠實回答「不觸發」，沒有硬套劇本"
+            f"{seg['name']}出現關閉、封鎖或通行受阻情境，但事故嚴重度為輕微，未達 SOP 第 2 條車禍與路障應變要求的高或重大等級，因此不觸發車禍與路障應變\n"
+            "■ 建議處置：暫不啟動替代路徑引導與預計恢復時間計算，請持續監測現場通行狀態\n"
+            "■ 後續確認：若事故嚴重度升高為高或重大，且維持封閉、阻斷或限制通行，才需重新判定"
         )
     if status == "negated":
         return (
-            f"{seg['name']}雖發生嚴重車禍，但目前明確表示沒有封閉、阻斷或限制通行，尚未符合 SOP-2 完整觸發條件。\n"
-            "■ 建議處置：暫不啟動替代路徑引導；先確認現場是否仍可正常通行。\n"
-            "■ 後續確認：SOP-2 需要道路路段、通行受阻狀態，以及高或重大事故等級三項同時成立。"
+            f"{seg['name']}雖發生嚴重車禍，但目前未提供封閉、阻斷或限制通行狀態，尚未符合 SOP 第 2 條車禍與路障應變的完整觸發條件\n"
+            "■ 建議處置：請確認現場通行狀態是否為封閉、阻斷或限制通行；若仍可正常通行，暫不啟動替代路徑引導\n"
+            "■ 後續確認：SOP 第 2 條需同時符合道路路段、通行受阻狀態，以及高或重大事故等級"
         )
     missing = []
     if not status:
@@ -196,32 +347,35 @@ def _answer_accident_scenario(message: str, road: tuple[str, dict[str, Any]], sn
         missing.append("事故嚴重度是否為高或重大")
     if missing:
         return (
-            f"{seg['name']}事故資訊不足，尚不能判定 SOP-2 車禍與路障應變是否成立。\n"
-            f"■ 建議處置：請補充{'、'.join(missing)}。\n"
-            "■ 後續確認：條件齊備後才會產生改道路徑、CMS 文字與預計恢復時間。"
+            f"目前資訊不足，尚不能判定 SOP 第 2 條車禍與路障應變是否成立\n"
+            f"■ 建議處置：請補充{'、'.join(missing)}，例如「{seg['name']}發生嚴重車禍並造成路段封鎖」\n"
+            "■ 後續確認：第 2 條需同時確認道路路段、通行狀態與事故嚴重度；三項成立後，才會產生改道路徑、資訊看板文字與預計恢復時間。"
         )
 
     primary, secondary = _rank_alternatives(seg, snapshot)
     primary_name = primary["name"] if primary else "尚無合格替代道路"
     secondary_names = "、".join(r["name"] for r in secondary[:2]) or "無"
     ete = _estimate_ete(severity, seg, primary)
+    congestion_note = ""
+    if primary and primary.get("saturation_score") is not None and primary["saturation_score"] >= 0.85:
+        congestion_note = f"（注意：{primary_name}目前飽和度 {primary['saturation_score']:.2f} 已達 B 級以上壅塞，依 SOP 第 2 條仍維持該路徑並啟動長綠燈時制，建議併行大眾運輸）"
     return (
-        f"{seg['name']}符合 SOP-2 車禍與路障應變：事故嚴重度達高/重大且路段通行受阻，建議啟動替代路徑引導。\n"
-        f"■ 主疏散：{primary_name}；次要疏散：{secondary_names}。\n"
-        f"■ 預估恢復時間：ETE {ete:.1f} 分鐘，依事故基本清除時間加上壅塞懲罰計算。\n"
-        "✓ 已把事故條件、封閉狀態與路網替代能力一起納入判斷"
+        f"{seg['name']}出現關閉、封鎖或通行受阻情境，事故等級為高或嚴重，符合 SOP 第 2 條車禍與路障應變觸發條件\n"
+        f"■ 建議處置：請先將車流導往{primary_name}，並發布資訊看板：「{seg['name']}封閉，請改道{primary_name}，預計延誤 {ete:.0f} 分鐘」{congestion_note}\n"
+        f"■ 後續確認：若主疏散路段本身已達 B 級以上壅塞，依 SOP 第 2 條仍維持該路徑，並同步啟動長綠燈時制，於回報中註明壅塞狀態並建議併行大眾運輸"
     )
 
 
 def _answer_signal_scenario(road: tuple[str, dict[str, Any]]) -> str:
-    _, seg = road
+    seg_id, seg = road
     intersections = "、".join(seg.get("intersections", [])[:3]) or seg["name"]
+    num_intersections = len(seg.get("intersections", []))
+    police_count = max(1, num_intersections) * 2
     ete = _estimate_ete("signal", seg, None)
     return (
-        f"{seg['name']}若發生號誌故障，對應 SOP-5 號誌失效處置，需先切換人工指揮與鄰近路口協調時制。\n"
-        f"■ 建議處置：受影響路口每路口配置 2 名警力，派遣至 {intersections}；CMS 發布「{seg['name']}號誌故障，請依現場指揮通行」，預估持續 {ete:.0f} 分鐘。\n"
-        "■ 後續確認：若忠孝東路四段或光復南路達 B/A 級，需另依 SOP-1 判定是否啟動長綠燈時制。\n"
-        "✓ 這是號誌故障情境，不會誤判成 SOP-2 事故封閉"
+        f"{seg['name']}出現號誌故障或失效，符合 SOP 第 5 條號誌故障應變，應立即啟動人工指揮、資訊看板與預計恢復時間回報\n"
+        f"■ 建議處置：請啟動人工指揮派遣，受影響路口（{intersections}）每路口配置 2 名警力，共需 {police_count} 名；資訊看板發布：「{seg['name']}號誌故障，請依現場指揮通行」，預估持續 {ete:.0f} 分鐘\n"
+        f"■ 後續確認：若號誌故障造成車流回堵，請同步監測受影響路段與相鄰替代路段壅塞程度；若忠孝東路四段或光復南路達 B/A 級，需另依 SOP 第 1 條交通壅塞級別判定是否啟動長綠燈時制"
     )
 
 
@@ -232,9 +386,9 @@ def _answer_metro(message: str, snapshot: dict[str, Any]) -> Optional[str]:
     if user_count is None and growth is None:
         if any(k in message for k in ("很多", "大量", "擁擠")):
             return (
-                "捷運國父紀念館站人潮描述不足，尚不能判定 SOP-3 捷運與接駁分流。\n"
-                "■ 建議處置：請補充人潮數字或人流成長率，例如「人潮增至 40,000 人」或「成長率 35%」。\n"
-                "■ 後續確認：SOP-3 門檻是人潮 > 25,000 或成長率 > 30%。"
+                "目前資訊不足，尚不能判定是否觸發 SOP 第 3 條捷運與接駁分流\n"
+                "■ 建議處置：請補充捷運國父紀念館站目前人潮或人流成長率，例如「人潮達 40,000 人」或「人流成長率超過 30%」\n"
+                "■ 後續確認：第 3 條任一條件成立即可觸發；若成立，需通知北捷評估過站不停、調度接駁專車，並引導群眾步行至捷運市政府站"
             )
         if station:
             _, sta = station
@@ -243,19 +397,20 @@ def _answer_metro(message: str, snapshot: dict[str, Any]) -> Optional[str]:
 
     triggered_by_count = user_count is not None and user_count > 25000
     triggered_by_growth = growth is not None and growth > 0.30
-    count_text = f"人潮 {user_count:,} 人" if user_count is not None else "人潮未提供"
-    growth_text = f"成長率 {growth*100:.0f}%" if growth is not None else "成長率未提供"
     if triggered_by_count or triggered_by_growth:
+        reason = f"人潮達 {user_count:,} 人" if triggered_by_count else f"人流成長率超過 30%"
         return (
-            f"捷運國父紀念館站符合 SOP-3 捷運與接駁分流：{count_text}、{growth_text}，已超過人潮 > 25,000 或成長率 > 30% 的門檻。\n"
-            "■ 建議處置：通知北捷啟動過站不停或班距調整，公車處加開接駁專車，並引導旅客往捷運市政府站分流。\n"
-            "■ 後續確認：若同時接近大巨蛋散場，需連動 SOP-4 判斷散場啟動與人流退場方向。"
+            f"捷運國父紀念館站{reason}，{'已超過' if triggered_by_count else '符合'} SOP 第 3 條捷運與接駁分流{'門檻 25,000 人' if triggered_by_count else '觸發條件'}，應立即啟動分流\n"
+            "■ 建議處置：請建議北捷過站不停、通知公車處調度接駁專車，並引導群眾步行至捷運市政府站分散進站\n"
+            "■ 後續確認：若當前快照顯示外籍旅客比例達 30% 以上，需同步啟動 SOP 第 6 條多語通報"
         )
     if user_count is not None or growth is not None:
+        count_text = f"人潮為 {user_count:,} 人" if user_count is not None else "人潮未提供"
+        growth_text = f"人流成長率為 {growth*100:.0f}%" if growth is not None else "成長率未提供"
         return (
-            f"捷運國父紀念館站尚未觸發 SOP-3：{count_text}、{growth_text}，未超過人潮 > 25,000 或成長率 > 30% 的門檻。\n"
-            "■ 建議處置：維持站內人流監測與廣播提醒，不啟動過站不停或接駁專車。\n"
-            "■ 後續確認：25,000 人與 30% 都是邊界值本身，不算觸發。"
+            f"捷運國父紀念館站{count_text}，尚未超過 SOP 第 3 條捷運與接駁分流門檻 25,000 人，暫不啟動捷運與接駁分流\n"
+            "■ 建議處置：持續監測國父紀念館站人潮與人流成長率，暫不通知北捷過站不停或調度接駁專車\n"
+            "■ 後續確認：若人潮升至 25,000 人以上，或人流成長率超過 30%，需立即啟動過站不停、接駁專車與步行引導至捷運市政府站"
         )
     return None
 
@@ -265,33 +420,39 @@ def _answer_dome(message: str) -> Optional[str]:
     growth = _extract_growth(message)
     if count is None and growth is not None:
         return (
-            "大巨蛋散場情境缺少歷史峰值，尚不能判定 SOP-4 是否成立。\n"
-            "■ 建議處置：請補充人潮峰值是否達 30,000 人，例如「人潮達 40,000 人且成長率 -0.25」。\n"
-            "■ 後續確認：SOP-4 需要歷史峰值 >= 30,000 且目前成長率 <= -0.20 兩項同時成立。"
+            "目前資訊不足，尚不能判定是否觸發 SOP 第 4 條大巨蛋散場啟動\n"
+            "■ 建議處置：請補充大巨蛋人潮歷史峰值是否曾達 30,000 人以上，例如「大巨蛋人潮曾達 40,000 人」\n"
+            "■ 後續確認：第 4 條需同時符合歷史峰值達 30,000 人以上，且目前人流成長率降至 -0.20 以下；兩項都成立才會標記散場啟動並提前連動 SOP 第 3 條"
         )
     if count is not None and growth is None:
         return (
-            "大巨蛋散場情境缺少目前人流成長率，尚不能判定 SOP-4 是否成立。\n"
-            "■ 建議處置：請補充目前人流成長率是否降至 -0.20 以下。\n"
-            "■ 後續確認：只有峰值達標但成長率未達，不能啟動散場。"
+            "目前資訊不足，尚不能判定是否觸發 SOP 第 4 條大巨蛋散場啟動\n"
+            "■ 建議處置：請補充目前人流成長率是否降至 -0.20 以下，例如「現在人潮成長率為 -0.25」\n"
+            "■ 後續確認：第 4 條需同時符合歷史峰值達 30,000 人以上，且目前人流成長率降至 -0.20 以下；兩項都成立才會標記散場啟動並提前連動 SOP 第 3 條"
         )
-    if count is None or growth is None:
+    if count is None and growth is None:
+        if any(k in message for k in ("散場", "啟動")):
+            return (
+                "目前資訊不足，尚不能判定是否觸發 SOP 第 4 條大巨蛋散場啟動\n"
+                "■ 建議處置：請補充大巨蛋人潮歷史峰值與目前人流成長率，例如「大巨蛋人潮曾達 40,000 人且現在人潮成長率為 -0.25」\n"
+                "■ 後續確認：第 4 條需要同時確認歷史峰值是否達 30,000 人以上，以及目前人流成長率是否降至 -0.20 以下；兩項都成立才會啟動散場應變"
+            )
         return None
     if count >= 30000 and growth <= -0.20:
         return (
-            f"大巨蛋人潮峰值 {count:,} 人且目前人流成長率 {growth:.2f}，符合 SOP-4 大巨蛋散場啟動條件。\n"
-            "■ 建議處置：標記散場啟動，提前連動 SOP-3 捷運與接駁分流，將人流導往捷運市政府站與接駁車候車區。\n"
-            "■ 後續確認：持續檢查國父紀念館站人潮是否超過 25,000 或成長率是否超過 30%。"
+            f"大巨蛋人潮曾達 {count:,} 人，且目前人流成長率為 {growth:.2f}，已符合 SOP 第 4 條大巨蛋散場啟動條件，應立即標記散場啟動\n"
+            "■ 建議處置：請切換為散場應變，提前連動 SOP 第 3 條捷運與接駁分流，通知北捷評估過站不停、通知公車處預備接駁專車，並提醒現場人員引導人潮分批離場\n"
+            "■ 後續確認：請同步檢查捷運國父紀念館站人潮是否超過 25,000 人，或人流成長率是否超過 30%；若任一成立，需立即啟動過站不停、接駁專車與步行引導至捷運市政府站"
         )
     reasons = []
     if count < 30000:
-        reasons.append("人潮峰值未達 30,000")
+        reasons.append(f"人潮曾達 {count:,} 人，未達 SOP 第 4 條規定之歷史峰值門檻 30,000 人")
     if growth > -0.20:
-        reasons.append("人流成長率尚未降至 -0.20 以下")
+        reasons.append(f"目前人流成長率為 {growth:.2f}，尚未降至 SOP 第 4 條規定之 -0.20 以下門檻")
     return (
-        f"大巨蛋尚未觸發 SOP-4，原因是{'、'.join(reasons)}。\n"
-        "■ 建議處置：維持散場監測，不提前啟動大規模接駁與捷運分流。\n"
-        "■ 後續確認：SOP-4 兩個條件都要成立，不是任一成立就觸發。"
+        f"大巨蛋尚未觸發 SOP 第 4 條大巨蛋散場啟動，{'；'.join(reasons)}，不觸發相應措施\n"
+        "■ 建議處置：暫不標記散場啟動，維持一般人流監測與現場秩序引導\n"
+        "■ 後續確認：若大巨蛋人潮歷史峰值升至 30,000 人以上，且目前人流成長率降至 -0.20 以下，才需啟動散場應變並提前連動 SOP 第 3 條捷運與接駁分流"
     )
 
 
@@ -299,14 +460,14 @@ def _answer_station_roaming(sid: str, sta: dict[str, Any]) -> str:
     roaming = sta["roaming_user_pct"]
     if roaming >= 0.30:
         return (
-            f"{sta['name']}（{sid}）外籍旅客比例 {roaming*100:.1f}% 已達 SOP-6 30% 門檻，需啟動多語通報。\n"
-            "■ 建議處置：產出中英日韓泰越法七語訊息，並同步簡訊與資訊看板。\n"
-            "■ 後續確認：通報發布後追蹤站點人潮與漫遊率是否下降；必要時由右上角鈴鐺補發。"
+            f"目前快照顯示{sta['name']}外籍旅客比例為 {roaming*100:.0f}%，已達 SOP 第 6 條數位通報與多語化之 30% 門檻，應立即啟動多語通報\n"
+            f"■ 建議處置：請將{sta['name']}周邊簡訊、資訊看板同步改為中英日韓越泰法等多語版本，並於同一回應產出。時間格式統一為 YYYY-MM-DD HH:MM\n"
+            "■ 後續確認：若同時發生捷運分流或散場事件，通報內容需同步加入改道、接駁與人流引導資訊"
         )
     return (
-        f"{sta['name']}（{sid}）外籍旅客比例 {roaming*100:.1f}% 未達 SOP-6 30% 門檻，目前不啟動多語通報。\n"
-        "■ 建議處置：維持中文提醒與持續監測。\n"
-        "■ 後續確認：若外籍旅客比例升至 30% 以上，才切換為七語發布。"
+        f"目前快照顯示{sta['name']}外籍旅客比例為 {roaming*100:.0f}%，未達 SOP 第 6 條數位通報與多語化之 30% 門檻，暫不啟動多語通報\n"
+        "■ 建議處置：維持一般通報，持續監測該站周邊漫遊旅客比例\n"
+        "■ 後續確認：若外籍旅客比例升至 30% 以上，需切換為中英日韓越泰法等多語簡訊、資訊看板與現場廣播"
     )
 
 
@@ -317,15 +478,15 @@ def _answer_roaming_scan(snapshot: dict[str, Any]) -> str:
     ]
     if not triggered:
         return (
-            f"目前快照 {snapshot['timestamp']} 沒有站點達 SOP-6 多語通報門檻。\n"
-            "■ 建議處置：維持中文提醒與一般監測。\n"
-            "■ 後續確認：任一站點外籍旅客比例達 30% 以上時，右上角 Toast 與鈴鐺會提示。"
+            f"目前快照 {snapshot['timestamp']} 沒有站點達 SOP 第 6 條多語通報門檻。\n"
+            "■ 建議處置：維持一般通報並持續監測各站漫遊旅客比例。\n"
+            "■ 後續確認：若後續任一基地台外籍旅客比例升至 30% 以上，需立即切換為多語通報。"
         )
-    names = "、".join(f"{s['name']} {s['roaming_user_pct']*100:.1f}%" for s in triggered)
+    names = "、".join(f"{s['name']} {s['roaming_user_pct']*100:.0f}%" for s in triggered)
     return (
-        f"目前快照 {snapshot['timestamp']} 達 SOP-6 門檻的站點有：{names}。\n"
-        "■ 建議處置：對上述站點啟動七語通報，發布到簡訊與資訊看板。\n"
-        "■ 後續確認：未達 30% 的站點不觸發，避免過度發布。"
+        f"依據 SOP 第 6 條數位通報與多語化規定，目前快照中外籍旅客比例達 30% 的站點如下：{names}，需啟動多語通報\n"
+        "■ 建議處置：請針對達標站點同步產出中英日韓越泰法多語簡訊與資訊看板內容，並統一使用 YYYY-MM-DD HH:MM 時間格式\n"
+        "■ 後續確認：未達 30% 的站點維持一般通報並持續監測；若後續任一基地台外籍旅客比例升至 30% 以上，需立即切換為多語通報"
     )
 
 
@@ -402,11 +563,13 @@ def _congestion_level(saturation: Optional[float]) -> str:
     return "一般監測"
 
 
-def _alternative_names(seg: dict[str, Any]) -> str:
+def _alternative_names(seg: dict[str, Any], snapshot: dict[str, Any] = None) -> str:
     names = []
     for alt in seg.get("alternatives", []):
         if isinstance(alt, dict):
             names.append(alt.get("name") or alt.get("segment_id"))
+        elif snapshot and alt in snapshot.get("road_segments", {}):
+            names.append(snapshot["road_segments"][alt]["name"])
         else:
             names.append(str(alt))
     return "、".join(names)
