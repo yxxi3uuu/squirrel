@@ -175,21 +175,30 @@ function renderIncidentList(incidents) {
   // 自訂注入的事件
   const customs = unique.filter(inc => inc.event_id.startsWith('CUSTOM'));
   let html = scenarios.map(inc => `
-    <div class="scenario-item" onclick="injectIncident('${inc.event_id}')">
+    <div class="scenario-item has-tooltip" onclick="injectIncident('${inc.event_id}')">
       <b>${inc.event_id}</b> — ${inc.type}<br>
       <span class="mono">${inc.affected_segment} · ${inc.severity} · ${inc.status}</span>
+      <div class="incident-tooltip">${buildIncidentTooltipContent(inc)}</div>
     </div>
   `).join('');
   if (customs.length) {
     html += `<div class="inject-section-divider">自訂事件紀錄</div>`;
     html += customs.map(inc => `
-      <div class="scenario-item scenario-custom" onclick="injectIncident('${inc.event_id}')">
+      <div class="scenario-item scenario-custom has-tooltip" onclick="injectIncident('${inc.event_id}')">
         <b>${inc.event_id}</b> — ${inc.type}<br>
         <span class="mono">${inc.affected_segment} · ${inc.severity} · ${inc.status}</span>
+        <div class="incident-tooltip">${buildIncidentTooltipContent(inc)}</div>
       </div>
     `).join('');
   }
   container.innerHTML = html;
+}
+
+function buildIncidentTooltipContent(inc) {
+  return Object.entries(inc)
+    .filter(([_, v]) => v !== null && v !== undefined && v !== '')
+    .map(([key, value]) => `<div class="tooltip-row"><span class="tooltip-key">${escapeHtml(key)}</span><span class="tooltip-val">${escapeHtml(String(value))}</span></div>`)
+    .join('');
 }
 
 function switchInjectPanel(panel) {

@@ -490,8 +490,64 @@ select:focus { outline: none; border-color: var(--accent); }
 /* ── Panel position relative for loading overlay ──────────────────────────── */
 #panel-incident .panel { position: relative; }
 #panel-incident { position: relative; }
+#panel-incident .grid-2 { grid-template-columns: 2fr 3fr; }
+#panel-incident .grid-2 > .panel { min-width: 0; }
 
 /* ── Footer ───────────────────────────────────────────────────────────────── */
 footer { text-align: center; padding: 20px; color: var(--text-dim); font-size: .78rem; }
+
+/* ── Incident Tooltip (hover 顯示完整事件參數) ─────────────────────────────── */
+.scenario-item.has-tooltip {
+  position: relative;
+}
+.incident-tooltip {
+  display: none;
+  position: absolute;
+  left: 105%;
+  top: 0;
+  z-index: 200;
+  min-width: 300px;
+  max-width: 420px;
+  background: var(--panel);
+  border: 1.5px solid var(--accent);
+  border-radius: 10px;
+  padding: 14px 16px;
+  box-shadow: 0 8px 28px rgba(0,0,0,.55);
+  pointer-events: none;
+}
+.scenario-item.has-tooltip:hover .incident-tooltip {
+  display: block;
+}
+.tooltip-row {
+  display: flex;
+  gap: 10px;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255,255,255,.05);
+  font-size: .82rem;
+  line-height: 1.5;
+}
+.tooltip-row:last-child { border-bottom: none; }
+.tooltip-key {
+  flex-shrink: 0;
+  min-width: 110px;
+  color: var(--accent);
+  font-weight: 700;
+  font-family: ui-monospace, 'SF Mono', Consolas, monospace;
+  font-size: .78rem;
+}
+.tooltip-val {
+  color: var(--text);
+  word-break: break-word;
+}
+.scenario-list { overflow: visible; width: 100%; box-sizing: border-box; }
+#custom-incident-form { width: 100%; box-sizing: border-box; }
+
+/* 當 tooltip 超出右側邊界時，改顯示在左側 */
+@media (max-width: 1200px) {
+  .incident-tooltip {
+    left: auto;
+    right: 105%;
+  }
+}
 
 .hidden { display: none !important; }
