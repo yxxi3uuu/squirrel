@@ -46,6 +46,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const row = e.target.closest('.station-row');
     if (row) showEntityHistory(row.dataset.entityId, row.dataset.entityName);
   });
+  checkAdvisorStatus();
 });
 
 /* ── 模組一：車流資料 ─────────────────────────────────────────────────────── */
@@ -512,14 +513,15 @@ function renderModule5AlertCard() {
       <button class="btn-explain" onclick="openModule5Modal()">查看站點狀態</button>
     </div>`;
   }
-  const top = [...m5Triggered].sort((a, b) => b.roaming_rate - a.roaming_rate)[0];
-  const more = m5Triggered.length > 1 ? `（共 ${m5Triggered.length} 站觸發）` : '';
+  const sorted = [...m5Triggered].sort((a, b) => b.roaming_rate - a.roaming_rate);
+  const stationLines = sorted.map(s =>
+    `<b>${s.station_name}</b> (${s.station_id}) — <span class="mono critical-text">${(s.roaming_rate * 100).toFixed(1)}%</span>`
+  ).join('<br>');
   return `
     <div class="alert-card sop6">
-      <div class="alert-hdr"><span class="alert-tag accent-bg">SOP-6 多語</span><span class="mono">${(top.timestamp || '').slice(11, 16)}</span></div>
+      <div class="alert-hdr"><span class="alert-tag accent-bg">SOP-6 多語</span><span class="mono">${sorted.length} 站觸發</span></div>
       <div class="alert-body">
-        <b>${top.station_name}</b> (${top.station_id})<br>
-        漫遊率 <span class="mono critical-text">${(top.roaming_rate * 100).toFixed(1)}%</span> ≥ 30% → 觸發七語通報${more}
+        ${stationLines}
       </div>
       <button class="btn-explain" onclick="openModule5Modal()">查看多語通報</button>
     </div>`;
@@ -558,6 +560,35 @@ function renderTrafficMap(segments) {
       roadPolylines[s.Segment_ID] = line;
     }
   });
+
+  // 加入站點標記（捷運站、地標、公車轉運站）— 來自 Module 2 TrafficMap
+  if (!window._stationMarkersAdded) {
+    window._stationMarkersAdded = true;
+    const stations = [
+      { id: "BS_MRT_BL17", name: "捷運國父紀念館站", type: "mrt", coords: [25.0408, 121.5576] },
+      { id: "BS_MRT_BL16", name: "捷運忠孝敦化站",   type: "mrt", coords: [25.0415, 121.5483] },
+      { id: "BS_MRT_BL18", name: "捷運市政府站",     type: "mrt", coords: [25.0406, 121.5659] },
+      { id: "BS_TPE_DOME", name: "大巨蛋",           type: "venue", coords: [25.0357, 121.5573] },
+      { id: "BS_TPE_101",  name: "台北101",           type: "landmark", coords: [25.0339, 121.5645] },
+      { id: "BS_XY_VIESHOW", name: "信義威秀",       type: "venue", coords: [25.0380, 121.5680] },
+      { id: "BS_XY_ATT",  name: "ATT4FUN",           type: "venue", coords: [25.0368, 121.5680] },
+      { id: "BS_BUS_TERM", name: "市府轉運站",       type: "bus",   coords: [25.0405, 121.5660] },
+      { id: "BS_SS_PARK", name: "松山文創園區",      type: "venue", coords: [25.0462, 121.5605] },
+    ];
+    stations.forEach(st => {
+      const color = st.type === 'mrt' ? '#00cec9' : st.type === 'bus' ? '#fdcb6e' : '#fd79a8';
+      const size = st.type === 'mrt' ? 14 : 12;
+      const radius = st.type === 'mrt' ? '50%' : st.type === 'venue' ? '3px' : '50%';
+      const icon = L.divIcon({
+        className: '',
+        html: `<div style="width:${size}px;height:${size}px;border-radius:${radius};background:${color};border:2px solid #fff;box-shadow:0 0 6px ${color}aa;"></div>`,
+        iconSize: [size, size], iconAnchor: [size/2, size/2],
+      });
+      const marker = L.marker(st.coords, { icon, zIndexOffset: 200 }).addTo(mapInstance);
+      const typeLabel = st.type === 'mrt' ? '[捷運]' : st.type === 'bus' ? '[公車]' : '[地標]';
+      marker.bindPopup(`<div style="font-family:sans-serif;min-width:140px"><b style="font-size:13px">${st.name}</b><div style="font-size:11px;color:#888;margin-top:4px">${typeLabel}</div></div>`);
+    });
+  }
 }
 
 /* ── 模組一：路段即時狀態清單（15 路段速覽，色點＋速度＋飽和度）───────────── */
@@ -596,12 +627,42 @@ function updateEventCountKPI(count) {
 function renderIncidentList(incidents) {
   const container = document.querySelector('.scenario-list');
   if (!container) return;
-  container.innerHTML = incidents.map(inc => `
-    <div class="scenario-item" onclick="injectIncident('${inc.event_id}')">
+  // 用 event_id 去重，確保每個事件只顯示一次
+  const seen = new Set();
+  const unique = incidents.filter(inc => {
+    if (seen.has(inc.event_id)) return false;
+    seen.add(inc.event_id);
+    return true;
+  });
+  // 預設情境事件（JSON 檔案中的 3 筆）
+  const scenarios = unique.filter(inc => !inc.event_id.startsWith('CUSTOM'));
+  // 自訂注入的事件
+  const customs = unique.filter(inc => inc.event_id.startsWith('CUSTOM'));
+  let html = scenarios.map(inc => `
+    <div class="scenario-item has-tooltip" onclick="injectIncident('${inc.event_id}')">
       <b>${inc.event_id}</b> — ${inc.type}<br>
       <span class="mono">${inc.affected_segment} · ${inc.severity} · ${inc.status}</span>
+      <div class="incident-tooltip">${buildIncidentTooltipContent(inc)}</div>
     </div>
   `).join('');
+  if (customs.length) {
+    html += `<div class="inject-section-divider">自訂事件紀錄</div>`;
+    html += customs.map(inc => `
+      <div class="scenario-item scenario-custom has-tooltip" onclick="injectIncident('${inc.event_id}')">
+        <b>${inc.event_id}</b> — ${inc.type}<br>
+        <span class="mono">${inc.affected_segment} · ${inc.severity} · ${inc.status}</span>
+        <div class="incident-tooltip">${buildIncidentTooltipContent(inc)}</div>
+      </div>
+    `).join('');
+  }
+  container.innerHTML = html;
+}
+
+function buildIncidentTooltipContent(inc) {
+  return Object.entries(inc)
+    .filter(([_, v]) => v !== null && v !== undefined && v !== '')
+    .map(([key, value]) => `<div class="tooltip-row"><span class="tooltip-key">${escapeHtml(key)}</span><span class="tooltip-val">${escapeHtml(String(value))}</span></div>`)
+    .join('');
 }
 
 function switchInjectPanel(panel) {
@@ -625,13 +686,13 @@ document.querySelectorAll('.tab').forEach(btn => {
 /* ── Drawer (Module 4) ────────────────────────────────────────────────────────
    SOP-1 直接查 /api/traffic；SOP-2/SOP-5 則讀最近一次事件注入後的真實 decisions。 */
 function openDrawer(type) {
-  document.getElementById('drawer').classList.remove('hidden');
-  document.getElementById('drawer-backdrop').classList.remove('hidden');
+  document.getElementById('drawer').classList.add('open');
+  document.getElementById('drawer-backdrop').classList.add('open');
   renderDrawerContent(type);
 }
 function closeDrawer() {
-  document.getElementById('drawer').classList.add('hidden');
-  document.getElementById('drawer-backdrop').classList.add('hidden');
+  document.getElementById('drawer').classList.remove('open');
+  document.getElementById('drawer-backdrop').classList.remove('open');
 }
 
 async function renderDrawerContent(type) {
@@ -746,14 +807,6 @@ function renderDecisionExplanation(decision) {
       <div class="formula mono">${ete.formula_note || 'ETE = base_clearance + congestion_penalty'}</div>
       <div class="formula-detail mono">= ${ete.base_clearance ?? '-'} + ${ete.congestion_penalty ?? '-'} = ${decision.ete_minutes} min</div>
       <div class="formula-detail">平均飽和度 ${ete.avg_saturation ?? '-'}；計算路段 ${(ete.affected_segments_used || []).join('、')}</div>
-    </div>` : ''}
-    ${decision.cms_text ? `<div class="formula-box align-left">
-      <div class="formula-title">CMS 文字</div>
-      <div>${decision.cms_text}</div>
-    </div>` : ''}
-    ${decision.guidance_text ? `<div class="formula-box align-left">
-      <div class="formula-title">指揮官摘要</div>
-      <div>${decision.guidance_text}</div>
     </div>` : ''}`;
 }
 
@@ -774,16 +827,41 @@ const advisorScenarioSets = {
   })),
   signal: advisorRoadNames.map(name => ({
     label: name,
-    text: `如果${name}號誌故障，依 SOP 要怎麼派遣現場人力、發布 CMS，預計多久恢復？`,
+    text: `如果${name}號誌故障，依 SOP 要怎麼處理？`,
   })),
   notification: advisorStationNames.map(name => ({
     label: name,
-    text: `檢查${name}是否需要啟動多語通報。`,
+    text: `檢查目前${name}是否需要啟動多語通報？`,
   })),
 };
 
 function toggleChat() {
   document.getElementById('chat-panel').classList.toggle('hidden');
+  document.getElementById('chat-backdrop').classList.toggle('hidden');
+  // 首次開啟時檢查 Ollama 狀態
+  if (!window._advisorStatusChecked) {
+    window._advisorStatusChecked = true;
+    checkAdvisorStatus();
+  }
+}
+
+async function checkAdvisorStatus() {
+  const dot = document.getElementById('advisor-mode-dot');
+  const text = document.getElementById('advisor-mode-text');
+  try {
+    const res = await fetch('/api/advisor/status');
+    const data = await res.json();
+    if (data.mode === 'llm') {
+      dot.className = 'mode-dot mode-dot-llm';
+      text.textContent = 'LLM 模式 · Ollama 已連線';
+    } else {
+      dot.className = 'mode-dot mode-dot-rules';
+      text.textContent = data.message || '規則引擎 · 即時快照';
+    }
+  } catch (e) {
+    dot.className = 'mode-dot mode-dot-rules';
+    text.textContent = '規則引擎 · 即時快照';
+  }
 }
 
 function showAdvisorScenarioSet(key) {
@@ -812,7 +890,21 @@ async function sendAdvisorMessage(forcedMessage) {
   if (!message) return;
   input.value = '';
   appendChatMessage('user', message);
-  const pending = appendChatMessage('ai', '分析目前快照中…');
+  const pending = appendChatMessage('ai', '');
+  pending.innerHTML = `<div class="sq-thinking">
+    <div class="sq-track">
+      <svg class="sq-runner" viewBox="0 0 36 28">
+        <circle cx="8" cy="8" r="7" fill="currentColor" opacity=".75"/>
+        <ellipse cx="20" cy="17" rx="10" ry="7" fill="currentColor"/>
+        <circle cx="30" cy="12" r="5" fill="currentColor"/>
+        <circle cx="32" cy="11" r="1.2" fill="var(--ink)"/>
+        <line x1="15" y1="23" x2="15" y2="27" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        <line x1="25" y1="23" x2="25" y2="27" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <span class="sq-label">Squirrel 正在檢索 SOP…</span>
+  </div>`;
+  const startTime = Date.now();
   try {
     const res = await fetch('/api/advisor/chat', {
       method: 'POST',
@@ -824,7 +916,20 @@ async function sendAdvisorMessage(forcedMessage) {
       }),
     });
     const data = await res.json();
+    // 確保松鼠至少跑 800ms 再顯示答案
+    const elapsed = Date.now() - startTime;
+    if (elapsed < 800) await new Promise(r => setTimeout(r, 800 - elapsed));
     pending.innerHTML = formatAdvisorAnswer(data.answer);
+    // 更新模式指示
+    const dot = document.getElementById('advisor-mode-dot');
+    const text = document.getElementById('advisor-mode-text');
+    if (data.source === 'llm+rules') {
+      dot.className = 'mode-dot mode-dot-llm';
+      text.textContent = 'LLM 模式 · Ollama';
+    } else {
+      dot.className = 'mode-dot mode-dot-rules';
+      text.textContent = '規則引擎 · 即時快照';
+    }
   } catch (e) {
     pending.textContent = '顧問服務暫時無法回應：' + e.message;
   }
@@ -841,13 +946,19 @@ function appendChatMessage(role, text) {
 }
 
 function formatAdvisorAnswer(answer) {
-  const lines = String(answer || '').split('\n').map(line => line.trim()).filter(Boolean);
+  const lines = String(answer || '').split('\n')
+    .map(line => line.trim().replace(/^#{1,4}\s*/, '').replace(/^第[一二三四五六七八九十]行[：:]\s*/, ''))
+    .filter(Boolean);
   if (!lines.length) return '';
   return lines.map((line, index) => {
     const safe = escapeHtml(line);
-    if (index === 0) return `<div class="answer-lead">${safe}</div>`;
     if (line.startsWith('✓')) return `<div class="advisor-check">${safe}</div>`;
+    if (line.startsWith('■ 建議處置')) return `<div class="advisor-action advisor-action-treat"><span class="action-icon">🛠</span> ${safe.replace('■ ', '')}</div>`;
+    if (line.startsWith('■ 後續確認')) return `<div class="advisor-action advisor-action-followup"><span class="action-icon">🔎</span> ${safe.replace('■ ', '')}</div>`;
     if (line.startsWith('■')) return `<div class="advisor-action">${safe.replace('■ ', '')}</div>`;
+    if (index === 0 || (!line.startsWith('■') && !line.startsWith('✓') && index <= 2 && !lines.slice(0, index).some(l => l.startsWith('■')))) {
+      return `<div class="answer-lead">${safe}</div>`;
+    }
     return `<div class="answer-line">${safe}</div>`;
   }).join('');
 }
@@ -903,12 +1014,10 @@ const M5_LANG_LABEL = { zh_tw: '🇹🇼 繁中', en: '🇺🇸 EN', ja: '🇯�
 
 async function openModule5Modal() {
   document.getElementById('m5-modal-overlay').classList.remove('hidden');
-  document.getElementById('drawer-backdrop').classList.remove('hidden');
   if (!m5Stations.length) await m5LoadStations();
 }
 function closeModule5Modal() {
   document.getElementById('m5-modal-overlay').classList.add('hidden');
-  document.getElementById('drawer-backdrop').classList.add('hidden');
 }
 
 async function m5LoadStations() {
@@ -946,8 +1055,11 @@ function m5SelectStation(sid) {
 async function m5Generate() {
   if (!m5Current) return;
   const s = m5Current, multi = s.roaming_rate >= M5_THRESHOLD;
+  const btn = document.getElementById('m5-btn-generate');
+  btn.disabled = true;
+  btn.classList.add('loading');
+  btn.textContent = '🤖 推論中，請稍候…';
   document.getElementById('m5-spinner').classList.remove('hidden');
-  document.getElementById('m5-btn-generate').disabled = true;
   try {
     const res = await fetch('/api/notify/generate', {
       method: 'POST',
@@ -971,7 +1083,9 @@ async function m5Generate() {
     alert('生成失敗：' + e.message);
   } finally {
     document.getElementById('m5-spinner').classList.add('hidden');
-    document.getElementById('m5-btn-generate').disabled = false;
+    btn.disabled = false;
+    btn.classList.remove('loading');
+    btn.textContent = '⚡ 生成多語告警';
   }
 }
 
@@ -1029,12 +1143,29 @@ function m5CopyAll() {
 }
 
 /* ── Incident Injection ────────────────────────────────────────────────────── */
+function showInjectLoading() {
+  const panel = document.querySelector('#panel-incident');
+  if (!panel) return;
+  // Remove existing overlay if any
+  const existing = panel.querySelector('.inject-loading-overlay');
+  if (existing) existing.remove();
+  const overlay = document.createElement('div');
+  overlay.className = 'inject-loading-overlay';
+  overlay.innerHTML = `<div class="loading-spinner"></div><div class="loading-text">SOP 規則引擎運算中…</div>`;
+  panel.appendChild(overlay);
+}
+function hideInjectLoading() {
+  const overlay = document.querySelector('.inject-loading-overlay');
+  if (overlay) overlay.remove();
+}
+
 async function injectIncident(eventId) {
+  showInjectLoading();
   try {
     const listRes = await fetch('/api/incidents/list');
     const listData = await listRes.json();
     const event = listData.incidents.find(i => i.event_id === eventId);
-    if (!event) { alert('找不到該事件'); return; }
+    if (!event) { hideInjectLoading(); alert('找不到該事件'); return; }
 
     const res = await fetch('/api/incidents/inject', {
       method: 'POST',
@@ -1042,6 +1173,7 @@ async function injectIncident(eventId) {
       body: JSON.stringify(event),
     });
     const data = await res.json();
+    hideInjectLoading();
     if (data.success) {
       latestIncident = data.event;
       latestDecisions = data.decisions || [];
@@ -1058,26 +1190,28 @@ async function submitCustomIncident(event) {
   const now = new Date();
   const fallbackId = `CUSTOM_${now.getHours()}${now.getMinutes()}${now.getSeconds()}`;
   const affected = document.getElementById('custom-segment').value.trim();
+  const affectedRoad = document.getElementById('custom-affected-road').value.trim() || null;
   const location = document.getElementById('custom-location').value.trim() || affected;
   const payload = {
     event_id: document.getElementById('custom-event-id').value.trim() || fallbackId,
     type: document.getElementById('custom-type').value,
     location,
     affected_segment: affected,
-    affected_road: affected.startsWith('RD_') ? location : null,
+    affected_road: affectedRoad,
     severity: document.getElementById('custom-severity').value,
     status: document.getElementById('custom-status').value,
     description: document.getElementById('custom-description').value.trim(),
     timestamp: latestSnapshot?.timestamp || '2026-05-20 22:30',
   };
   if (!payload.affected_segment) {
-    alert('請填目標路段或站點 ID');
+    alert('請選擇目標路段或站點');
     return;
   }
   await injectIncidentPayload(payload);
 }
 
 async function injectIncidentPayload(payload) {
+  showInjectLoading();
   try {
     const res = await fetch('/api/incidents/inject', {
       method: 'POST',
@@ -1085,6 +1219,7 @@ async function injectIncidentPayload(payload) {
       body: JSON.stringify(payload),
     });
     const data = await res.json();
+    hideInjectLoading();
     if (data.success) {
       latestIncident = data.event;
       latestDecisions = data.decisions || [];
@@ -1104,11 +1239,44 @@ function showInjectResult(data) {
   const event = data.event;
   const decisions = data.decisions || [];
   const elapsed = data.processing_time_ms ?? 0;
+
+  // Extract CMS texts and guidance texts from all decisions, grouped by SOP clause
+  const highlightMap = {};
+  decisions.forEach(d => {
+    if (d.cms_text || d.guidance_text) {
+      const key = d.sop_clause || 'other';
+      if (!highlightMap[key]) highlightMap[key] = { clause: d.sop_clause, cms: null, guidance: null };
+      if (d.cms_text) highlightMap[key].cms = d.cms_text;
+      if (d.guidance_text) highlightMap[key].guidance = d.guidance_text;
+    }
+  });
+  const highlights = Object.values(highlightMap);
+
+  const highlightHtml = highlights.length ? `
+    <div class="decision-highlight">
+      <div class="decision-highlight-title">⚡ 關鍵決策摘要</div>
+      ${highlights.map(h => `
+        <div class="highlight-group" data-sop="${h.clause || ''}">
+          <div class="highlight-group-header">
+            <span class="highlight-sop-badge">${h.clause || '未分類'}</span>
+          </div>
+          ${h.cms ? `<div class="highlight-item">
+            <div class="highlight-label"><span class="hl-icon">📺</span> CMS 電子看板</div>
+            <div class="highlight-value">${h.cms}</div>
+          </div>` : ''}
+          ${h.guidance ? `<div class="highlight-item">
+            <div class="highlight-label"><span class="hl-icon">🎖️</span> 指揮官建議</div>
+            <div class="highlight-value">${h.guidance}</div>
+          </div>` : ''}
+        </div>`).join('')}
+    </div>` : '';
+
   container.innerHTML = `
     <div class="card-yellow" style="margin-bottom:14px">
       事件 <b>${event.event_id}</b> 已注入（${event.affected_segment} · ${event.severity} · ${event.status}）。
       <span class="mono">規則運算 ${elapsed} ms</span>
     </div>
+    ${highlightHtml}
     ${decisions.map(renderDecisionCard).join('')}`;
 }
 
@@ -1150,3 +1318,59 @@ document.getElementById('bell-btn').addEventListener('click', () => {
   if (timelineTimestamps.length) loadSnapshotAt(timelineTimestamps[timelineIndex]);
   loadModule5Status().then(showModule5Toast);
 });
+
+/* ── Draggable Advisor Orb ─────────────────────────────────────────────────── */
+(function initDraggableOrb() {
+  const orb = document.getElementById('advisor-orb');
+  let isDragging = false, hasMoved = false;
+  let startX, startY, origX, origY;
+
+  orb.addEventListener('mousedown', dragStart);
+  orb.addEventListener('touchstart', dragStart, { passive: false });
+
+  function dragStart(e) {
+    isDragging = true;
+    hasMoved = false;
+    const point = e.touches ? e.touches[0] : e;
+    startX = point.clientX;
+    startY = point.clientY;
+    const rect = orb.getBoundingClientRect();
+    origX = rect.left;
+    origY = rect.top;
+    orb.style.transition = 'none';
+    document.addEventListener('mousemove', dragMove);
+    document.addEventListener('mouseup', dragEnd);
+    document.addEventListener('touchmove', dragMove, { passive: false });
+    document.addEventListener('touchend', dragEnd);
+  }
+
+  function dragMove(e) {
+    if (!isDragging) return;
+    e.preventDefault();
+    const point = e.touches ? e.touches[0] : e;
+    const dx = point.clientX - startX;
+    const dy = point.clientY - startY;
+    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) hasMoved = true;
+    if (!hasMoved) return;
+    const newX = Math.max(0, Math.min(window.innerWidth - 60, origX + dx));
+    const newY = Math.max(0, Math.min(window.innerHeight - 60, origY + dy));
+    orb.style.left = newX + 'px';
+    orb.style.top = newY + 'px';
+    orb.style.right = 'auto';
+    orb.style.bottom = 'auto';
+  }
+
+  function dragEnd() {
+    isDragging = false;
+    orb.style.transition = '';
+    document.removeEventListener('mousemove', dragMove);
+    document.removeEventListener('mouseup', dragEnd);
+    document.removeEventListener('touchmove', dragMove);
+    document.removeEventListener('touchend', dragEnd);
+    if (!hasMoved) {
+      toggleChat();
+    }
+  }
+
+  orb.removeAttribute('onclick');
+})();

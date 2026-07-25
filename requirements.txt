@@ -4,5 +4,10 @@ streamlit>=1.35.0
 pandas>=2.0.0
 python-dotenv>=1.0.0
 
+# FastAPI backend (Module 2 Live Incident Response)
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+httpx==0.27.2
+
 # Local LLM — 安裝預編譯版（免 CMake，適用 Windows AVX2）：
 # pip install llama-cpp-python --extra-index-url https://jllllll.github.io/llama-cpp-python-cuBLAS-wheels/AVX2/cpu

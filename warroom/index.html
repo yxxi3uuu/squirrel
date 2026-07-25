@@ -179,14 +179,58 @@
           </div>
           <div class="form-row stacked">
             <label for="custom-segment">目標路段或站點 ID</label>
-            <input id="custom-segment" type="text" list="event-targets" placeholder="RD_TPE_002 或 BS_MRT_BL17" required>
-            <datalist id="event-targets">
-              <option value="RD_TPE_001">忠孝東路四段</option>
-              <option value="RD_TPE_002">光復南路</option>
-              <option value="RD_TPE_007">松高路</option>
-              <option value="BS_MRT_BL17">捷運國父紀念館站</option>
-              <option value="BS_XY_ATT">ATT4FUN周邊</option>
-            </datalist>
+            <select id="custom-segment">
+              <option value="">— 請選擇 —</option>
+              <optgroup label="道路路段">
+                <option value="RD_TPE_001">RD_TPE_001 — 忠孝東路四段</option>
+                <option value="RD_TPE_002">RD_TPE_002 — 光復南路</option>
+                <option value="RD_TPE_003">RD_TPE_003 — 基隆路一段</option>
+                <option value="RD_TPE_004">RD_TPE_004 — 市民大道四段</option>
+                <option value="RD_TPE_005">RD_TPE_005 — 仁愛路四段</option>
+                <option value="RD_TPE_006">RD_TPE_006 — 敦化南路一段</option>
+                <option value="RD_TPE_007">RD_TPE_007 — 松高路</option>
+                <option value="RD_TPE_008">RD_TPE_008 — 延吉街</option>
+                <option value="RD_TPE_009">RD_TPE_009 — 基隆路地下道</option>
+                <option value="RD_TPE_010">RD_TPE_010 — 市府路</option>
+                <option value="RD_TPE_011">RD_TPE_011 — 松壽路</option>
+                <option value="RD_TPE_012">RD_TPE_012 — 敦化南路二段</option>
+                <option value="RD_TPE_013">RD_TPE_013 — 信義路五段</option>
+                <option value="RD_TPE_014">RD_TPE_014 — 松智路</option>
+                <option value="RD_TPE_015">RD_TPE_015 — 復興南路一段</option>
+              </optgroup>
+              <optgroup label="基地台 / 站點">
+                <option value="BS_TPE_DOME">BS_TPE_DOME — 大巨蛋場館內</option>
+                <option value="BS_MRT_BL17">BS_MRT_BL17 — 捷運國父紀念館站</option>
+                <option value="BS_SS_PARK">BS_SS_PARK — 松山文創園區</option>
+                <option value="BS_MRT_BL16">BS_MRT_BL16 — 捷運忠孝敦化站</option>
+                <option value="BS_XY_VIESHOW">BS_XY_VIESHOW — 信義威秀商圈</option>
+                <option value="BS_TPE_101">BS_TPE_101 — 台北101廣場</option>
+                <option value="BS_BUS_TERM">BS_BUS_TERM — 市府轉運站</option>
+                <option value="BS_XY_ATT">BS_XY_ATT — ATT4FUN周邊</option>
+                <option value="BS_MRT_BL18">BS_MRT_BL18 — 捷運市政府站</option>
+              </optgroup>
+            </select>
+          </div>
+          <div class="form-row stacked">
+            <label for="custom-affected-road">受影響道路（選填）</label>
+            <select id="custom-affected-road">
+              <option value="">— 不指定 —</option>
+              <option value="RD_TPE_001">RD_TPE_001 — 忠孝東路四段</option>
+              <option value="RD_TPE_002">RD_TPE_002 — 光復南路</option>
+              <option value="RD_TPE_003">RD_TPE_003 — 基隆路一段</option>
+              <option value="RD_TPE_004">RD_TPE_004 — 市民大道四段</option>
+              <option value="RD_TPE_005">RD_TPE_005 — 仁愛路四段</option>
+              <option value="RD_TPE_006">RD_TPE_006 — 敦化南路一段</option>
+              <option value="RD_TPE_007">RD_TPE_007 — 松高路</option>
+              <option value="RD_TPE_008">RD_TPE_008 — 延吉街</option>
+              <option value="RD_TPE_009">RD_TPE_009 — 基隆路地下道</option>
+              <option value="RD_TPE_010">RD_TPE_010 — 市府路</option>
+              <option value="RD_TPE_011">RD_TPE_011 — 松壽路</option>
+              <option value="RD_TPE_012">RD_TPE_012 — 敦化南路二段</option>
+              <option value="RD_TPE_013">RD_TPE_013 — 信義路五段</option>
+              <option value="RD_TPE_014">RD_TPE_014 — 松智路</option>
+              <option value="RD_TPE_015">RD_TPE_015 — 復興南路一段</option>
+            </select>
           </div>
           <div class="form-grid-2">
             <div class="form-row stacked">
@@ -238,7 +282,8 @@
 </main>
 
 <!-- ══ OVERLAY: Module 4 Explanation Drawer ════════════════════════════════ -->
-<aside id="drawer" class="drawer hidden">
+<div id="drawer-backdrop" class="backdrop" onclick="closeDrawer()"></div>
+<aside id="drawer" class="drawer">
   <div class="drawer-head">
     <h3 id="drawer-title">判斷依據 — 解釋鏈</h3>
     <button class="drawer-close" onclick="closeDrawer()">✕</button>
@@ -257,22 +302,24 @@
     </div>
   </div>
 </aside>
-<div id="drawer-backdrop" class="backdrop hidden" onclick="closeDrawer(); closeModule5Modal();"></div>
 
 <!-- ══ OVERLAY: Module 3 AI Advisor Orb ═══════════════════════════════════ -->
-<div id="advisor-orb" class="advisor-orb" onclick="toggleChat()">
+<div id="advisor-orb" class="advisor-orb">
   <span>🐿️</span>
 </div>
+<div id="chat-backdrop" class="chat-backdrop hidden" onclick="toggleChat()"></div>
 <div id="chat-panel" class="chat-panel hidden">
   <div class="chat-head">
     <div class="chat-brand-icon">🐿️</div>
     <div class="chat-title-block">
       <b>策略顧問 SQ</b>
-      <span><i class="mode-dot"></i> 整合版 · 讀取即時快照</span>
+      <span><i class="mode-dot" id="advisor-mode-dot"></i> <span id="advisor-mode-text">連線中…</span></span>
     </div>
-    <button onclick="toggleChat()">✕</button>
+    <button class="chat-close-btn" onclick="toggleChat()">✕</button>
   </div>
-  <div class="advisor-quick-panel">
+
+  <!-- 情境選擇區 -->
+  <div class="advisor-scenario-section">
     <div class="advisor-category-row">
       <button class="advisor-category active" data-advisor-set="incident" onclick="showAdvisorScenarioSet('incident')">車禍與路障應變</button>
       <button class="advisor-category" data-advisor-set="signal" onclick="showAdvisorScenarioSet('signal')">號誌故障應變</button>
@@ -282,21 +329,27 @@
       <select id="advisor-scenario-select" aria-label="顧問情境"></select>
       <button class="advisor-apply" onclick="askAdvisorScenario()">套用情境</button>
     </div>
-    <div class="advisor-chip-row">
-      <button class="advisor-chip" onclick="advisorQuickAsk('交通壅塞級別如何判定？')">壅塞級別判定</button>
-      <button class="advisor-chip" onclick="advisorQuickAsk('忠孝東路四段 A 級壅塞，依 SOP-1 要怎麼處理？')">忠孝東路四段 A 級</button>
-      <button class="advisor-chip" onclick="advisorQuickAsk('光復南路 B 級壅塞，依 SOP-1 是否觸發應變？')">光復南路 B 級</button>
-      <button class="advisor-chip" onclick="advisorQuickAsk('假設捷運國父紀念館站人潮增至 40,000 人，依 SOP 要啟動哪些捷運與接駁措施？')">國父紀念館分流</button>
-      <button class="advisor-chip" onclick="advisorQuickAsk('假設大巨蛋人潮曾達 40,000 人且目前人流成長率為 -0.25，依 SOP 要啟動哪些措施並連動什麼檢查？')">大巨蛋散場啟動</button>
-      <button class="advisor-chip" onclick="advisorQuickAsk('目前哪些站點需要啟動多語通報？')">多語通報掃描</button>
-    </div>
   </div>
+
+  <!-- 對話訊息區 -->
   <div class="chat-messages" id="chat-messages">
     <div class="msg ai">你好！我是松鼠 AI 顧問，可以問我路段狀態、SOP 條款，或套用上方情境檢查是否觸發應變。</div>
   </div>
-  <div class="chat-input">
-    <input id="advisor-input" type="text" placeholder="輸入假設性問題..." onkeydown="if(event.key==='Enter') sendAdvisorMessage()">
-    <button onclick="sendAdvisorMessage()">➤</button>
+
+  <!-- 快捷假設 + 輸入框 -->
+  <div class="chat-bottom">
+    <div class="advisor-chip-row">
+      <button class="advisor-chip" onclick="advisorQuickAsk('如果忠孝東路四段壅塞程度達 0.96，依 SOP 要啟動哪些措施？')">忠孝東路四段 A 級</button>
+      <button class="advisor-chip" onclick="advisorQuickAsk('如果光復南路壅塞程度達 0.90，依 SOP 是否觸發應變？')">光復南路 B 級</button>
+      <button class="advisor-chip" onclick="advisorQuickAsk('如果捷運國父紀念館站目前有 40,000 人，應該怎麼分流？')">國父紀念館分流</button>
+      <button class="advisor-chip" onclick="advisorQuickAsk('如果大巨蛋人潮達 40,000 人且現在人潮成長率為 -0.25，依 SOP 要啟動哪些措施？')">大巨蛋散場啟動</button>
+      <button class="advisor-chip" onclick="advisorQuickAsk('目前哪些站點需要啟動多語通報？')">多語通報掃描</button>
+      <button class="advisor-chip" onclick="advisorQuickAsk('交通壅塞級別如何判定？')">壅塞級別判定</button>
+    </div>
+    <div class="chat-input">
+      <input id="advisor-input" type="text" placeholder="輸入假設性問題..." onkeydown="if(event.key==='Enter') sendAdvisorMessage()">
+      <button onclick="sendAdvisorMessage()">➤</button>
+    </div>
   </div>
 </div>
 
