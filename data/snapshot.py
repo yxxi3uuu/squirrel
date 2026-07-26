@@ -3,24 +3,17 @@ Build TrafficSnapshot dictionaries from official data_source files.
 
 This module is intentionally dependency-free so every feature branch can reuse
 the same parsing behavior without installing extra packages.
-
-資料來源可透過環境變數切換：
-- DATA_SOURCE_DIR: 本地資料夾路徑（預設為 warroom/data_source）
-- DATA_SOURCE_MODE: "local"（預設）| "s3" | "api"
-- DATA_S3_BUCKET: S3 模式時的 bucket 名稱
-- DATA_API_BASE: API 模式時的 base URL
 """
 
 import csv
 import json
-import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Dict, List, Optional
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
-DATA_SOURCE_DIR = ROOT_DIR / "warroom" / "data_source"
+DATA_SOURCE_DIR = ROOT_DIR / "data_source"
 
 TRAFFIC_FLOW_PATH = DATA_SOURCE_DIR / "city_traffic_flow.csv"
 CROWD_DENSITY_PATH = DATA_SOURCE_DIR / "signaling_crowd_density.csv"
