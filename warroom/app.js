@@ -687,12 +687,16 @@ document.querySelectorAll('.tab').forEach(btn => {
    SOP-1 直接查 /api/traffic；SOP-2/SOP-5 則讀最近一次事件注入後的真實 decisions。 */
 function openDrawer(type) {
   document.getElementById('drawer').classList.add('open');
-  document.getElementById('drawer-backdrop').classList.add('open');
+  const backdrop = document.getElementById('drawer-backdrop');
+  backdrop.classList.remove('hidden');
+  backdrop.classList.add('open');
   renderDrawerContent(type);
 }
 function closeDrawer() {
   document.getElementById('drawer').classList.remove('open');
-  document.getElementById('drawer-backdrop').classList.remove('open');
+  const backdrop = document.getElementById('drawer-backdrop');
+  backdrop.classList.remove('open');
+  backdrop.classList.add('hidden');
 }
 
 async function renderDrawerContent(type) {
