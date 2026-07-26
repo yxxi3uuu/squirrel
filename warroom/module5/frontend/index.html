@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>多語化全通路通報</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Noto Sans TC',-apple-system,sans-serif;background:#0d1117;color:#e6edf3;font-size:15px;line-height:1.7;overflow-y:auto;padding:24px 28px}
+.sec-title{font-size:1.05rem;font-weight:700;color:#7ec8bc;border-left:4px solid #7ec8bc;padding:4px 12px;margin:20px 0 16px;background:rgba(126,200,188,.08);border-radius:0 6px 6px 0}
+.card-red{background:rgba(242,122,132,.07);border:1.5px solid #f27a84;border-radius:10px;padding:14px 18px;margin-bottom:14px}
+.card-yellow{background:rgba(234,184,92,.07);border:1.5px solid #eab85c;border-radius:10px;padding:14px 18px;margin-bottom:14px}
+.kpi-row{display:flex;gap:14px;margin-bottom:20px;flex-wrap:wrap}
+.kpi-box{flex:1;min-width:120px;background:#141d26;border:1px solid #2a3a4e;border-radius:10px;padding:16px;text-align:center}
+.kpi-val{font-size:1.8rem;font-weight:800}
+.kpi-label{font-size:.82rem;color:#a0b3c4;margin-top:4px}
+.red{color:#f27a84}.yellow{color:#eab85c}.green{color:#85d99a}
+.form-row{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+.form-row label{font-weight:600;white-space:nowrap}
+select{flex:1;padding:10px 14px;background:#0d1117;border:1.5px solid #2a3a4e;border-radius:10px;color:#e6edf3;font-size:.95rem}
+select:focus{outline:none;border-color:#7ec8bc}
+.metrics-row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.metric-box{flex:1;min-width:110px;background:#141d26;border:1px solid #2a3a4e;border-radius:8px;padding:10px 14px;text-align:center}
+.metric-val{font-size:1.2rem;font-weight:700}
+.metric-label{font-size:.78rem;color:#a0b3c4}
+.btn{display:inline-flex;align-items:center;justify-content:center;padding:12px 22px;border:none;border-radius:10px;font-size:.95rem;font-weight:700;cursor:pointer;transition:opacity .15s}
+.btn:hover:not(:disabled){opacity:.85}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-primary{background:#7ec8bc;color:#0d1117;width:100%}
+.btn-danger{background:#f27a84;color:#fff}
+.spinner{text-align:center;padding:14px;color:#a0b3c4;font-style:italic}
+.hidden{display:none!important}
+.editor-title{font-weight:700;margin:22px 0 12px}
+.lang-tabs{display:flex;gap:6px;flex-wrap:wrap;border-bottom:2px solid #2a3a4e}
+.lang-tab{padding:7px 14px;border-radius:8px 8px 0 0;background:#141d26;border:1.5px solid #2a3a4e;border-bottom:none;color:#a0b3c4;cursor:pointer;font-size:.85rem;font-weight:600}
+.lang-tab.active{background:#0d1117;color:#7ec8bc}
+.lang-panels{border:1.5px solid #2a3a4e;border-radius:0 8px 8px 8px;padding:18px}
+.lang-panel{display:none}.lang-panel.active{display:block}
+.lang-panel textarea{width:100%;height:130px;padding:10px;border:1.5px solid #2a3a4e;border-radius:8px;background:#0d1117;color:#e6edf3;font-size:.92rem;resize:vertical}
+.publish-row{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap;margin:20px 0}
+.hint{font-size:.82rem;color:#a0b3c4;margin-top:6px}
+.publish-success{background:#1a2e25;border:1.5px solid #85d99a;border-radius:8px;padding:12px 18px;color:#85d99a;font-weight:700;margin-bottom:18px}
+.lang-selector-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:18px;font-weight:600;font-size:.9rem}
+.preview-lang-btns{display:flex;gap:6px;flex-wrap:wrap}
+.preview-lang-btn{padding:5px 14px;border-radius:20px;border:1.5px solid #2a3a4e;background:#141d26;color:#a0b3c4;cursor:pointer;font-size:.83rem;font-weight:600}
+.preview-lang-btn.active{background:#7ec8bc;color:#0d1117;border-color:#7ec8bc}
+.preview-grid{display:grid;grid-template-columns:1fr 1fr;gap:28px;align-items:start}
+@media(max-width:600px){.preview-grid{grid-template-columns:1fr}}
+.preview-label{font-weight:700;margin-bottom:12px}
+.iphone{background:#1c1c1e;border:3px solid #3a3a3c;border-radius:36px;padding:40px 22px 28px;max-width:260px;margin:auto;box-shadow:0 0 0 7px #2c2c2e,0 8px 28px rgba(0,0,0,.7)}
+.notch{width:80px;height:14px;background:#3a3a3c;border-radius:0 0 10px 10px;margin:-30px auto 16px}
+.iphone-header{text-align:center;font-size:.72rem;color:#8e8e93;margin-bottom:8px}
+.bubble{background:#2980b9;border-radius:14px 14px 4px 14px;padding:10px 12px;color:#fff;font-size:.85rem;line-height:1.5;word-break:break-word;min-height:50px}
+.iphone-time{text-align:right;font-size:.7rem;color:#636366;margin-top:6px}
+.cms-board{background:#1a1a1a;border:2px solid #eab85c;border-radius:10px;padding:20px 24px;text-align:center;font-family:'Courier New',monospace}
+.cms-flag{color:#a0b3c4;font-size:.78rem;margin-bottom:4px}
+.cms-title{color:#f27a84;font-size:1.2rem;font-weight:900;letter-spacing:.08em;margin-bottom:10px}
+.cms-body{color:#eab85c;font-size:.9rem;line-height:1.6}
+.cms-footer{color:#555;font-size:.72rem;margin-top:12px}
+table{width:100%;border-collapse:collapse;font-size:.88rem;margin-top:10px}
+thead th{background:#141d26;padding:10px 12px;text-align:left;color:#a0b3c4;border-bottom:2px solid #2a3a4e}
+tbody td{padding:8px 12px;border-bottom:1px solid #1e2a3a}
+tbody tr:hover{background:#141d26}
+.tag-triggered{color:#f27a84;font-weight:700}
+details summary{cursor:pointer;font-size:.9rem;color:#a0b3c4;padding:8px 0}
+footer{text-align:center;padding:20px;color:#a0b3c4;font-size:.78rem}
+</style>
+</head>
+<body>
+<h2 class="sec-title">📡 信令監控與警報狀態</h2>
+<div class="kpi-row">
+  <div class="kpi-box"><div class="kpi-val red" id="kpi-triggered">—</div><div class="kpi-label">🔴 觸發站點</div></div>
+  <div class="kpi-box"><div class="kpi-val yellow" id="kpi-total">—</div><div class="kpi-label">🛰️ 站點總數</div></div>
+  <div class="kpi-box"><div class="kpi-val" id="kpi-maxrate">—</div><div class="kpi-label">📊 最高漫遊率</div></div>
+</div>
+<div id="triggered-cards"></div>
+<details><summary>📋 最新快照完整表格</summary>
+<table><thead><tr><th>站點 ID</th><th>名稱</th><th>人數</th><th>漫遊率</th><th>增幅</th></tr></thead>
+<tbody id="station-tbody"></tbody></table></details>
+
+<h2 class="sec-title" style="margin-top:28px">🌐 多語化告警生成</h2>
+<div class="form-row"><label>選擇站點</label><select id="station-select"></select></div>
+<div id="station-metrics" class="metrics-row"></div>
+<div id="sop-banner"></div>
+<button class="btn btn-primary" id="btn-generate" disabled>⚡ 生成多語告警</button>
+<div id="generate-spinner" class="spinner hidden">🤖 Ollama 推論中…</div>
+<div id="alerts-editor" class="hidden">
+  <p class="editor-title">✏️ 警告文字（可編輯後發布）</p>
+  <div id="lang-tabs" class="lang-tabs"></div>
+  <div id="lang-panels" class="lang-panels"></div>
+</div>
+
+<h2 class="sec-title" style="margin-top:28px">📣 全通路一鍵模擬發布</h2>
+<div class="publish-row">
+  <div><button class="btn btn-danger" id="btn-publish" disabled>🚀 一鍵發布通報</button>
+  <p id="publish-hint" class="hint">⬆️ 請先生成告警文字</p></div>
+  <div style="font-size:.9rem"><b>發布渠道：</b><br>📱 Cell Broadcast<br>🖥️ CMS 電子看板</div>
+</div>
+<div id="publish-result" class="hidden">
+  <div class="publish-success">✅ 通報已成功發布！<span id="publish-time"></span></div>
+  <div class="lang-selector-row"><span>📺 顯示語言：</span><div id="preview-lang-btns" class="preview-lang-btns"></div></div>
+  <div class="preview-grid">
+    <div><p class="preview-label">📱 Cell Broadcast</p>
+      <div class="iphone"><div class="notch"></div><div class="iphone-header">緊急廣播通知</div>
+      <div class="bubble" id="iphone-msg">—</div><div class="iphone-time" id="iphone-time"></div></div></div>
+    <div><p class="preview-label">🖥️ CMS 電子看板</p>
+      <div class="cms-board"><div class="cms-flag" id="cms-flag"></div><div class="cms-title" id="cms-title"></div>
+      <div class="cms-body" id="cms-body"></div><div class="cms-footer" id="cms-footer"></div></div></div>
+  </div>
+</div>
+<footer>多語化全通路通報 · SOP 第 6 條 · Qwen 2.5</footer>
+
+<script>
+const API='/api',THRESHOLD=0.30;
+const LANG_ORDER=['zh_tw','en','ja','ko','th','vi','fr'];
+const LANG_LABEL={zh_tw:'🇹🇼 繁中',en:'🇺🇸 EN',ja:'🇯🇵 日',ko:'🇰🇷 韓',th:'🇹🇭 泰',vi:'🇻🇳 越',fr:'🇫🇷 法'};
+const CMS_META={zh_tw:{flag:'🇹🇼 繁體中文',title:'交通管制通報'},en:{flag:'🇺🇸 English',title:'TRAFFIC ALERT'},ja:{flag:'🇯🇵 日本語',title:'交通規制情報'},ko:{flag:'🇰🇷 한국어',title:'교통 통제 알림'},th:{flag:'🇹🇭 ภาษาไทย',title:'ประกาศจราจร'},vi:{flag:'🇻🇳 Tiếng Việt',title:'CẢNH BÁO GIAO THÔNG'},fr:{flag:'🇫🇷 Français',title:'ALERTE CIRCULATION'}};
+let stations=[],currentAlerts={},currentStation=null,activeLang='zh_tw';
+document.addEventListener('DOMContentLoaded',()=>{loadStations();document.getElementById('btn-generate').addEventListener('click',generateAlerts);document.getElementById('btn-publish').addEventListener('click',publishAlerts)});
+async function loadStations(){try{const r=await fetch(`${API}/signal/stations`);const d=await r.json();stations=d.stations;renderKPI();renderTriggered();renderTable();renderSelect()}catch(e){console.error('載入失敗',e)}}
+function renderKPI(){const t=stations.filter(s=>s.roaming_rate>=THRESHOLD);const mx=Math.max(...stations.map(s=>s.roaming_rate))*100;document.getElementById('kpi-triggered').textContent=t.length;document.getElementById('kpi-total').textContent=stations.length;const el=document.getElementById('kpi-maxrate');el.textContent=mx.toFixed(1)+'%';el.className='kpi-val '+(mx>=30?'red':'yellow')}
+function renderTriggered(){const list=stations.filter(s=>s.roaming_rate>=THRESHOLD).sort((a,b)=>b.roaming_rate-a.roaming_rate);const c=document.getElementById('triggered-cards');if(!list.length){c.innerHTML='<div class="card-yellow">✅ 無站點觸發 SOP 第6條</div>';return}c.innerHTML=list.map(s=>`<div class="card-red"><b style="color:#f27a84">⚠ ${s.station_name}</b> <span style="color:#a0b3c4;font-size:.82rem">${s.station_id}</span><br>漫遊率 <b class="red">${(s.roaming_rate*100).toFixed(1)}%</b> ｜ 人數 <b>${Number(s.user_count).toLocaleString()}</b></div>`).join('')}
+function renderTable(){document.getElementById('station-tbody').innerHTML=stations.map(s=>`<tr><td>${s.station_id}</td><td class="${s.roaming_rate>=THRESHOLD?'tag-triggered':''}">${s.station_name}</td><td>${Number(s.user_count).toLocaleString()}</td><td class="${s.roaming_rate>=THRESHOLD?'tag-triggered':''}">${(s.roaming_rate*100).toFixed(1)}%</td><td>${s.growth_rate?(s.growth_rate*100).toFixed(1)+'%':'—'}</td></tr>`).join('')}
+function renderSelect(){const sel=document.getElementById('station-select');const sorted=[...stations].sort((a,b)=>b.roaming_rate-a.roaming_rate);sel.innerHTML=sorted.map(s=>{const f=s.roaming_rate>=THRESHOLD?'🔴':'🟢';return`<option value="${s.station_id}">${f} ${s.station_name} (${(s.roaming_rate*100).toFixed(1)}%)</option>`}).join('');sel.addEventListener('change',updateInfo);updateInfo()}
+function updateInfo(){const sid=document.getElementById('station-select').value;currentStation=stations.find(s=>s.station_id===sid);if(!currentStation)return;const s=currentStation,multi=s.roaming_rate>=THRESHOLD;document.getElementById('station-metrics').innerHTML=`<div class="metric-box"><div class="metric-val">${s.station_name}</div><div class="metric-label">站點</div></div><div class="metric-box"><div class="metric-val">${Number(s.user_count).toLocaleString()}</div><div class="metric-label">人數</div></div><div class="metric-box"><div class="metric-val ${multi?'red':''}">${(s.roaming_rate*100).toFixed(1)}%</div><div class="metric-label">漫遊率</div></div>`;document.getElementById('sop-banner').innerHTML=multi?`<div class="card-red">📌 <b>SOP 第 6 條觸發</b>｜漫遊率 ≥ 30%，產出七語版。</div>`:`<div class="card-yellow">ℹ️ SOP 未觸發｜僅產出繁體中文。</div>`;currentAlerts={};document.getElementById('alerts-editor').classList.add('hidden');document.getElementById('btn-publish').disabled=true;document.getElementById('btn-generate').disabled=false;document.getElementById('publish-result').classList.add('hidden')}
+async function generateAlerts(){if(!currentStation)return;const s=currentStation;document.getElementById('btn-generate').disabled=true;document.getElementById('generate-spinner').classList.remove('hidden');try{const r=await fetch(`${API}/notify/generate`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({station_id:s.station_id,station_name:s.station_name,user_count:s.user_count,roaming_rate:s.roaming_rate,growth_rate:s.growth_rate||0,timestamp:s.timestamp||'',multilingual:s.roaming_rate>=THRESHOLD})});const d=await r.json();currentAlerts=d.alerts;renderEditor(s.roaming_rate>=THRESHOLD);document.getElementById('btn-publish').disabled=false;document.getElementById('publish-hint').style.display='none'}catch(e){alert('生成失敗: '+e.message)}finally{document.getElementById('btn-generate').disabled=false;document.getElementById('generate-spinner').classList.add('hidden')}}
+function renderEditor(multi){const langs=multi?LANG_ORDER:['zh_tw'];document.getElementById('lang-tabs').innerHTML=langs.map((k,i)=>`<div class="lang-tab ${i===0?'active':''}" data-lang="${k}">${LANG_LABEL[k]}</div>`).join('');document.getElementById('lang-panels').innerHTML=langs.map((k,i)=>`<div class="lang-panel ${i===0?'active':''}" id="panel-${k}"><textarea id="ta-${k}">${currentAlerts[k]||''}</textarea></div>`).join('');document.querySelectorAll('.lang-tab').forEach(tab=>{tab.addEventListener('click',()=>{document.querySelectorAll('.lang-tab').forEach(t=>t.classList.remove('active'));document.querySelectorAll('.lang-panel').forEach(p=>p.classList.remove('active'));tab.classList.add('active');document.getElementById(`panel-${tab.dataset.lang}`).classList.add('active')})}); document.getElementById('alerts-editor').classList.remove('hidden')}
+async function publishAlerts(){if(!currentStation)return;const alerts={};LANG_ORDER.forEach(k=>{const t=document.getElementById(`ta-${k}`);if(t)alerts[k]=t.value});try{const r=await fetch(`${API}/notify/publish`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({station_name:currentStation.station_name,roaming_rate:currentStation.roaming_rate,alerts,channels:['cell_broadcast','cms']})});const d=await r.json();if(d.success){currentAlerts=alerts;showResult(d)}}catch(e){alert('發布失敗: '+e.message)}}
+function showResult(data){const multi=currentStation.roaming_rate>=THRESHOLD;const langs=multi?LANG_ORDER.filter(k=>currentAlerts[k]):['zh_tw'];activeLang=langs[0];document.getElementById('publish-time').textContent=' ⏱ '+new Date().toLocaleTimeString();const btns=document.getElementById('preview-lang-btns');btns.innerHTML=langs.map(k=>`<button class="preview-lang-btn ${k===activeLang?'active':''}" data-lang="${k}">${LANG_LABEL[k]}</button>`).join('');btns.querySelectorAll('.preview-lang-btn').forEach(b=>{b.addEventListener('click',()=>{btns.querySelectorAll('.preview-lang-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');activeLang=b.dataset.lang;updatePreview()})});document.getElementById('publish-result').classList.remove('hidden');updatePreview()}
+function updatePreview(){const msg=currentAlerts[activeLang]||'（無內容）';const meta=CMS_META[activeLang]||CMS_META.zh_tw;const now=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});document.getElementById('iphone-msg').textContent=msg;document.getElementById('iphone-time').textContent=now;document.getElementById('cms-flag').textContent=meta.flag;document.getElementById('cms-title').textContent=`⚠ ${meta.title} — ${currentStation?.station_name||''}`;document.getElementById('cms-body').textContent=msg;document.getElementById('cms-footer').textContent=`發布：${new Date().toLocaleDateString('zh-TW')} ${now} ｜ 交控中心`}
+</script>
+</body>
+</html>
