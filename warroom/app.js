@@ -726,52 +726,41 @@ async function renderDrawerContent(type) {
   }
 
   // 其餘一律當成 SOP-1 壅塞分級的路段 ID 查詢
-  titleEl.textContent = '判斷依據 — SOP-1 壅塞分級';
-  bodyEl.innerHTML = `<div class="spinner">載入路段資料…</div>`;
+  titleEl.textContent = '判斷依據 — 決策解釋鏈';
+  bodyEl.innerHTML = `<div class="spinner">載入決策分析…</div>`;
+  const currentTs = timelineTimestamps[timelineIndex] || '2026-05-20 22:15';
   try {
-    const [segRes, netRes] = await Promise.all([
-      fetch('/api/traffic/segments'),
-      fetch('/api/traffic/network'),
-    ]);
-    const segData = await segRes.json();
-    const netData = await netRes.json();
-    const seg = segData.segments.find(s => s.Segment_ID === type);
-    if (!seg) {
-      bodyEl.innerHTML = `<p>找不到路段 ${type} 的資料</p>`;
-      return;
-    }
-    const TRIGGER_ROADS = ['RD_TPE_001', 'RD_TPE_002'];
-    const isTrigger = TRIGGER_ROADS.includes(seg.Segment_ID);
-    const geo = netData.network.find(n => n.segment_id === seg.Segment_ID);
-    const altNames = (geo?.alternatives || []).map(id => {
-      const alt = netData.network.find(n => n.segment_id === id);
-      return alt ? alt.name : id;
-    });
-    const levelText = seg.level === 'A' ? '飽和度 ≥ 0.95 → A 級癱瘓／紅燈'
-                     : seg.level === 'B' ? '0.85 ≤ 飽和度 < 0.95 → B 級壅擠／黃燈'
-                     : '飽和度 < 0.85 → 一般狀態';
-
-    bodyEl.innerHTML = `
-      <div class="chain">
-        <div class="chain-step active"><div class="node">1</div><div class="step-text">
-          <span class="step-lbl">目前飽和度</span> ${seg.Road_Name}（${seg.Segment_ID}）
-          <span class="mono ${seg.level === 'A' ? 'critical-text' : seg.level === 'B' ? 'caution-text' : ''}">${seg.Saturation_Score.toFixed(2)}</span>
-        </div></div>
-        <div class="chain-step active"><div class="node">2</div><div class="step-text">
-          <span class="step-lbl">SOP-1 分級</span> ${levelText}
-        </div></div>
-        <div class="chain-step active"><div class="node">3</div><div class="step-text">
-          <span class="step-lbl">應變動作</span> ${isTrigger
-            ? '屬於城市應變觸發路段（忠孝東路四段／光復南路），啟動長綠燈時制並調度警力淨空路口' + (seg.level === 'A' ? '，另加開替代路徑引導' : '')
-            : '不屬於城市應變觸發路段，Dashboard 僅顯示分級顏色，不自動啟動長綠燈或替代路徑'}
-        </div></div>
-      </div>
-      ${isTrigger ? `<div class="formula-box">
-        <div class="formula-title">替代道路（綠燈配時 +25%）</div>
-        <div class="formula">${altNames.length ? altNames.join('、') : '（路網資料未提供替代道路）'}</div>
-      </div>` : ''}`;
+    const res = await fetch(`/api/reasoning/demo?timestamp=${encodeURIComponent(currentTs)}&event_id=TPE_2026_ACC_001`);
+    if (!res.ok) throw new Error(await res.text());
+    const record = await res.json();
+    bodyEl.innerHTML = renderM4Inline(record);
+    // Async load AI summary from Ollama (non-blocking)
+    loadAiSummary(currentTs);
   } catch (e) {
-    bodyEl.innerHTML = `<p>資料載入失敗：${e.message}</p>`;
+    // Fallback to original SOP-1 display if M4 fails
+    try {
+      const [segRes, netRes] = await Promise.all([
+        fetch('/api/traffic/segments'),
+        fetch('/api/traffic/network'),
+      ]);
+      const segData = await segRes.json();
+      const netData = await netRes.json();
+      const seg = segData.segments.find(s => s.Segment_ID === type);
+      if (!seg) { bodyEl.innerHTML = `<p>找不到路段 ${type} 的資料</p>`; return; }
+      const levelText = seg.level === 'A' ? '飽和度 ≥ 0.95 → A 級癱瘓' : seg.level === 'B' ? '0.85 ≤ 飽和度 < 0.95 → B 級壅擠' : '飽和度 < 0.85 → 一般';
+      bodyEl.innerHTML = `
+        <div class="chain">
+          <div class="chain-step active"><div class="node">1</div><div class="step-text">
+            <span class="step-lbl">目前飽和度</span> ${seg.Road_Name}（${seg.Segment_ID}）<span class="mono ${seg.level === 'A' ? 'critical-text' : seg.level === 'B' ? 'caution-text' : ''}">${seg.Saturation_Score.toFixed(2)}</span>
+          </div></div>
+          <div class="chain-step active"><div class="node">2</div><div class="step-text">
+            <span class="step-lbl">SOP-1 分級</span> ${levelText}
+          </div></div>
+        </div>
+        <div class="card-yellow" style="margin-top:10px">模組四詳細分析載入失敗：${escapeHtml(e.message)}</div>`;
+    } catch (e2) {
+      bodyEl.innerHTML = `<p>資料載入失敗：${escapeHtml(e2.message)}</p>`;
+    }
   }
 }
 
@@ -1378,3 +1367,161 @@ document.getElementById('bell-btn').addEventListener('click', () => {
 
   orb.removeAttribute('onclick');
 })();
+
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Module 4: 完整決策分析（融合到「查看判斷依據」Drawer）
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+async function loadM4DeepAnalysis(segmentId) {
+  const container = document.getElementById('m4-analysis-content');
+  if (!container) return;
+  // Toggle: if already showing, hide it
+  if (container.innerHTML.trim() && !container.classList.contains('hidden')) {
+    container.classList.add('hidden');
+    return;
+  }
+  container.classList.remove('hidden');
+  container.innerHTML = `<div class="spinner" style="margin-top:8px">載入模組四決策分析…</div>`;
+  try {
+    const res = await fetch('/api/reasoning/demo');
+    if (!res.ok) throw new Error(await res.text());
+    const record = await res.json();
+    container.innerHTML = renderM4Inline(record);
+  } catch (e) {
+    container.innerHTML = `<div class="card-yellow" style="margin-top:8px">模組四載入失敗：${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function renderM4Inline(record) {
+  const rec = record.route_candidates?.find(r => r.status === 'recommended');
+  const excluded = record.route_candidates?.filter(r => r.status === 'excluded') || [];
+  const rel = record.reliability || {};
+  const ete = record.ete || {};
+
+  return `
+    <div id="m4-ai-summary" class="formula-box align-left" style="border-left:3px solid var(--accent);margin-bottom:14px">
+      <div class="formula-title" style="display:flex;align-items:center;gap:6px">
+        <span>AI 摘要</span>
+        <span class="mono" style="font-size:10px;color:var(--text-dim)" id="m4-summary-source">載入中…</span>
+      </div>
+      <div id="m4-summary-text" style="font-size:13px;line-height:1.7">${escapeHtml(record.explanation?.summary || '載入中…')}</div>
+    </div>
+
+    <div class="decision-summary">
+      <span class="decision-tag">${record.classification?.level || '?'} 級</span>
+      <span class="ete-badge mono">ETE ${ete.total_minutes?.toFixed(0) || '?'} min</span>
+      <span class="ete-badge mono" style="background:rgba(126,200,188,0.15);color:var(--accent)">可靠度 ${((rel.overall || 0) * 100).toFixed(0)}%</span>
+    </div>
+
+    <div class="chain" style="margin-top:12px">
+      ${(record.evidence_chain || []).map(step => `
+        <div class="chain-step active"><div class="node">${step.order}</div><div class="step-text">
+          <span class="step-lbl">${escapeHtml(step.title)}</span> ${escapeHtml(step.detail)}
+        </div></div>
+      `).join('')}
+    </div>
+
+    ${rec ? `<div class="formula-box align-left">
+      <div class="formula-title">推薦道路</div>
+      <div><b>${escapeHtml(rec.name)}</b>（${rec.segment_id}）</div>
+      <div class="mono" style="margin-top:4px;font-size:12px;color:var(--text-dim)">容量 ${rec.capacity_vph} vph · 飽和度 ${rec.current_saturation} · 分流後 ${rec.predicted_saturation} · 分數 ${rec.score}</div>
+    </div>` : ''}
+
+    ${excluded.length ? `<div class="formula-box align-left">
+      <div class="formula-title">排除道路</div>
+      ${excluded.map(r => `<div class="excluded-row"><span class="mono">${r.segment_id}</span> ${escapeHtml(r.name)}<br><small>${escapeHtml(r.exclusion_reasons?.join('、') || '')}</small></div>`).join('')}
+    </div>` : ''}
+
+    <div class="formula-box">
+      <div class="formula-title">ETE 公式</div>
+      <div class="formula mono">${escapeHtml(ete.formula || '')}</div>
+      <div class="formula-detail mono">= ${ete.base_minutes || 0} + ${ete.congestion_adjustment_minutes || 0} = ${ete.total_minutes || 0} min</div>
+    </div>
+
+    <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
+      <button class="btn-explain" onclick="toggleM4Panel('m4-rel-panel')">可靠度</button>
+      <button class="btn-explain" onclick="toggleM4Panel('m4-cf-panel'); runM4CF()">反事實</button>
+    </div>
+
+    <div id="m4-rel-panel" class="hidden" style="margin-top:8px">
+      <div class="formula-box align-left">
+        <div class="formula-title">Decision Reliability 四維度</div>
+        ${renderM4Bars(rel)}
+      </div>
+    </div>
+
+    <div id="m4-cf-panel" class="hidden" style="margin-top:8px">
+    </div>
+  `;
+}
+
+function renderM4Bars(rel) {
+  const dims = [
+    { label: '資料可靠', value: rel.data_reliability || 0 },
+    { label: '規則可靠', value: rel.rule_reliability || 0 },
+    { label: '決策穩定', value: rel.decision_stability || 0 },
+    { label: '證據覆蓋', value: rel.evidence_coverage || 0 },
+  ];
+  return dims.map(d => {
+    const pct = Math.round(d.value * 100);
+    const color = pct >= 80 ? 'var(--safe)' : pct >= 60 ? 'var(--caution)' : 'var(--critical)';
+    return `<div style="display:flex;align-items:center;gap:8px;margin:4px 0">
+      <span style="width:55px;font-size:11px;color:var(--text-dim)">${d.label}</span>
+      <div style="flex:1;height:5px;background:var(--border);border-radius:3px;overflow:hidden">
+        <div style="width:${pct}%;height:100%;background:${color};border-radius:3px;transition:width .4s"></div>
+      </div>
+      <span class="mono" style="width:32px;text-align:right;font-size:11px">${pct}%</span>
+    </div>`;
+  }).join('');
+}
+
+function toggleM4Panel(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.toggle('hidden');
+}
+
+async function runM4CF() {
+  const panel = document.getElementById('m4-cf-panel');
+  if (!panel || panel.innerHTML.trim()) return; // already loaded
+  panel.innerHTML = `<div class="spinner">分析中…</div>`;
+  try {
+    const res = await fetch('/api/reasoning/counterfactual', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+    if (data.results && data.results.length) {
+      panel.innerHTML = data.results.map(r => `
+        <div class="formula-box align-left" style="margin-bottom:6px;border-left:3px solid var(--caution)">
+          <div style="font-weight:600;font-size:13px;margin-bottom:4px">${escapeHtml(r.narrative)}</div>
+          <div class="mono" style="font-size:11px;color:var(--text-dim)">
+            欄位：${r.changed_field} · 原始：${r.original_value} · 翻轉：${r.switch_value}
+          </div>
+        </div>
+      `).join('');
+    } else {
+      panel.innerHTML = `<div class="card-yellow">在搜尋範圍內未找到翻轉點</div>`;
+    }
+  } catch (e) {
+    panel.innerHTML = `<div style="color:var(--critical)">反事實分析失敗：${escapeHtml(e.message)}</div>`;
+  }
+}
+
+
+async function loadAiSummary(timestamp) {
+  const textEl = document.getElementById('m4-summary-text');
+  const sourceEl = document.getElementById('m4-summary-source');
+  if (!textEl || !sourceEl) return;
+  try {
+    const res = await fetch(`/api/reasoning/summary?timestamp=${encodeURIComponent(timestamp)}&event_id=TPE_2026_ACC_001`);
+    if (!res.ok) return;
+    const data = await res.json();
+    textEl.textContent = data.summary;
+    sourceEl.textContent = data.source === 'ollama' ? `Ollama · ${data.model}` : 'deterministic';
+  } catch (e) {
+    sourceEl.textContent = 'fallback';
+  }
+}
