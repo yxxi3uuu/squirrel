@@ -126,6 +126,19 @@ def resolve_incident(event_id: str):
     return {"success": False, "message": f"找不到 {event_id}"}
 
 
+@router.post("/import")
+def import_incidents(events: list[InjectRequest]):
+    """批次匯入多筆事件（JSON 檔上傳用），逐筆注入並回傳所有決策。"""
+    results = []
+    for req in events:
+        new_event = req.model_dump()
+        existing_ids = {inc.get("event_id") for inc in _incidents}
+        if new_event["event_id"] not in existing_ids:
+            _incidents.append(new_event)
+        results.append({"event_id": new_event["event_id"], "imported": True})
+    return {"success": True, "imported_count": len(results), "total": len(_incidents), "results": results}
+
+
 @router.get("/reload")
 def reload_incidents():
     """重新載入 live_incidents.json"""

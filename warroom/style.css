@@ -327,6 +327,44 @@ body {
 .custom-incident-form textarea:focus {
   outline: none; border-color: var(--accent);
 }
+/* ── JSON 匯入面板 ─────────────────────────────────────────────────────────── */
+.import-json-panel {
+  display: flex; flex-direction: column; gap: 14px;
+  padding: 14px; border: 1px solid var(--border); border-radius: 8px;
+  background: rgba(255,255,255,.025);
+}
+.import-hint { font-size: .84rem; color: var(--text-dim); margin: 0; }
+.import-dropzone {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; padding: 32px 16px;
+  border: 2px dashed var(--border); border-radius: 10px;
+  cursor: pointer; transition: border-color .2s, background .2s;
+}
+.import-dropzone:hover,
+.import-dropzone.dragover {
+  border-color: var(--accent); background: rgba(126,200,188,.06);
+}
+.import-dropzone-icon { font-size: 2rem; }
+.import-dropzone-text { font-size: .82rem; color: var(--text-dim); }
+.import-preview {
+  max-height: 240px; overflow-y: auto;
+  border: 1px solid var(--border); border-radius: 8px; padding: 10px;
+}
+.import-preview-title { font-size: .78rem; font-weight: 700; color: var(--accent); margin-bottom: 8px; }
+.import-preview-row {
+  padding: 8px; border-bottom: 1px solid var(--border);
+  font-size: .84rem; line-height: 1.6;
+}
+.import-preview-row:last-child { border-bottom: none; }
+.import-idx {
+  display: inline-block; width: 20px; height: 20px; line-height: 20px;
+  text-align: center; border-radius: 50%;
+  background: var(--accent); color: var(--ink);
+  font-size: .7rem; font-weight: 700; margin-right: 6px;
+}
+.import-result { margin-top: 8px; }
+.card-red { background: rgba(242,122,132,.1); border: 1px solid var(--critical); border-radius: 8px; padding: 10px 14px; font-size: .84rem; }
+
 .decision-card {
   background: rgba(221,143,174,.06); border: 1px solid var(--sop2);
   border-radius: 8px; padding: 14px; margin-bottom: 12px;
@@ -753,10 +791,8 @@ footer { text-align: center; padding: 20px; color: var(--text-dim); font-size: .
 }
 .incident-tooltip {
   display: none;
-  position: absolute;
-  left: 105%;
-  top: 0;
-  z-index: 200;
+  position: fixed;
+  z-index: 9999;
   min-width: 300px;
   max-width: 420px;
   background: var(--panel);
@@ -792,13 +828,5 @@ footer { text-align: center; padding: 20px; color: var(--text-dim); font-size: .
 }
 .scenario-list { overflow: visible; width: 100%; box-sizing: border-box; }
 #custom-incident-form { width: 100%; box-sizing: border-box; }
-
-/* 當 tooltip 超出右側邊界時，改顯示在左側 */
-@media (max-width: 1200px) {
-  .incident-tooltip {
-    left: auto;
-    right: 105%;
-  }
-}
 
 .hidden { display: none !important; }

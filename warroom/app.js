@@ -671,6 +671,101 @@ function switchInjectPanel(panel) {
   });
   document.getElementById('scenario-list').classList.toggle('hidden', panel !== 'scenario');
   document.getElementById('custom-incident-form').classList.toggle('hidden', panel !== 'custom');
+  document.getElementById('import-json-panel').classList.toggle('hidden', panel !== 'import');
+}
+
+/* ── JSON 匯入功能 ─────────────────────────────────────────────────────────── */
+let importJsonData = null;
+
+(function initImportDropzone() {
+  document.addEventListener('DOMContentLoaded', () => {
+    const dropzone = document.getElementById('import-dropzone');
+    const fileInput = document.getElementById('import-file-input');
+    if (!dropzone || !fileInput) return;
+
+    dropzone.addEventListener('click', () => fileInput.click());
+    dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragover'); });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+    dropzone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      const file = e.dataTransfer.files[0];
+      if (file) handleImportFile(file);
+    });
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files[0]) handleImportFile(fileInput.files[0]);
+      fileInput.value = '';
+    });
+  });
+})();
+
+function handleImportFile(file) {
+  if (!file.name.endsWith('.json')) {
+    alert('請選擇 .json 檔案');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      let parsed = JSON.parse(e.target.result);
+      // 支援單一物件或陣列
+      if (!Array.isArray(parsed)) parsed = [parsed];
+      if (!parsed.length) { alert('JSON 檔案內容為空'); return; }
+      importJsonData = parsed;
+      renderImportPreview(parsed);
+    } catch (err) {
+      alert('JSON 解析失敗：' + err.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+function renderImportPreview(events) {
+  const preview = document.getElementById('import-preview');
+  const btn = document.getElementById('import-submit-btn');
+  preview.classList.remove('hidden');
+  btn.disabled = false;
+  document.getElementById('import-result').classList.add('hidden');
+
+  const rows = events.map((ev, i) => `
+    <div class="import-preview-row">
+      <span class="import-idx">${i + 1}</span>
+      <b>${escapeHtml(ev.event_id || '(無 ID)')}</b> — ${escapeHtml(ev.type || '(無類型)')}<br>
+      <span class="mono">${escapeHtml(ev.affected_segment || '')} · ${escapeHtml(ev.severity || '')} · ${escapeHtml(ev.status || '')}</span>
+    </div>`).join('');
+  preview.innerHTML = `<div class="import-preview-title">預覽：共 ${events.length} 筆事件</div>${rows}`;
+}
+
+async function submitImportJson() {
+  if (!importJsonData || !importJsonData.length) return;
+  const btn = document.getElementById('import-submit-btn');
+  btn.disabled = true;
+  btn.textContent = '匯入中…';
+
+  try {
+    const res = await fetch('/api/incidents/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(importJsonData),
+    });
+    const data = await res.json();
+    const resultEl = document.getElementById('import-result');
+    resultEl.classList.remove('hidden');
+    if (data.success) {
+      resultEl.innerHTML = `<div class="card-yellow">✓ 成功匯入 ${data.imported_count} 筆事件（目前共 ${data.total} 筆）</div>`;
+      loadIncidentData();
+    } else {
+      resultEl.innerHTML = `<div class="card-red">匯入失敗：${escapeHtml(JSON.stringify(data))}</div>`;
+    }
+  } catch (e) {
+    const resultEl = document.getElementById('import-result');
+    resultEl.classList.remove('hidden');
+    resultEl.innerHTML = `<div class="card-red">匯入失敗：${escapeHtml(e.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '匯入事件';
+    importJsonData = null;
+  }
 }
 
 /* ── Tab Switching ─────────────────────────────────────────────────────────── */
@@ -1377,4 +1472,32 @@ document.getElementById('bell-btn').addEventListener('click', () => {
   }
 
   orb.removeAttribute('onclick');
+})();
+
+/* ── Incident Tooltip 定位（position:fixed 需要用 JS 算座標）────────────────── */
+(function initIncidentTooltipPositioning() {
+  document.addEventListener('mouseover', function(e) {
+    const item = e.target.closest('.scenario-item.has-tooltip');
+    if (!item) return;
+    const tooltip = item.querySelector('.incident-tooltip');
+    if (!tooltip) return;
+    const rect = item.getBoundingClientRect();
+    const tooltipWidth = 360; // approximate max width
+    const pad = 12;
+    // Default: show to the right of the item
+    let left = rect.right + pad;
+    let top = rect.top;
+    // If overflows right edge, show to the left instead
+    if (left + tooltipWidth > window.innerWidth) {
+      left = rect.left - tooltipWidth - pad;
+    }
+    // Keep within left edge
+    if (left < pad) left = pad;
+    // Keep within vertical bounds
+    if (top < pad) top = pad;
+    const maxTop = window.innerHeight - 300; // approximate tooltip height
+    if (top > maxTop) top = maxTop;
+    tooltip.style.left = left + 'px';
+    tooltip.style.top = top + 'px';
+  });
 })();
