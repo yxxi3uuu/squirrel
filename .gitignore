@@ -20,3 +20,4 @@ venv/
 # Logs
 *.log
 models/*.gguf 
+node_modules/
