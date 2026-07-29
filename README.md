@@ -4,12 +4,12 @@
 
 ---
 
-## 快速啟動
+## 快速啟動（本機開發）
 
 ```bash
 # 1. 確認 Ollama 在背景執行並拉好模型
 ollama serve
-ollama pull qwen2.5:3b
+ollama pull qwen2.5:7b
 
 # 2. 安裝 Python 依賴
 pip install fastapi "uvicorn[standard]" pandas python-dotenv pydantic
@@ -27,82 +27,62 @@ open http://localhost:8000
 
 ```
 squirrel/
-├── warroom/                         # 戰情室主體（前端 + 後端一體化）
-│   ├── server.py                    # FastAPI 入口，掛載所有 router
-│   ├── index.html                   # 戰情室主頁 UI
-│   ├── app.js                       # 前端互動邏輯
-│   ├── style.css                    # 全站樣式
-│   │
-│   ├── routers/                     # 後端 API
-│   │   ├── advisor.py               # 模組 3：策略諮詢顧問（規則引擎 + LLM）
-│   │   ├── traffic.py               # 模組 1：車流即時監控 API
-│   │   └── incidents.py             # 模組 2：事件注入 + SOP 決策引擎
-│   │
-│   ├── data_source/                 # 資料來源（官方 CSV / JSON）
-│   │   ├── city_traffic_flow.csv    # 路段車速、飽和度時序
-│   │   ├── signaling_crowd_density.csv  # 基地台人流、漫遊率
-│   │   ├── road_network_geometry.json   # 路網拓撲、替代道路
-│   │   └── live_incidents.json      # 可注入事件
-│   │
-│   └── module5/                     # 模組 5：多語通報
-│       ├── backend/
-│       │   ├── main.py              # 獨立 FastAPI app（可單獨啟動）
-│       │   ├── routers/
-│       │   │   ├── notify.py        # 多語告警生成 + 發布
-│       │   │   └── signal.py        # 信令站點狀態
-│       │   └── services/
-│       │       └── llm.py           # Ollama 呼叫（多語文案生成）
-│       └── frontend/
-│           ├── index.html
-│           ├── app.js
-│           └── style.css
+├── warroom/                         # 戰情室主體（本機開發 + Demo 用）
+│   ├── server.py                    # FastAPI 入口
+│   ├── index.html / app.js / style.css  # 前端 UI
+│   ├── routers/
+│   │   ├── advisor.py               # 模組 3：策略諮詢（規則引擎 + LLM）
+│   │   ├── traffic.py               # 模組 1：車流監控 API
+│   │   └── incidents.py             # 模組 2：事件注入 + SOP 決策
+│   ├── llm/
+│   │   └── client.py                # LLM 抽象層（ollama/bedrock/mock）
+│   ├── module5/                     # 模組 5：多語通報
+│   └── data_source/                 # 資料源（CSV/JSON）
+│
+├── agentcore-squirrel/              # AWS AgentCore 版本（比賽部署用）
+│   ├── app/SquirrelAdvisor/main.py  # Strands Agent（@tool + Bedrock）
+│   ├── agentcore/agentcore.json     # AgentCore 設定
+│   ├── data/                        # SOP + 資料（已複製）
+│   ├── deploy.sh                    # 一鍵部署腳本
+│   └── README.md                    # 完整部署說明
 │
 ├── sop/
-│   └── emergency_traffic_sop.txt    # SOP 全文（7 條應變規則）
-│
+│   └── emergency_traffic_sop.txt    # SOP 全文（7 條）
 ├── data/
-│   ├── __init__.py
-│   └── snapshot.py                  # 資料快照抽象層（支援切換來源）
-│
+│   └── snapshot.py                  # 資料快照抽象層
 ├── shared/
-│   ├── __init__.py
-│   ├── schemas.py                   # 共用 Pydantic 資料模型
-│   └── lookup.py                    # 路名/站名別名查詢
-│
+│   ├── schemas.py                   # 共用 Pydantic 模型
+│   └── lookup.py                    # 路名/站名查詢
 ├── docs/
-│   ├── module3_design.md            # 模組 3 設計文件
+│   ├── deployment_guide.md          # 比賽當天部署流程
 │   └── shared_data_contract.md      # 跨模組資料契約
-│
 ├── .env.example                     # 環境變數範本
-├── requirements.txt                 # Python 依賴
-└── omn.py                           # Streamlit 版模組 5（舊版備份）
+└── requirements.txt                 # Python 依賴
 ```
 
 ---
 
 ## 模組概覽
 
-| 模組 | 功能 | 入口 | 技術 |
-|------|------|------|------|
-| **1** 即時監控 | 路段飽和度分級、地圖標色、KPI | `/api/traffic/*` | Pandas + Leaflet |
-| **2** 事件處置 | 注入事件 → SOP 決策 → 替代路線 + ETE | `/api/incidents/*` | 規則引擎 |
-| **3** 策略諮詢 | What-if 對話、SOP 條款判斷 | `/api/advisor/*` | 規則引擎 + Ollama |
-| **4** 決策解釋 | 判斷依據鏈、公式展示 | Drawer UI | 前端渲染 |
-| **5** 多語通報 | 7 語告警生成 + 模擬發布 | `/api/notify/*` | Ollama qwen2.5:3b |
+| 模組 | 功能 | 入口 |
+|------|------|------|
+| **1** 即時監控 | 路段飽和度分級、地圖標色 | `/api/traffic/*` |
+| **2** 事件處置 | 注入事件 → SOP 決策 → 替代路線 | `/api/incidents/*` |
+| **3** 策略諮詢 | What-if 對話、SOP 條款判斷 | `/api/advisor/*` |
+| **4** 決策解釋 | 判斷依據鏈、ETE 公式 | Drawer UI |
+| **5** 多語通報 | 7 語告警生成 + 模擬發布 | `/api/notify/*` |
 
 ---
 
-## SOP 條款速查
+## 比賽當天部署
 
-| 條 | 名稱 | 觸發條件 |
-|----|------|----------|
-| 1 | 壅塞分級 | 飽和度 ≥ 0.85 (B級) / ≥ 0.95 (A級)，觸發路段限忠孝東路/光復南路 |
-| 2 | 車禍路障 | status∈{Closed,Blocked,Restricted} + severity∈{High,Critical} + RD_開頭 |
-| 3 | 捷運分流 | BL17 人潮 > 25,000 或 Growth_Rate > 0.30 |
-| 4 | 大巨蛋散場 | 歷史峰值 ≥ 30,000 且 Growth_Rate ≤ -0.20 |
-| 5 | 號誌故障 | type=Power_Failure 或描述含號誌失效/故障 |
-| 6 | 多語通報 | 任一基地台 Roaming_User_Pct ≥ 30% |
-| 7 | ETE 計算 | base_clearance + max(0, (avg_saturation - 0.5) × 60) |
+詳見 `docs/deployment_guide.md` 和 `agentcore-squirrel/README.md`。
+
+| 路線 | 指令 | 適用情境 |
+|------|------|---------|
+| AgentCore（推薦） | `cd agentcore-squirrel && bash deploy.sh` | 有 AWS 帳號 |
+| EC2 直接跑 | SSH → clone → uvicorn | AgentCore 不可用時 |
+| 本機投影 | `python3 -m uvicorn warroom.server:app --port 8000` | 最後備案 |
 
 ---
 
@@ -110,14 +90,8 @@ squirrel/
 
 | 變數 | 預設值 | 說明 |
 |------|--------|------|
-| `OLLAMA_URL` | `http://localhost:11434` | Ollama 服務位址 |
-| `OLLAMA_MODEL` | `qwen2.5:3b` | 使用的模型名稱 |
-| `DATA_SOURCE_DIR` | `warroom/data_source` | 資料來源路徑（可切換） |
-
----
-
-## 比賽當天
-
-- **換資料**：直接覆蓋 `warroom/data_source/` 下的檔案，欄位格式不變即可
-- **換模型**：修改 `OLLAMA_MODEL` 環境變數
-- **換路徑**：設 `DATA_SOURCE_DIR` 指向新目錄
+| `LLM_MODE` | `ollama` | 切換：ollama / bedrock / mock |
+| `OLLAMA_URL` | `http://localhost:11434` | Ollama 位址 |
+| `OLLAMA_MODEL` | `qwen2.5:7b` | 本機模型 |
+| `BEDROCK_MODEL_ID` | `us.anthropic.claude-sonnet-4-5-20250929-v1:0` | Bedrock 模型 |
+| `BEDROCK_REGION` | `us-west-2` | AWS Region |

@@ -17,6 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   showAdvisorScenarioSet('incident');
   checkAdvisorStatus();
+  loadAdvisorAlerts();
 });
 
 /* ── 模組一：車流資料 ─────────────────────────────────────────────────────── */
@@ -297,6 +298,26 @@ function renderDecisionExplanation(decision) {
 }
 
 /* ── Chat (Module 3) ──────────────────────────────────────────────────────── */
+let advisorHistory = [];  // 對話歷史，支援多輪追問
+
+// 主動預警：頁面載入時掃描數據
+async function loadAdvisorAlerts() {
+  try {
+    const res = await fetch('/api/advisor/alerts');
+    const data = await res.json();
+    if (data.alerts && data.alerts.length > 0) {
+      const box = document.getElementById('chat-messages');
+      if (box) {
+        const alertMsg = document.createElement('div');
+        alertMsg.className = 'msg ai';
+        alertMsg.innerHTML = '<div class="answer-lead">📊 主動預警掃描結果</div>' +
+          data.alerts.map(a => `<div class="advisor-action">${a.message}</div>`).join('');
+        box.appendChild(alertMsg);
+      }
+    }
+  } catch (e) { /* ignore */ }
+}
+
 const advisorRoadNames = [
   '忠孝東路四段', '光復南路', '基隆路一段', '市民大道四段', '仁愛路四段',
   '敦化南路一段', '松高路', '延吉街', '基隆路地下道', '市府路',
@@ -376,6 +397,8 @@ async function sendAdvisorMessage(forcedMessage) {
   if (!message) return;
   input.value = '';
   appendChatMessage('user', message);
+  // 記錄到對話歷史
+  advisorHistory.push({role: 'user', content: message});
   const pending = appendChatMessage('ai', '');
   pending.innerHTML = `<div class="sq-thinking">
     <div class="sq-track">
@@ -390,31 +413,34 @@ async function sendAdvisorMessage(forcedMessage) {
     </div>
     <span class="sq-label">Squirrel 正在檢索 SOP…</span>
   </div>`;
-  const startTime = Date.now();
   try {
     const res = await fetch('/api/advisor/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         message,
+        history: advisorHistory.slice(0, -1),
         current_event: latestIncident,
         current_decisions: latestDecisions,
       }),
     });
+    const startTime = Date.now();
     const data = await res.json();
-    // 確保松鼠至少跑 800ms 再顯示答案
+    // 松鼠至少跑 800ms
     const elapsed = Date.now() - startTime;
     if (elapsed < 800) await new Promise(r => setTimeout(r, 800 - elapsed));
     pending.innerHTML = formatAdvisorAnswer(data.answer);
+    // 記錄 AI 回答到歷史
+    advisorHistory.push({role: 'assistant', content: data.answer});
     // 更新模式指示
     const dot = document.getElementById('advisor-mode-dot');
     const text = document.getElementById('advisor-mode-text');
-    if (data.source === 'llm+rules') {
+    if (data.source === 'llm') {
       dot.className = 'mode-dot mode-dot-llm';
-      text.textContent = 'LLM 模式 · Ollama';
+      text.textContent = 'LLM 模式';
     } else {
-      dot.className = 'mode-dot mode-dot-rules';
-      text.textContent = '規則引擎 · 即時快照';
+      dot.className = 'mode-dot mode-dot-llm';
+      text.textContent = 'LLM + 規則引擎';
     }
   } catch (e) {
     pending.textContent = '顧問服務暫時無法回應：' + e.message;
