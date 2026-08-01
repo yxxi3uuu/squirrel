@@ -76,9 +76,10 @@
             <div class="map-wrap">
               <div id="leaflet-map"></div>
               <div class="map-legend">
-                <div class="lr"><span class="sw" style="background:var(--safe)"></span>正常路段<span class="thresh">&lt;0.85</span></div>
-                <div class="lr"><span class="sw" style="background:var(--caution)"></span>B級壅擠<span class="thresh">0.85–0.95</span></div>
-                <div class="lr"><span class="sw" style="background:var(--critical)"></span>A級癱瘓<span class="thresh">≥0.95</span></div>
+                <div class="lr"><span class="sw" style="background:rgb(58,140,66)"></span>暢通<span class="thresh">&lt;0.5</span></div>
+                <div class="lr"><span class="sw" style="background:rgb(234,206,80)"></span>漸塞<span class="thresh">0.5–0.85</span></div>
+                <div class="lr"><span class="sw" style="background:rgb(234,140,60)"></span>壅塞<span class="thresh">0.85–0.95</span></div>
+                <div class="lr"><span class="sw" style="background:rgb(140,20,60)"></span>癱瘓<span class="thresh">≥0.95</span></div>
               </div>
               <div class="chart-popup hidden" id="chart-popup">
                 <div class="chart-popup-head">
@@ -116,7 +117,7 @@
       </div>
       <!-- Right: Alert cards，獨立佔滿整欄高度，不受左側 KPI 列影響 -->
       <div class="panel dash-alerts">
-        <h3>即時警報</h3>
+        <h3>即時警報 <button class="btn-history" onclick="openAlertHistory()">歷史紀錄</button></h3>
         <div class="alert-scroll">
           <div class="alert-card sop1">
             <div class="alert-hdr"><span class="alert-tag">SOP-1 壅塞</span><span class="mono">22:30</span></div>
@@ -147,6 +148,18 @@
   <!-- Module 5 已改為右側 Drawer -->
 
 </main>
+
+<!-- ══ OVERLAY: Alert History Drawer ═══════════════════════════════════════ -->
+<div id="history-backdrop" class="backdrop hidden" onclick="closeAlertHistory()"></div>
+<aside id="history-drawer" class="drawer hidden">
+  <div class="drawer-head">
+    <h3>預警歷史紀錄</h3>
+    <button class="drawer-close" onclick="closeAlertHistory()">✕</button>
+  </div>
+  <div class="drawer-body" id="alert-history-body">
+    <div class="history-empty">尚無預警紀錄，播放時間軸後觸發的 SOP 會累積在此</div>
+  </div>
+</aside>
 
 <!-- ══ OVERLAY: Module 4 Explanation Drawer ════════════════════════════════ -->
 <div id="drawer-backdrop" class="backdrop hidden" onclick="closeDrawer()"></div>

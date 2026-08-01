@@ -29,11 +29,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   mapInstance = L.map('leaflet-map', { zoomControl: false }).setView([25.0370, 121.5625], 14.5);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(mapInstance);
   L.control.zoom({ position: 'topleft' }).addTo(mapInstance);
+  L.control.scale({ metric: true, imperial: false, position: 'topright', maxWidth: 80 }).addTo(mapInstance);
   // L.circleMarker（站點）預設跟 L.polyline（路段）共用 overlayPane，疊放順序只看
   // DOM 加入先後，而路段/站點是兩支獨立 API 非同步載入，順序不固定，導致站點有時
   // 會被路段線蓋住點不到。開一個獨立、z-index 更高的 pane 讓站點永遠疊在路段上面。
   mapInstance.createPane('stationPane');
   mapInstance.getPane('stationPane').style.zIndex = 420;
+  // tooltip pane 要在站點標記上面
+  mapInstance.getPane('tooltipPane').style.zIndex = 800;
   // 事件標記 pane：z-index 高於站點，確保事件 popup 不會被遮住
   mapInstance.createPane('incidentPane');
   mapInstance.getPane('incidentPane').style.zIndex = 650;
@@ -62,11 +65,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 點路段／站點清單可切換該實體自己的歷史時序（/api/history?entity_id=）
   document.getElementById('segstat-list').addEventListener('click', e => {
     const row = e.target.closest('.segstat-row');
-    if (row) showEntityHistory(row.dataset.entityId, row.dataset.entityName);
+    if (row) {
+      showEntityHistory(row.dataset.entityId, row.dataset.entityName);
+      highlightRoadOnMap(row.dataset.entityId);
+    }
   });
   document.getElementById('station-status-list').addEventListener('click', e => {
     const row = e.target.closest('.station-row');
-    if (row) showEntityHistory(row.dataset.entityId, row.dataset.entityName);
+    if (row) {
+      showEntityHistory(row.dataset.entityId, row.dataset.entityName);
+      highlightStationOnMap(row.dataset.entityId);
+    }
   });
   checkAdvisorStatus();
   loadAdvisorAlerts();
@@ -155,9 +164,18 @@ function renderStationMarkers(stations) {
         fillColor,
         fillOpacity: 0.9,
       }).addTo(mapInstance);
-      marker.bindTooltip(tooltipHtml, { direction: 'top', offset: [0, -6], className: 'map-tooltip', opacity: 1 });
-      marker.on('mouseover', () => marker.setRadius(dynamicRadius + 4));
-      marker.on('mouseout', () => marker.setRadius(dynamicRadius));
+      marker.bindTooltip(tooltipHtml, { direction: 'top', offset: [0, -12], className: 'map-tooltip', opacity: 1 });
+      marker.on('mouseover', () => {
+        marker.setRadius(dynamicRadius + 4);
+        marker.bringToFront();
+        // 淡化其他站點，避免遮住 tooltip
+        Object.values(stationMarkers).forEach(m => { if (m !== marker) m.setStyle({ fillOpacity: 0.2, opacity: 0.2 }); });
+      });
+      marker.on('mouseout', () => {
+        marker.setRadius(dynamicRadius);
+        Object.values(stationMarkers).forEach(m => m.setStyle({ fillOpacity: 0.9, opacity: 1 }));
+      });
+      marker.on('click', () => showEntityHistory(s.station_id, s.station_name));
       stationMarkers[s.station_id] = marker;
     }
   });
@@ -477,6 +495,8 @@ async function loadSnapshotAt(timestamp) {
     renderTrafficAlerts(segments, dashboard);
     renderTrafficMap(segments);
     renderSegmentStatusList(segments);
+    // 累積預警歷史
+    addToAlertHistory(dashboard.newly_triggered, dashboard.timestamp);
 
     // 如果該時間點有注入事件，重新顯示事件標記和警報卡片
     const injected = injectedTimelineData[timestamp];
@@ -656,8 +676,53 @@ function renderSop4Card(dashboard) {
 }
 
 /* ── 模組五：多語通報卡片（真實資料，不是寫死文字）─────────────────────────── */
+function renderModule5AlertCard() {
+  if (!m5Triggered || !m5Triggered.length) {
+    return `
+    <div class="alert-card sop6">
+      <div class="alert-hdr"><span class="alert-tag accent-bg">SOP-6 多語</span></div>
+      <div class="alert-body">目前無站點外籍旅客比例達 30% 門檻</div>
+      <button class="btn-explain" onclick="openModule5Modal()">查看站點狀態</button>
+    </div>`;
+  }
+  const sorted = [...m5Triggered].sort((a, b) => b.roaming_rate - a.roaming_rate);
+  const stationLines = sorted.map(s =>
+    `<b>${s.station_name}</b> (${s.station_id}) — <span class="mono critical-text">${(s.roaming_rate * 100).toFixed(1)}%</span>`
+  ).join('<br>');
+  return `
+    <div class="alert-card sop6">
+      <div class="alert-hdr"><span class="alert-tag accent-bg">SOP-6 多語</span><span class="mono">${sorted.length} 站觸發</span></div>
+      <div class="alert-body">
+        ${stationLines}
+      </div>
+      <button class="btn-explain" onclick="openModule5Modal()">查看多語通報</button>
+    </div>`;
+}
+
+/* ── 路段飽和度連續色階（類似 Google Maps 路況）────────────────────────────── */
+function saturationToColor(score) {
+  if (score == null) return '#4a6741';
+  const s = Math.max(0, Math.min(1, score));
+  const stops = [
+    [0.00,  58, 140,  66],
+    [0.50, 133, 217, 154],
+    [0.70, 234, 206,  80],
+    [0.85, 234, 140,  60],
+    [0.95, 220,  50,  50],
+    [1.00, 140,  20,  60],
+  ];
+  let lo = stops[0], hi = stops[stops.length - 1];
+  for (let i = 0; i < stops.length - 1; i++) {
+    if (s >= stops[i][0] && s <= stops[i + 1][0]) { lo = stops[i]; hi = stops[i + 1]; break; }
+  }
+  const t = (hi[0] - lo[0]) > 0 ? (s - lo[0]) / (hi[0] - lo[0]) : 0;
+  const r = Math.round(lo[1] + (hi[1] - lo[1]) * t);
+  const g = Math.round(lo[2] + (hi[2] - lo[2]) * t);
+  const b = Math.round(lo[3] + (hi[3] - lo[3]) * t);
+  return `rgb(${r},${g},${b})`;
+}
+
 function renderTrafficMap(segments) {
-  const colorMap = { A: '#f27a84', B: '#eab85c', OK: '#85d99a' };
   segments.forEach(s => {
     const pts = ROAD_COORDS[s.Segment_ID];
     if (!pts) {
@@ -665,18 +730,120 @@ function renderTrafficMap(segments) {
         '請在 warroom/data_source/road_coords.json 的 "segments" 補上，或執行 scripts/fetch_road_coords.py。');
       return;
     }
-    const color = colorMap[s.level] || '#85d99a';
+    const color = saturationToColor(s.Saturation_Score);
     if (roadPolylines[s.Segment_ID]) {
       roadPolylines[s.Segment_ID].setStyle({ color });
     } else {
       const line = L.polyline(pts, { color, weight: 5, opacity: 0.9 }).addTo(mapInstance);
-      line.bindTooltip(`${s.Road_Name} (${s.Segment_ID})<br>飽和: ${s.Saturation_Score.toFixed(2)}`, { className: 'map-tooltip', opacity: 1 });
+      line.bindTooltip(`${s.Road_Name} (${s.Segment_ID})<br>飽和: ${s.Saturation_Score.toFixed(2)}`, { className: 'map-tooltip', opacity: 1, direction: 'bottom', offset: [0, 10] });
       // Hover 加粗效果
-      line.on('mouseover', () => line.setStyle({ weight: 9, opacity: 1 }));
-      line.on('mouseout', () => line.setStyle({ weight: 5, opacity: 0.9 }));
+      line.on('mouseover', () => { line.setStyle({ weight: 9, opacity: 1 }); mapInstance.getPane('stationPane').style.opacity = '0.3'; });
+      line.on('mouseout', () => { line.setStyle({ weight: 5, opacity: 0.9 }); mapInstance.getPane('stationPane').style.opacity = '1'; });
+      line.on('click', () => showEntityHistory(s.Segment_ID, s.Road_Name));
       roadPolylines[s.Segment_ID] = line;
     }
   });
+}
+
+/* ── 地圖路段高亮：點擊清單時縮放到該路段並顯示路名 ─────────────────────── */
+let _highlightedLine = null;
+let _highlightedStation = null;
+
+function highlightRoadOnMap(segmentId) {
+  _clearMapHighlights();
+  const line = roadPolylines[segmentId];
+  if (!line) return;
+  // 固定往下偏移，讓路段 tooltip 顯示在地圖中偏高位置
+  const center = line.getBounds().getCenter();
+  const viewCenter = L.latLng(center.lat - 0.001, center.lng);
+  mapInstance.setView(viewCenter, 16, { animate: true });
+  mapInstance.getPane('stationPane').style.opacity = '0.2';
+  line.openTooltip();
+  _highlightedLine = line;
+}
+
+/* ── 地圖站點高亮：點擊基地台清單時縮放到該站點並顯示名稱 ─────────────────── */
+function highlightStationOnMap(stationId) {
+  _clearMapHighlights();
+  const marker = stationMarkers[stationId];
+  if (!marker) return;
+  const latlng = marker.getLatLng();
+  const viewCenter = L.latLng(latlng.lat - 0.001, latlng.lng);
+  mapInstance.setView(viewCenter, 16, { animate: true });
+  marker.openTooltip();
+  _highlightedStation = marker;
+}
+
+function _clearMapHighlights() {
+  if (_highlightedLine) { _highlightedLine.closeTooltip(); _highlightedLine = null; }
+  if (_highlightedStation) { _highlightedStation.closeTooltip(); _highlightedStation = null; }
+  mapInstance.getPane('stationPane').style.opacity = '1';
+}
+
+// 點地圖空白處關閉路段/站點 tooltip
+document.addEventListener('DOMContentLoaded', () => {
+  setTimeout(() => {
+    if (mapInstance) {
+      mapInstance.on('click', () => { _clearMapHighlights(); closeChartPopup(); });
+    }
+    // 點擊頁面任何地方（歷史趨勢圖以外）關閉趨勢圖
+    document.addEventListener('click', (e) => {
+      if (networkChartOpen && !e.target.closest('.chart-popup') && !e.target.closest('.segstat-row') && !e.target.closest('.station-row') && !e.target.closest('.chart-toggle-btn')) {
+        closeChartPopup();
+      }
+    });
+  }, 1000);
+});
+
+/* ── 預警歷史紀錄面板 ─────────────────────────────────────────────────────── */
+let alertHistory = []; // [{timestamp, sop_clause, entity_name, basis, severity}]
+
+function addToAlertHistory(triggers, timestamp) {
+  if (!triggers || !triggers.length) return;
+  triggers.forEach(t => {
+    // 去重：同一個時間點+同一個實體不重複加
+    const exists = alertHistory.some(h => h.timestamp === timestamp && h.entity_id === t.entity_id && h.sop_clause === t.sop_clause);
+    if (!exists) {
+      alertHistory.push({
+        timestamp: timestamp || t.timestamp,
+        sop_clause: t.sop_clause,
+        clause_name: t.clause_name,
+        entity_id: t.entity_id,
+        entity_name: t.entity_name,
+        basis: t.basis,
+        severity: t.severity,
+      });
+    }
+  });
+}
+
+function openAlertHistory() {
+  document.getElementById('history-drawer').classList.remove('hidden');
+  document.getElementById('history-backdrop').classList.remove('hidden');
+  renderAlertHistory();
+}
+
+function closeAlertHistory() {
+  document.getElementById('history-drawer').classList.add('hidden');
+  document.getElementById('history-backdrop').classList.add('hidden');
+}
+
+function renderAlertHistory() {
+  const body = document.getElementById('alert-history-body');
+  if (!alertHistory.length) {
+    body.innerHTML = '<div class="history-empty">尚無預警紀錄，播放時間軸後觸發的 SOP 會累積在此</div>';
+    return;
+  }
+  const rows = [...alertHistory].reverse().map(h => {
+    const sevClass = h.severity === 'red' ? 'critical-text' : h.severity === 'yellow' ? 'caution-text' : '';
+    return `<div class="history-row">
+      <span class="history-time mono">${(h.timestamp || '').slice(11, 16)}</span>
+      <span class="history-tag ${sevClass}">${h.sop_clause}</span>
+      <span class="history-entity">${h.entity_name}</span>
+      <span class="history-basis">${h.basis}</span>
+    </div>`;
+  });
+  body.innerHTML = rows.join('');
 }
 
 /* ── 模組一：路段即時狀態清單（15 路段速覽，色點＋速度＋飽和度）───────────── */
@@ -2166,6 +2333,9 @@ function addIncidentMapMarkers(event, decisions, snapshot) {
     marker.bindTooltip(labelHtml, { permanent: true, direction: 'top', offset: [0, -20], className: 'incident-label-tooltip-container', interactive: false, pane: 'incidentTooltipPane' });
 
     incidentMapMarkers.push(marker);
+
+    // 縮放地圖到事件位置
+    mapInstance.setView(markerCoords, 16, { animate: true });
   }
 }
 

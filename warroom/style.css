@@ -214,22 +214,22 @@ body {
 
 /* ── Network Saturation/Speed Chart Popup（模組 1・飽和度／車速時序監測）──── */
 .chart-popup {
-  position: absolute; left: 10px; bottom: 10px; width: min(360px, calc(100% - 20px)); z-index: 500;
-  background: rgba(10,14,23,.92); border: 1px solid var(--border); border-radius: 10px;
-  padding: 10px 12px 8px; backdrop-filter: blur(4px);
-  box-shadow: 0 12px 28px -10px rgba(0,0,0,.6);
+  position: absolute; left: 10px; bottom: 10px; width: min(260px, calc(100% - 20px)); z-index: 500;
+  background: rgba(10,14,23,.92); border: 1px solid var(--border); border-radius: 8px;
+  padding: 7px 10px 6px; backdrop-filter: blur(4px);
+  box-shadow: 0 8px 20px -8px rgba(0,0,0,.6);
 }
-.chart-popup-head { display: flex; align-items: center; gap: 12px; }
-.chart-popup-title { font-family: var(--font-display); font-size: .74rem; font-weight: 700; color: var(--text); }
-.chart-readouts { display: flex; gap: 14px; margin-left: auto; }
+.chart-popup-head { display: flex; align-items: center; gap: 8px; }
+.chart-popup-title { font-family: var(--font-display); font-size: .58rem; font-weight: 700; color: var(--text); }
+.chart-readouts { display: flex; gap: 10px; margin-left: auto; }
 .chart-readout { display: flex; flex-direction: column; align-items: flex-end; }
-.chart-readout .cr-val { font-family: var(--font-mono); font-size: 1.1rem; font-weight: 700; line-height: 1; }
-.chart-readout .cr-lbl { font-size: .6rem; color: var(--text-dim); margin-top: 2px; }
+.chart-readout .cr-val { font-family: var(--font-mono); font-size: .85rem; font-weight: 700; line-height: 1; }
+.chart-readout .cr-lbl { font-size: .52rem; color: var(--text-dim); margin-top: 2px; }
 .chart-readout.sat .cr-val { color: var(--caution); }
 .chart-readout.spd .cr-val { color: var(--safe); }
 .chart-popup-close { background: none; border: none; color: var(--text-dim); font-size: .85rem; cursor: pointer; flex: none; }
 .chart-popup-close:hover { color: var(--text); }
-.chart-svg { width: 100%; height: 90px; display: block; margin-top: 6px; overflow: visible; }
+.chart-svg { width: 100%; height: 65px; display: block; margin-top: 4px; overflow: visible; }
 
 /* ── Station Tooltip（模組 1・地圖站點 hover，整個提示框淡入）───────────────
    只做透明度淡入，不加 scale/translate，避免看起來像在移動。 */
@@ -242,10 +242,58 @@ body {
   padding: 6px 10px;
   font-size: .75rem;
   box-shadow: 0 4px 12px rgba(0,0,0,.4);
+  z-index: 1000 !important;
 }
 .leaflet-tooltip.map-tooltip::before {
-  border-top-color: var(--panel, #141c26);
+  border-bottom-color: var(--panel, #141c26);
 }
+
+/* ── 地圖比例尺美化 ────────────────────────────────────────────────────── */
+.leaflet-control-scale-line {
+  background: rgba(10,14,23,.7) !important;
+  border-color: rgba(255,255,255,.3) !important;
+  color: var(--text-dim, #9aa8ba) !important;
+  font-size: .58rem !important;
+  padding: 1px 5px !important;
+  border-radius: 3px !important;
+  backdrop-filter: blur(2px);
+  width: 60px !important;
+}
+
+/* ── 站點彈跳動畫（Google Maps pin drop 風格）──────────────────────────── */
+/* ── 站點 Popup（Google Maps 風格地標卡）──────────────────────────────── */
+.station-popup-container .leaflet-popup-content-wrapper {
+  background: var(--panel, #141c26);
+  border: 1px solid var(--border, #2a3545);
+  border-radius: 8px;
+  color: var(--text, #f2f5f9);
+  box-shadow: 0 6px 16px rgba(0,0,0,.5);
+}
+.station-popup-container .leaflet-popup-tip { background: var(--panel, #141c26); }
+.station-popup-container .leaflet-popup-content { margin: 8px 12px; }
+.station-popup-name { font-weight: 700; font-size: .85rem; margin-bottom: 2px; }
+.station-popup-id { font-size: .65rem; color: var(--text-dim); margin-bottom: 6px; }
+.station-popup-stats { display: flex; gap: 10px; font-size: .7rem; font-family: var(--font-mono); }
+.station-popup-stats span { white-space: nowrap; }
+
+/* ── 預警歷史紀錄面板 ──────────────────────────────────────────────────── */
+.btn-history {
+  font-size: .6rem; padding: 2px 8px; border-radius: 4px;
+  background: rgba(255,255,255,.05); border: 1px solid var(--border);
+  color: var(--text-dim); cursor: pointer; margin-left: 8px; font-weight: 500;
+}
+.btn-history:hover { border-color: var(--accent); color: var(--accent); }
+.history-empty { color: var(--text-dim); font-size: .75rem; padding: 20px 0; text-align: center; }
+.history-row {
+  display: grid; grid-template-columns: 42px 56px 1fr;
+  gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border);
+  font-size: .72rem; align-items: baseline;
+}
+.history-row:last-child { border-bottom: none; }
+.history-time { color: var(--text-dim); }
+.history-tag { font-weight: 600; }
+.history-entity { font-weight: 500; }
+.history-basis { grid-column: 2 / -1; font-size: .65rem; color: var(--text-dim); margin-top: 2px; }
 @keyframes stationTooltipFade {
   from { opacity: 0; }
   to   { opacity: 1; }
@@ -1181,27 +1229,21 @@ footer { text-align: center; padding: 20px; color: var(--text-dim); font-size: .
   font-weight: 700;
 }
 
-/* ══ Incident Map Label (事件 ID 氣泡，使用 tooltip 常駐) ═════════════════════ */
-.incident-label-tooltip-container {
-  z-index: 99999 !important;
-  background: var(--panel, #141c26) !important;
-  border: 1px solid var(--border, #2a3545) !important;
-  border-radius: 6px !important;
-  color: var(--text, #f2f5f9) !important;
-  padding: 4px 10px !important;
-  box-shadow: 0 3px 12px rgba(0,0,0,.45) !important;
-  opacity: 1 !important;
-}
-.incident-label-tooltip-container::before {
-  border-top-color: var(--panel, #141c26) !important;
-}
-.incident-map-label-id {
-  font-size: .78rem;
-  font-weight: 700;
-  color: #ff6b6b;
-  white-space: nowrap;
-  text-align: center;
-  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+/* ══ RWD 響應式設計 ════════════════════════════════════════════════════════ */
+
+/* ── 平板橫向 / 小筆電 (≤1100px) ── 已有：dash-layout column, grid-3 single col */
+
+/* ── 平板直向 (≤900px) ─────────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  #topbar { padding: 10px 14px; }
+  .brand .title { font-size: .9rem; }
+  .tabs { gap: 2px; }
+  .tab { font-size: .68rem; padding: 5px 10px; }
+  .kpi-strip { grid-template-columns: repeat(3, 1fr); }
+  .dash-segstatus { min-width: 140px; }
+  .dash-alerts { min-width: 160px; }
+  .timeline-row { flex-wrap: wrap; gap: 6px; }
+  .tl-speed-select { order: -1; }
 }
 .incident-map-label-hint {
   font-size: .65rem;
@@ -1211,32 +1253,47 @@ footer { text-align: center; padding: 20px; color: var(--text-dim); font-size: .
   margin-top: 2px;
 }
 
-/* ══ Incident Detail Modal ═══════════════════════════════════════════════════ */
-.incident-detail-modal {
-  max-width: 640px;
+/* ── 大手機 / 小平板 (≤680px) ──────────────────────────────────────────── */
+@media (max-width: 680px) {
+  #topbar { flex-wrap: wrap; gap: 8px; padding: 8px 12px; }
+  .brand .logo { font-size: 1.2rem; }
+  .brand .title { font-size: .82rem; }
+  .top-right { display: none; }
+  .kpi-strip { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .kpi-strip-card { padding: 6px 10px; }
+  .ks-value { font-size: 1rem; }
+  .dash-layout { flex-direction: column; gap: 12px; }
+  .dash-segstatus, .dash-alerts { min-width: unset; }
+  .grid-3 { grid-template-columns: 1fr; gap: 12px; }
+  .panel { padding: 10px; }
+  .panel h3 { font-size: .78rem; }
+  .map-wrap { min-height: 300px; height: 40vh; flex: none; }
+  #leaflet-map { min-height: 280px; height: 100%; }
+  .timeline-row { font-size: .7rem; }
+  .tl-step-btn { width: 20px; height: 20px; font-size: .5rem; }
+  /* 對話面板全寬 */
+  .chat-panel { width: 95vw !important; height: 85vh !important; left: 2.5vw !important; }
+  /* 模組 5 modal */
+  .modal { width: 95vw; max-width: unset; }
 }
-.incident-detail-modal .incident-popup {
-  font-family: var(--font-body, 'Noto Sans TC', sans-serif);
-  font-size: .85rem;
-  line-height: 1.7;
-}
-.incident-detail-modal .incident-popup-title {
-  font-size: 1.1rem;
-  font-weight: 700;
-  margin-bottom: 10px;
-}
-.incident-detail-modal .incident-popup-row {
-  margin: 4px 0;
-}
-.incident-detail-modal .incident-popup-row b {
-  display: inline-block;
-  width: 72px;
-  color: var(--text-dim, #9aa8ba);
-}
-.incident-detail-modal .incident-popup-desc {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border, #2a3545);
-  font-size: .8rem;
-  color: var(--text-dim, #9aa8ba);
+
+/* ── 手機 (≤480px) ─────────────────────────────────────────────────────── */
+@media (max-width: 480px) {
+  body { font-size: 13px; }
+  #topbar { padding: 6px 10px; }
+  .tabs { width: 100%; justify-content: center; }
+  .tab { flex: 1; text-align: center; font-size: .64rem; padding: 6px 4px; }
+  .kpi-strip { grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; }
+  .kpi-strip-card:nth-child(5) { grid-column: span 2; }
+  .ks-label { font-size: .56rem; }
+  .ks-value { font-size: .9rem; }
+  .map-wrap { min-height: 260px; height: 35vh; flex: none; }
+  #leaflet-map { min-height: 240px; height: 100%; }
+  .alert-card { padding: 8px 10px; }
+  .alert-tag { font-size: .58rem; }
+  .segstat-row { font-size: .66rem; padding: 4px 2px; }
+  .station-row { font-size: .62rem; padding: 4px 6px; }
+  .timeline-row input[type="range"] { min-width: 80px; }
+  .advisor-chip { font-size: .6rem; padding: 3px 6px; }
+  .chat-panel { width: 100vw !important; height: 90vh !important; left: 0 !important; border-radius: 12px 12px 0 0 !important; }
 }
