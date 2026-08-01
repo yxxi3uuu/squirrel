@@ -69,14 +69,18 @@ async function loadTrafficData() {
 }
 
 /* ── 模組一：基地台狀態（左側常駐面板，資料來源與模組5共用 /api/signal/stations）── */
+let _stationSeq = 0;
 async function loadBaseStationPanel(timestamp) {
+  const seq = ++_stationSeq;
   try {
     const url = timestamp ? `/api/signal/stations?timestamp=${encodeURIComponent(timestamp)}` : '/api/signal/stations';
     const res = await fetch(url);
+    if (seq !== _stationSeq) return;
     const data = await res.json();
     renderBaseStationPanel(data.stations || []);
     renderStationMarkers(data.stations || []);
   } catch (e) {
+    if (seq !== _stationSeq) return;
     console.error('基地台狀態載入失敗', e);
     const el = document.getElementById('station-status-list');
     if (el) el.innerHTML = '<div class="station-row">基地台狀態載入失敗</div>';
@@ -368,26 +372,28 @@ function startTimelinePlayLoop() {
   }, 1200 / timelineSpeed);
 }
 
+/* ── 時間軸快照載入（含 race condition 防護）───────────────────────────────
+   每次 loadSnapshotAt 呼叫時遞增 _snapshotSeq，回應回來後比對序號，
+   若有更新的請求已送出，就丟棄這次過期的回應，避免畫面閃爍不同步。 */
+let _snapshotSeq = 0;
+
 async function loadSnapshotAt(timestamp) {
+  const seq = ++_snapshotSeq;
   try {
-    // /api/dashboard 是 /api/snapshot 的超集：同一份快照之外，還多附上門檻判斷
-    // （triggers）、這次新觸發的項目（newly_triggered）跟 LLM 趨勢摘要（summary），
-    // 一次打完不用再分開呼叫 /api/snapshot。
-    // 模組五（基地台狀態／SOP-6 多語卡）跟模組一原本是兩套獨立系統，這裡一起帶
-    // 同一個 timestamp，讓整個儀表板（含地圖站點標記）都跟著時間軸走，不會有
-    // 「時間軸調到 18:00，SOP-6 卡片卻還停在最新時間點」的不一致。
     const [dashRes] = await Promise.all([
       fetch(`/api/dashboard?timestamp=${encodeURIComponent(timestamp)}`),
       loadModule5Status(timestamp),
       loadBaseStationPanel(timestamp),
     ]);
+    // 回應回來時若已有更新的請求，丟棄本次結果
+    if (seq !== _snapshotSeq) return;
     const dashboard = await dashRes.json();
     const segments = snapshotToSegments(dashboard.snapshot);
     renderTrafficKPI(computeTrafficSummary(segments));
     renderTrafficAlerts(segments, dashboard);
     renderTrafficMap(segments);
     renderSegmentStatusList(segments);
-  } catch (e) { console.error('快照載入失敗', e); }
+  } catch (e) { if (seq === _snapshotSeq) console.error('快照載入失敗', e); }
 }
 
 function snapshotToSegments(snapshot) {
@@ -1009,14 +1015,17 @@ function escapeHtml(value) {
    鈴鐺時彈出，不會跟著時間軸每一格都跳，避免快速拖動時 toast 一直閃現互蓋。 */
 let m5Triggered = [];
 
+let _m5Seq = 0;
 async function loadModule5Status(timestamp) {
+  const seq = ++_m5Seq;
   try {
     const url = timestamp ? `/api/signal/triggered?timestamp=${encodeURIComponent(timestamp)}` : '/api/signal/triggered';
     const res = await fetch(url);
+    if (seq !== _m5Seq) return;
     const data = await res.json();
     m5Triggered = data.triggered || [];
   } catch (e) {
-    console.error('模組 5 狀態載入失敗', e);
+    if (seq === _m5Seq) console.error('模組 5 狀態載入失敗', e);
   }
 }
 
