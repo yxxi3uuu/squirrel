@@ -6,20 +6,22 @@ let latestDecisions = [];
 let latestSnapshot = null;
 let latestIncident = null;
 
-// 9 個人流站點的概略座標（需要真實地標經緯度，這裡用近似座標，跟路段 roadCoords 同一套做法）
-const STATION_COORDS = {
-  BS_TPE_DOME:   [25.0453, 121.5570],
-  BS_MRT_BL17:   [25.0400, 121.5577],
-  BS_SS_PARK:    [25.0442, 121.5605],
-  BS_MRT_BL16:   [25.0418, 121.5490],
-  BS_XY_VIESHOW: [25.0335, 121.5677],
-  BS_TPE_101:    [25.0339, 121.5645],
-  BS_BUS_TERM:   [25.0375, 121.5677],
-  BS_XY_ATT:     [25.0322, 121.5665],
-  BS_MRT_BL18:   [25.0408, 121.5654],
-};
+// 路段／站點經緯度座標改由後端 /api/traffic/coords 載入（見 warroom/data_source/road_coords.json），
+// 不再寫死在前端，方便其他模組重用同一份資料、也不用改程式碼就能更新座標。
+let STATION_COORDS = {};
+let ROAD_COORDS = {};
 
-document.addEventListener('DOMContentLoaded', () => {
+async function loadRoadCoords() {
+  try {
+    const res = await fetch('/api/traffic/coords');
+    const data = await res.json();
+    STATION_COORDS = data.stations || {};
+    ROAD_COORDS = data.segments || {};
+  } catch (e) { console.error('路網座標載入失敗', e); }
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadRoadCoords();
   mapInstance = L.map('leaflet-map', { zoomControl: false }).setView([25.0370, 121.5625], 14.5);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(mapInstance);
   L.control.zoom({ position: 'topleft' }).addTo(mapInstance);
@@ -85,7 +87,11 @@ async function loadBaseStationPanel(timestamp) {
 function renderStationMarkers(stations) {
   stations.forEach(s => {
     const coords = STATION_COORDS[s.station_id];
-    if (!coords) return;
+    if (!coords) {
+      console.warn(`[地圖] 站點 ${s.station_id}（${s.station_name}）沒有座標資料，不會顯示在地圖上。` +
+        '請在 warroom/data_source/road_coords.json 的 "stations" 補上，或執行 scripts/fetch_road_coords.py。');
+      return;
+    }
     const growthPct = ((s.growth_rate || 0) * 100).toFixed(0);
     const growthSign = s.growth_rate > 0 ? '+' : '';
     const roamingPct = ((s.roaming_rate || 0) * 100).toFixed(1);
@@ -126,8 +132,8 @@ function renderBaseStationPanel(stations) {
 }
 
 /* ── 模組一：動態時序（時間軸）─────────────────────────────────────────────
-   資料來源：/api/timestamps + /api/snapshot?timestamp=（module1_dashboard 的
-   data/snapshot.py 共用資料層）。時間軸樣式比照戰情室原型設計稿（滑桿＋倍速
+   資料來源：/api/timestamps + /api/snapshot?timestamp=（data/snapshot.py
+   共用資料層）。時間軸樣式比照戰情室原型設計稿（滑桿＋倍速
    播放），切換時間點時沿用既有的 renderTrafficKPI / renderTrafficAlerts /
    renderTrafficMap，不用另開頁面。 */
 let timelineTimestamps = [];
@@ -433,6 +439,7 @@ function renderTrafficKPI(summary) {
 
   const segCount = summary.a_count + summary.b_count;
   document.getElementById('ks-seg-value').textContent = segCount;
+  document.getElementById('ks-seg-total').textContent = `/ ${summary.total}`;
   const segDelta = document.getElementById('ks-seg-delta');
   segDelta.textContent = segCount > 0 ? '需留意' : '全線正常';
   segDelta.className = 'ks-delta ' + (segCount > 0 ? 'up' : 'down');
@@ -530,28 +537,13 @@ function renderModule5AlertCard() {
 
 function renderTrafficMap(segments) {
   const colorMap = { A: '#f27a84', B: '#eab85c', OK: '#85d99a' };
-  // 路段座標（15 條互相共用端點，組成連通網格，比舊版各自亂點的座標更接近真實路網外觀；
-  // 座標來源沿用 feature/module-2-incident-response 分支的 961071c 調整結果）
-  const roadCoords = {
-    'RD_TPE_001': [[25.0418, 121.5530], [25.0418, 121.5680]],
-    'RD_TPE_002': [[25.0460, 121.5575], [25.0330, 121.5575]],
-    'RD_TPE_003': [[25.0418, 121.5680], [25.0295, 121.5680]],
-    'RD_TPE_004': [[25.0460, 121.5480], [25.0460, 121.5575]],
-    'RD_TPE_005': [[25.0330, 121.5480], [25.0330, 121.5680]],
-    'RD_TPE_006': [[25.0460, 121.5480], [25.0330, 121.5480]],
-    'RD_TPE_007': [[25.0380, 121.5650], [25.0380, 121.5750]],
-    'RD_TPE_008': [[25.0418, 121.5530], [25.0330, 121.5530]],
-    'RD_TPE_009': [[25.0418, 121.5690], [25.0370, 121.5690]],
-    'RD_TPE_010': [[25.0380, 121.5750], [25.0310, 121.5750]],
-    'RD_TPE_011': [[25.0340, 121.5650], [25.0340, 121.5770]],
-    'RD_TPE_012': [[25.0330, 121.5480], [25.0250, 121.5480]],
-    'RD_TPE_013': [[25.0295, 121.5650], [25.0295, 121.5770]],
-    'RD_TPE_014': [[25.0380, 121.5770], [25.0295, 121.5770]],
-    'RD_TPE_015': [[25.0460, 121.5430], [25.0418, 121.5430]],
-  };
   segments.forEach(s => {
-    const pts = roadCoords[s.Segment_ID];
-    if (!pts) return;
+    const pts = ROAD_COORDS[s.Segment_ID];
+    if (!pts) {
+      console.warn(`[地圖] 路段 ${s.Segment_ID}（${s.Road_Name}）沒有座標資料，不會顯示在地圖上。` +
+        '請在 warroom/data_source/road_coords.json 的 "segments" 補上，或執行 scripts/fetch_road_coords.py。');
+      return;
+    }
     const color = colorMap[s.level] || '#85d99a';
     if (roadPolylines[s.Segment_ID]) {
       roadPolylines[s.Segment_ID].setStyle({ color });
@@ -687,17 +679,13 @@ document.querySelectorAll('.tab').forEach(btn => {
 /* ── Drawer (Module 4) ────────────────────────────────────────────────────────
    SOP-1 直接查 /api/traffic；SOP-2/SOP-5 則讀最近一次事件注入後的真實 decisions。 */
 function openDrawer(type) {
-  document.getElementById('drawer').classList.add('open');
-  const backdrop = document.getElementById('drawer-backdrop');
-  backdrop.classList.remove('hidden');
-  backdrop.classList.add('open');
+  document.getElementById('drawer').classList.remove('hidden');
+  document.getElementById('drawer-backdrop').classList.remove('hidden');
   renderDrawerContent(type);
 }
 function closeDrawer() {
-  document.getElementById('drawer').classList.remove('open');
-  const backdrop = document.getElementById('drawer-backdrop');
-  backdrop.classList.remove('open');
-  backdrop.classList.add('hidden');
+  document.getElementById('drawer').classList.add('hidden');
+  document.getElementById('drawer-backdrop').classList.add('hidden');
 }
 
 async function renderDrawerContent(type) {

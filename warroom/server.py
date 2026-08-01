@@ -29,9 +29,9 @@ app.include_router(traffic.router,   prefix="/api/traffic",   tags=["Traffic (M1
 app.include_router(incidents.router, prefix="/api/incidents",  tags=["Incidents (M2)"])
 app.include_router(advisor.router,   prefix="/api/advisor",   tags=["Advisor (M3)"])
 app.include_router(reasoning.router, prefix="/api/reasoning", tags=["Reasoning (M4)"])
-# module-1-dynamicTS 動態時序儀表板：路徑沿用原本 module1_dashboard/frontend
-# 的呼叫慣例（/api/timestamps、/api/snapshot、/api/history、/api/dashboard），
-# 不掛在 /api/traffic 下，避免與既有 M1 前端呼叫的 /api/traffic/* 衝突。
+# module-1-dynamicTS 動態時序儀表板：呼叫慣例為 /api/timestamps、/api/snapshot、
+# /api/history、/api/dashboard，不掛在 /api/traffic 下，避免與既有 M1 前端
+# 呼叫的 /api/traffic/* 衝突。
 app.include_router(module1.router,   prefix="/api",           tags=["Module1 (Dynamic Dashboard)"])
 
 # ── 路徑 ──────────────────────────────────────────────────────────────────
