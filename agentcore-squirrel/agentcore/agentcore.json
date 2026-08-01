@@ -7,57 +7,22 @@
     "agentcore:created-by": "agentcore-cli",
     "agentcore:project-name": "SquirrelAdvisor"
   },
-  "runtimes": [
-    {
-      "name": "SquirrelAdvisor",
-      "build": "CodeZip",
-      "entrypoint": "main.py",
-      "codeLocation": "app/SquirrelAdvisor/",
-      "runtimeVersion": "PYTHON_3_14",
-      "networkMode": "PUBLIC",
-      "protocol": "HTTP"
-    }
-  ],
-  "memories": [
-    {
-      "name": "CommanderMemory",
-      "eventExpiryDuration": 30,
-      "strategies": [
-        {
-          "type": "SEMANTIC",
-          "namespaceTemplates": [
-            "/users/{actorId}/facts"
-          ]
-        },
-        {
-          "type": "SUMMARIZATION",
-          "namespaceTemplates": [
-            "/summaries/{actorId}/{sessionId}"
-          ]
-        }
-      ]
-    }
-  ],
+  "runtimes": [],
+  "memories": [],
   "knowledgeBases": [],
   "credentials": [],
   "evaluators": [],
-  "onlineEvalConfigs": [
-    {
-      "name": "QualityMonitor",
-      "agent": "SquirrelAdvisor",
-      "evaluators": [
-        "Builtin.GoalSuccessRate",
-        "Builtin.Correctness"
-      ],
-      "samplingRate": 100,
-      "enableOnCreate": true
-    }
-  ],
+  "onlineEvalConfigs": [],
   "agentCoreGateways": [],
   "policyEngines": [],
   "configBundles": [],
   "abTests": [],
-  "harnesses": [],
+  "harnesses": [
+    {
+      "name": "SquirrelAdvisor",
+      "path": "app/SquirrelAdvisor"
+    }
+  ],
   "datasets": [],
   "payments": []
 }
