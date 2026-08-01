@@ -1612,8 +1612,8 @@ function renderIncidentDecisionsOnDashboard(event, decisions) {
     // 只顯示一行重點
     if (d.sop_clause === 'SOP-2') {
       if (d.primary_route) bodyHtml += `<br>疏散 → ${escapeHtml(d.primary_route_name || d.primary_route)}`;
-    } else if (d.sop_clause === 'SOP-5' && d.ete_minutes) {
-      bodyHtml += `<br>ETE <span class="mono">${d.ete_minutes} min</span> · 人工指揮派遣`;
+    } else if (d.sop_clause === 'SOP-5') {
+      bodyHtml += `<br>人工指揮派遣`;
     } else if (d.sop_clause === 'SOP-1') {
       const shortBasis = d.basis.split('（')[0] || d.basis;
       bodyHtml += `<br>${escapeHtml(shortBasis)}`;
@@ -1628,7 +1628,7 @@ function renderIncidentDecisionsOnDashboard(event, decisions) {
       <div class="alert-card ${sopClass} injected-alert">
         <div class="alert-hdr">
           <span class="alert-tag ${tagBg}">${d.sop_clause || '事件'} ${escapeHtml(d.clause_name || '')}</span>
-          ${d.ete_minutes && d.sop_clause !== 'SOP-2' ? `<span class="ete-badge mono">ETE ${d.ete_minutes} min</span>` : ''}
+          ${d.ete_minutes && d.sop_clause !== 'SOP-2' && d.sop_clause !== 'SOP-5' ? `<span class="ete-badge mono">ETE ${d.ete_minutes} min</span>` : ''}
           <span class="mono">${timeStr}</span>
         </div>
         <div class="alert-body">${bodyHtml}</div>
