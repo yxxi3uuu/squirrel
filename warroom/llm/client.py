@@ -14,7 +14,7 @@ import os
 import urllib.request
 from typing import List, Optional
 
-LLM_MODE = os.environ.get("LLM_MODE", "ollama")
+LLM_MODE = os.environ.get("LLM_MODE", "bedrock")
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:7b")
 BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")

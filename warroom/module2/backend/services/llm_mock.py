@@ -20,7 +20,7 @@ from shared.schemas import TriggerDecision
 logger = logging.getLogger(__name__)
 
 # ── LLM 模式設定 ──────────────────────────────────────────────────────────────
-LLM_MODE: str = os.getenv("LLM_MODE", "ollama")
+LLM_MODE: str = os.getenv("LLM_MODE", "bedrock")
 OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
 OLLAMA_TIMEOUT: float = float(os.getenv("OLLAMA_TIMEOUT", "30"))
