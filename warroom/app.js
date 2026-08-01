@@ -1084,7 +1084,7 @@ async function m5Generate() {
     document.getElementById('m5-btn-publish').disabled = false;
     if (data.source === 'mock') {
       document.getElementById('m5-sop-banner').insertAdjacentHTML('beforeend',
-        `<div class="card-yellow" style="margin-top:8px">Ollama 未連線，目前顯示為預設模板文字（${data.ollama_status?.message || ''}）</div>`);
+        `<div class="card-yellow" style="margin-top:8px">LLM 未連線，目前顯示為預設模板文字（${data.llm_status?.message || ''}）</div>`);
     }
   } catch (e) {
     alert('生成失敗：' + e.message);
