@@ -76,6 +76,13 @@ body {
   transition: opacity .15s;
 }
 .btn-import-incident:hover { opacity: .85; }
+.btn-advisory-nav {
+  background: rgba(126,200,188,.15); color: var(--accent); border: 1.5px solid var(--accent); border-radius: 6px;
+  padding: 5px 14px; font-size: .82rem; font-weight: 600; cursor: pointer;
+  transition: opacity .15s, transform .15s;
+}
+.btn-advisory-nav:hover { opacity: .85; transform: scale(1.03); }
+.btn-advisory-nav.hidden { display: none; }
 
 /* ── Main（固定版面，不做整頁捲動，捲動交給各面板自己的清單）──────────────── */
 #main { padding: 18px 22px; flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
@@ -862,6 +869,7 @@ footer { text-align: center; padding: 20px; color: var(--text-dim); font-size: .
 
 /* ══ Incident Modal ═══════════════════════════════════════════════════════════ */
 .incident-modal { max-width: 960px; }
+.incident-modal.incident-modal-compact { max-width: 560px; }
 .incident-modal .modal-body { padding: 18px 20px 22px; overflow-y: auto; max-height: 75vh; }
 .incident-modal .grid-2 { display: grid; grid-template-columns: 2fr 3fr; gap: 18px; }
 @media (max-width: 820px) { .incident-modal .grid-2 { grid-template-columns: 1fr; } }
@@ -952,3 +960,107 @@ footer { text-align: center; padding: 20px; color: var(--text-dim); font-size: .
   font-size: .88rem; font-weight: 650; color: var(--safe);
 }
 .publish-confirm-icon { font-size: 1.2rem; }
+
+
+/* ══ Compact Incident Modal (no right panel) ══════════════════════════════════ */
+.incident-modal-compact { max-width: 560px; }
+.incident-modal-compact .modal-body { padding: 18px 20px 22px; overflow-y: auto; max-height: 75vh; }
+
+/* ══ Inject Result Notification Modal ═════════════════════════════════════════ */
+.inject-result-modal { max-width: 440px; text-align: center; }
+.inject-result-modal .modal-body { padding: 24px 28px; }
+.inject-result-success, .inject-result-fail {
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+}
+.inject-result-icon {
+  width: 56px; height: 56px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 28px; font-weight: 900;
+  background: rgba(133,217,154,.15); color: var(--safe);
+  border: 2px solid var(--safe);
+}
+.inject-result-icon.fail {
+  background: rgba(242,122,132,.15); color: var(--critical);
+  border-color: var(--critical);
+}
+.inject-result-detail { text-align: center; }
+.inject-result-detail p { margin: 4px 0; }
+
+/* ══ Dashboard Injected Alert Cards ═══════════════════════════════════════════ */
+.alert-card.injected-alert {
+  border-left: 3px solid var(--sop2, #dd8fae);
+  animation: injectedSlideIn .4s ease-out;
+}
+.alert-card.sop2.injected-alert { border-left-color: var(--sop2, #dd8fae); }
+.alert-card.sop5.injected-alert { border-left-color: var(--caution, #eab85c); }
+.alert-card.sop1.injected-alert { border-left-color: var(--critical, #f27a84); }
+@keyframes injectedSlideIn {
+  from { opacity: 0; transform: translateY(-12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.cms-display {
+  margin-top: 6px; padding: 6px 10px;
+  background: rgba(126,200,188,.08); border: 1px solid rgba(126,200,188,.25);
+  border-radius: 6px; font-size: .82rem; line-height: 1.5;
+}
+.action-list.compact { margin: 6px 0 0; padding-left: 16px; font-size: .8rem; }
+.action-list.compact li { margin-bottom: 3px; }
+
+.excluded-summary { margin-top: 6px; font-size: .78rem; color: var(--text-dim); }
+.excluded-summary summary { cursor: pointer; font-weight: 600; }
+.excluded-row-compact { margin: 3px 0 3px 8px; font-size: .75rem; line-height: 1.4; }
+
+/* ══ Map Incident Markers ═════════════════════════════════════════════════════ */
+.incident-map-marker { background: none; border: none; }
+.incident-marker-pulse {
+  width: 36px; height: 36px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(255,34,68,.2);
+  animation: incidentPulse 1.5s ease-in-out infinite;
+  box-shadow: 0 0 12px var(--pulse-color, #ff2244);
+}
+.incident-marker-icon { font-size: 20px; }
+
+@keyframes incidentPulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 8px var(--pulse-color, #ff2244); }
+  50% { transform: scale(1.25); box-shadow: 0 0 20px var(--pulse-color, #ff2244), 0 0 40px var(--pulse-color, #ff2244); }
+}
+
+/* Road segment blink animation for incidents */
+.road-incident-blink {
+  animation: roadBlink 1.2s ease-in-out infinite;
+  filter: drop-shadow(0 0 6px #ff2244);
+}
+@keyframes roadBlink {
+  0%, 100% { stroke-opacity: 1; filter: drop-shadow(0 0 4px #ff2244); }
+  50% { stroke-opacity: 0.45; filter: drop-shadow(0 0 10px #ff6644); }
+}
+
+/* Incident popup styling */
+.incident-popup-container {
+  z-index: 10000 !important;
+}
+.incident-popup-container .leaflet-popup-content-wrapper {
+  background: var(--panel, #141c26); border: 1px solid var(--border, #2a3545);
+  border-radius: 10px; color: var(--text, #f2f5f9);
+  z-index: 10000;
+}
+.incident-popup-container .leaflet-popup-tip { background: var(--panel, #141c26); }
+.incident-popup { font-family: var(--font-body, 'Noto Sans TC', sans-serif); font-size: .82rem; line-height: 1.6; }
+.incident-popup-title { font-size: 1rem; font-weight: 700; margin-bottom: 8px; }
+.incident-popup-row { margin: 3px 0; }
+.incident-popup-row b { display: inline-block; width: 60px; color: var(--text-dim, #9aa8ba); }
+.incident-popup-cms {
+  margin-top: 8px; padding: 6px 8px;
+  background: rgba(126,200,188,.1); border-radius: 4px;
+  font-size: .78rem;
+}
+.incident-popup-desc {
+  margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border, #2a3545);
+  font-size: .78rem; color: var(--text-dim, #9aa8ba);
+}
+.severity-critical { color: #ff2244; font-weight: 700; }
+.severity-high { color: #f27a84; font-weight: 600; }
+.severity-medium { color: #eab85c; }
+.severity-low { color: var(--text-dim); }

@@ -21,6 +21,7 @@
   </nav>
   <div class="top-right">
     <button class="btn-import-incident" id="import-incident-btn" onclick="openIncidentModal()">匯入事件</button>
+    <button class="btn-advisory-nav hidden" id="advisory-nav-btn" onclick="openAdvisoryModal()">產出建議書</button>
     <button class="bell" id="bell-btn">🔔</button>
   </div>
 </header>
@@ -272,82 +273,47 @@
 
 <!-- ══ OVERLAY: 事件處置 Modal ═══════════════════════════════════════════ -->
 <div id="incident-modal-overlay" class="modal-overlay hidden" onclick="if(event.target===this) closeIncidentModal();">
-  <div class="modal incident-modal">
+  <div class="modal incident-modal incident-modal-compact">
     <div class="modal-head">
       <div class="modal-eyebrow">Module 2 · 事件處置</div>
       <h4>匯入事件</h4>
       <button class="drawer-close modal-close" onclick="closeIncidentModal()">✕</button>
     </div>
     <div class="modal-body" id="incident-modal-body">
-      <div class="grid-2">
-        <div class="panel">
-          <h3>事件注入</h3>
-          <div class="inject-tabs">
-            <button class="inject-tab active" data-inject-panel="scenario" onclick="switchInjectPanel('scenario')">情境事件</button>
-            <button class="inject-tab" data-inject-panel="custom" onclick="switchInjectPanel('custom')">自訂事件</button>
-            <button class="inject-tab" data-inject-panel="import" onclick="switchInjectPanel('import')">匯入 JSON</button>
+      <div class="panel">
+        <div class="inject-tabs">
+          <button class="inject-tab active" data-inject-panel="scenario" onclick="switchInjectPanel('scenario')">情境事件</button>
+          <button class="inject-tab" data-inject-panel="custom" onclick="switchInjectPanel('custom')">自訂事件</button>
+          <button class="inject-tab" data-inject-panel="import" onclick="switchInjectPanel('import')">匯入 JSON</button>
+        </div>
+        <div class="scenario-list" id="scenario-list">
+          <div class="scenario-item" onclick="injectIncident()">
+            <b>TPE_2026_ACC_001</b> — 路面塌陷<br>
+            <span class="mono">RD_TPE_001 · severity: Critical · Closed</span>
           </div>
-          <div class="scenario-list" id="scenario-list">
-            <div class="scenario-item" onclick="injectIncident()">
-              <b>TPE_2026_ACC_001</b> — 路面塌陷<br>
-              <span class="mono">RD_TPE_001 · severity: Critical · Closed</span>
-            </div>
-            <div class="scenario-item">
-              <b>TPE_2026_EVT_003</b> — 號誌故障<br>
-              <span class="mono">RD_TPE_002 · severity: High · Restricted</span>
-            </div>
+          <div class="scenario-item">
+            <b>TPE_2026_EVT_003</b> — 號誌故障<br>
+            <span class="mono">RD_TPE_002 · severity: High · Restricted</span>
           </div>
-          <form id="custom-incident-form" class="custom-incident-form hidden" onsubmit="submitCustomIncident(event)">
-            <div class="form-row stacked">
-              <label for="custom-event-id">事件 ID</label>
-              <input id="custom-event-id" type="text" placeholder="CUSTOM_001">
-            </div>
-            <div class="form-row stacked">
-              <label for="custom-type">事件類型</label>
-              <select id="custom-type">
-                <option value="Road_Collapse_Accident">道路事故 / 路障</option>
-                <option value="Power_Failure">號誌故障</option>
-                <option value="Crowd_Surge_Injury">人潮推擠 / 站點事件</option>
-              </select>
-            </div>
-            <div class="form-row stacked">
-              <label for="custom-segment">目標路段或站點 ID</label>
-              <select id="custom-segment">
-                <option value="">— 請選擇 —</option>
-                <optgroup label="道路路段">
-                  <option value="RD_TPE_001">RD_TPE_001 — 忠孝東路四段</option>
-                  <option value="RD_TPE_002">RD_TPE_002 — 光復南路</option>
-                  <option value="RD_TPE_003">RD_TPE_003 — 基隆路一段</option>
-                  <option value="RD_TPE_004">RD_TPE_004 — 市民大道四段</option>
-                  <option value="RD_TPE_005">RD_TPE_005 — 仁愛路四段</option>
-                  <option value="RD_TPE_006">RD_TPE_006 — 敦化南路一段</option>
-                  <option value="RD_TPE_007">RD_TPE_007 — 松高路</option>
-                  <option value="RD_TPE_008">RD_TPE_008 — 延吉街</option>
-                  <option value="RD_TPE_009">RD_TPE_009 — 基隆路地下道</option>
-                  <option value="RD_TPE_010">RD_TPE_010 — 市府路</option>
-                  <option value="RD_TPE_011">RD_TPE_011 — 松壽路</option>
-                  <option value="RD_TPE_012">RD_TPE_012 — 敦化南路二段</option>
-                  <option value="RD_TPE_013">RD_TPE_013 — 信義路五段</option>
-                  <option value="RD_TPE_014">RD_TPE_014 — 松智路</option>
-                  <option value="RD_TPE_015">RD_TPE_015 — 復興南路一段</option>
-                </optgroup>
-                <optgroup label="基地台 / 站點">
-                  <option value="BS_TPE_DOME">BS_TPE_DOME — 大巨蛋場館內</option>
-                  <option value="BS_MRT_BL17">BS_MRT_BL17 — 捷運國父紀念館站</option>
-                  <option value="BS_SS_PARK">BS_SS_PARK — 松山文創園區</option>
-                  <option value="BS_MRT_BL16">BS_MRT_BL16 — 捷運忠孝敦化站</option>
-                  <option value="BS_XY_VIESHOW">BS_XY_VIESHOW — 信義威秀商圈</option>
-                  <option value="BS_TPE_101">BS_TPE_101 — 台北101廣場</option>
-                  <option value="BS_BUS_TERM">BS_BUS_TERM — 市府轉運站</option>
-                  <option value="BS_XY_ATT">BS_XY_ATT — ATT4FUN周邊</option>
-                  <option value="BS_MRT_BL18">BS_MRT_BL18 — 捷運市政府站</option>
-                </optgroup>
-              </select>
-            </div>
-            <div class="form-row stacked">
-              <label for="custom-affected-road">受影響道路（選填）</label>
-              <select id="custom-affected-road">
-                <option value="">— 不指定 —</option>
+        </div>
+        <form id="custom-incident-form" class="custom-incident-form hidden" onsubmit="submitCustomIncident(event)">
+          <div class="form-row stacked">
+            <label for="custom-event-id">事件 ID</label>
+            <input id="custom-event-id" type="text" placeholder="CUSTOM_001">
+          </div>
+          <div class="form-row stacked">
+            <label for="custom-type">事件類型</label>
+            <select id="custom-type">
+              <option value="Road_Collapse_Accident">道路事故 / 路障</option>
+              <option value="Power_Failure">號誌故障</option>
+              <option value="Crowd_Surge_Injury">人潮推擠 / 站點事件</option>
+            </select>
+          </div>
+          <div class="form-row stacked">
+            <label for="custom-segment">目標路段或站點 ID</label>
+            <select id="custom-segment">
+              <option value="">— 請選擇 —</option>
+              <optgroup label="道路路段">
                 <option value="RD_TPE_001">RD_TPE_001 — 忠孝東路四段</option>
                 <option value="RD_TPE_002">RD_TPE_002 — 光復南路</option>
                 <option value="RD_TPE_003">RD_TPE_003 — 基隆路一段</option>
@@ -363,62 +329,100 @@
                 <option value="RD_TPE_013">RD_TPE_013 — 信義路五段</option>
                 <option value="RD_TPE_014">RD_TPE_014 — 松智路</option>
                 <option value="RD_TPE_015">RD_TPE_015 — 復興南路一段</option>
+              </optgroup>
+              <optgroup label="基地台 / 站點">
+                <option value="BS_TPE_DOME">BS_TPE_DOME — 大巨蛋場館內</option>
+                <option value="BS_MRT_BL17">BS_MRT_BL17 — 捷運國父紀念館站</option>
+                <option value="BS_SS_PARK">BS_SS_PARK — 松山文創園區</option>
+                <option value="BS_MRT_BL16">BS_MRT_BL16 — 捷運忠孝敦化站</option>
+                <option value="BS_XY_VIESHOW">BS_XY_VIESHOW — 信義威秀商圈</option>
+                <option value="BS_TPE_101">BS_TPE_101 — 台北101廣場</option>
+                <option value="BS_BUS_TERM">BS_BUS_TERM — 市府轉運站</option>
+                <option value="BS_XY_ATT">BS_XY_ATT — ATT4FUN周邊</option>
+                <option value="BS_MRT_BL18">BS_MRT_BL18 — 捷運市政府站</option>
+              </optgroup>
+            </select>
+          </div>
+          <div class="form-row stacked">
+            <label for="custom-affected-road">受影響道路（選填）</label>
+            <select id="custom-affected-road">
+              <option value="">— 不指定 —</option>
+              <option value="RD_TPE_001">RD_TPE_001 — 忠孝東路四段</option>
+              <option value="RD_TPE_002">RD_TPE_002 — 光復南路</option>
+              <option value="RD_TPE_003">RD_TPE_003 — 基隆路一段</option>
+              <option value="RD_TPE_004">RD_TPE_004 — 市民大道四段</option>
+              <option value="RD_TPE_005">RD_TPE_005 — 仁愛路四段</option>
+              <option value="RD_TPE_006">RD_TPE_006 — 敦化南路一段</option>
+              <option value="RD_TPE_007">RD_TPE_007 — 松高路</option>
+              <option value="RD_TPE_008">RD_TPE_008 — 延吉街</option>
+              <option value="RD_TPE_009">RD_TPE_009 — 基隆路地下道</option>
+              <option value="RD_TPE_010">RD_TPE_010 — 市府路</option>
+              <option value="RD_TPE_011">RD_TPE_011 — 松壽路</option>
+              <option value="RD_TPE_012">RD_TPE_012 — 敦化南路二段</option>
+              <option value="RD_TPE_013">RD_TPE_013 — 信義路五段</option>
+              <option value="RD_TPE_014">RD_TPE_014 — 松智路</option>
+              <option value="RD_TPE_015">RD_TPE_015 — 復興南路一段</option>
+            </select>
+          </div>
+          <div class="form-grid-2">
+            <div class="form-row stacked">
+              <label for="custom-severity">嚴重度</label>
+              <select id="custom-severity">
+                <option>Critical</option>
+                <option>High</option>
+                <option selected>Medium</option>
+                <option>Low</option>
               </select>
             </div>
-            <div class="form-grid-2">
-              <div class="form-row stacked">
-                <label for="custom-severity">嚴重度</label>
-                <select id="custom-severity">
-                  <option>Critical</option>
-                  <option>High</option>
-                  <option selected>Medium</option>
-                  <option>Low</option>
-                </select>
-              </div>
-              <div class="form-row stacked">
-                <label for="custom-status">狀態</label>
-                <select id="custom-status">
-                  <option>Closed</option>
-                  <option>Blocked</option>
-                  <option>Restricted</option>
-                  <option selected>Caution</option>
-                  <option>Open</option>
-                </select>
-              </div>
-            </div>
             <div class="form-row stacked">
-              <label for="custom-location">位置描述</label>
-              <input id="custom-location" type="text" placeholder="光復南路與忠孝東路口">
-            </div>
-            <div class="form-row stacked">
-              <label for="custom-description">事件描述</label>
-              <textarea id="custom-description" rows="3" placeholder="請輸入現場狀況，例如：號誌故障、路段封閉、人潮推擠"></textarea>
-            </div>
-            <button class="btn btn-primary" type="submit">注入自訂事件</button>
-          </form>
-          <div id="import-json-panel" class="import-json-panel hidden">
-            <p class="import-hint">上傳 JSON 檔案（陣列格式），每個物件會自動匯入為一筆事件。</p>
-            <div class="import-dropzone" id="import-dropzone">
-              <span class="import-dropzone-icon">📂</span>
-              <span class="import-dropzone-text">拖曳 JSON 檔至此，或點擊選取檔案</span>
-              <input type="file" id="import-file-input" accept=".json,application/json" hidden>
-            </div>
-            <div id="import-preview" class="import-preview hidden"></div>
-            <button class="btn btn-primary" id="import-submit-btn" disabled onclick="submitImportJson()">匯入事件</button>
-            <div id="import-result" class="import-result hidden"></div>
-          </div>
-        </div>
-        <div class="panel">
-          <h3>SOP 決策結果</h3>
-          <div id="decision-cards">
-            <div class="decision-card decision-muted">
-              <div class="decision-body">
-                <p>尚未注入事件。請從左側選擇情境事件，系統會即時計算 SOP-1 / SOP-2 / SOP-5 決策、替代路線與 ETE。</p>
-              </div>
+              <label for="custom-status">狀態</label>
+              <select id="custom-status">
+                <option>Closed</option>
+                <option>Blocked</option>
+                <option>Restricted</option>
+                <option selected>Caution</option>
+                <option>Open</option>
+              </select>
             </div>
           </div>
+          <div class="form-row stacked">
+            <label for="custom-location">位置描述</label>
+            <input id="custom-location" type="text" placeholder="光復南路與忠孝東路口">
+          </div>
+          <div class="form-row stacked">
+            <label for="custom-description">事件描述</label>
+            <textarea id="custom-description" rows="3" placeholder="請輸入現場狀況，例如：號誌故障、路段封閉、人潮推擠"></textarea>
+          </div>
+          <button class="btn btn-primary" type="submit">注入自訂事件</button>
+        </form>
+        <div id="import-json-panel" class="import-json-panel hidden">
+          <p class="import-hint">上傳 JSON 檔案（陣列格式），每個物件會自動匯入為一筆事件。</p>
+          <div class="import-dropzone" id="import-dropzone">
+            <span class="import-dropzone-icon">📂</span>
+            <span class="import-dropzone-text">拖曳 JSON 檔至此，或點擊選取檔案</span>
+            <input type="file" id="import-file-input" accept=".json,application/json" hidden>
+          </div>
+          <div id="import-preview" class="import-preview hidden"></div>
+          <button class="btn btn-primary" id="import-submit-btn" disabled onclick="submitImportJson()">匯入事件</button>
+          <div id="import-result" class="import-result hidden"></div>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ OVERLAY: 事件匯入結果通知 Modal ═══════════════════════════════════ -->
+<div id="inject-result-modal-overlay" class="modal-overlay hidden" onclick="if(event.target===this) closeInjectResultModal();">
+  <div class="modal inject-result-modal">
+    <div class="modal-head">
+      <div class="modal-eyebrow">事件匯入結果</div>
+      <h4 id="inject-result-title">匯入成功</h4>
+      <button class="drawer-close modal-close" onclick="closeInjectResultModal()">✕</button>
+    </div>
+    <div class="modal-body" id="inject-result-body">
+    </div>
+    <div class="modal-foot" style="text-align:center;padding:14px 20px">
+      <button class="btn btn-primary" onclick="closeInjectResultModal()">確定</button>
     </div>
   </div>
 </div>
