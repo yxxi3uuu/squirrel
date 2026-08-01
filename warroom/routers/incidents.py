@@ -16,6 +16,7 @@ from pydantic import BaseModel
 
 from warroom.module2.backend.services.sop_engine import process_incident as _engine_process_incident
 from warroom.module2.backend.services.llm_mock import generate_commander_summary
+from warroom.module1.backend.thresholds import evaluate_triggers as _m1_evaluate_triggers
 from shared.schemas import TriggerDecision
 
 router = APIRouter()
@@ -81,6 +82,8 @@ def inject_incident(req: InjectRequest):
     decisions = []
     for d in decisions_pydantic:
         d_dict = d.model_dump()
+        # 補充 commander_advice（從 _commander_advice 私有屬性取得）
+        d_dict["commander_advice"] = getattr(d, "_commander_advice", None)
         # 補充前端需要的 route name 欄位
         if d.primary_route and d.primary_route in snapshot["road_segments"]:
             d_dict["primary_route_name"] = snapshot["road_segments"][d.primary_route]["name"]
@@ -99,6 +102,9 @@ def inject_incident(req: InjectRequest):
         # 補充 ete_detail（前端 renderDecisionExplanation 使用）
         if d.ete_minutes is not None:
             d_dict["ete_detail"] = _build_ete_detail(new_event, d.primary_route, snapshot)
+        # 將 commander_advice 中的路段 ID 替換為人可讀名稱
+        if d_dict.get("commander_advice"):
+            _enrich_commander_advice(d_dict["commander_advice"], snapshot)
         decisions.append(d_dict)
 
     # 處理站點型事件（SOP-3 / SOP-6），這些在 sop_engine 不負責但前端需要
@@ -130,6 +136,10 @@ def inject_incident(req: InjectRequest):
         commander_summary_source = summary_result.get("_source", "mock")
 
     elapsed_ms = round((time.monotonic() - t0) * 1000, 2)
+
+    # 附上 Module 1 在該時間點的門檻觸發結果（SOP-1/3/4），讓前端建議書能直接使用
+    m1_triggers = _m1_evaluate_triggers(snapshot)
+
     return {
         "success": True,
         "event": new_event,
@@ -139,6 +149,7 @@ def inject_incident(req: InjectRequest):
         "processing_time_ms": elapsed_ms,
         "commander_summary": commander_summary,
         "commander_summary_source": commander_summary_source,
+        "m1_triggers": m1_triggers,
     }
 
 
@@ -370,3 +381,23 @@ def _optional_float(value: Optional[str]) -> Optional[float]:
     if value in (None, ""):
         return None
     return float(value)
+
+
+def _enrich_commander_advice(advice: dict[str, Any], snapshot: dict[str, Any]) -> None:
+    """將 commander_advice 中的路段 ID（RD_XXX）替換為人可讀的路段名稱。"""
+    import re
+    road_segments = snapshot.get("road_segments", {})
+    rd_pattern = re.compile(r"RD_\w+")
+
+    def _replace_ids(text: str) -> str:
+        def _sub(m):
+            sid = m.group(0)
+            seg = road_segments.get(sid)
+            return seg["name"] if seg else sid
+        return rd_pattern.sub(_sub, text)
+
+    if advice.get("summary"):
+        advice["summary"] = _replace_ids(advice["summary"])
+    for item in advice.get("actions") or []:
+        if item.get("value"):
+            item["value"] = _replace_ids(item["value"])
