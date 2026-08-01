@@ -3,6 +3,9 @@
 啟動：cd squirrel && uvicorn warroom.server:app --reload --port 8000
 瀏覽器開 http://localhost:8000
 """
+from dotenv import load_dotenv
+load_dotenv()  # 讀取 .env（LLM_MODE, BEDROCK_REGION 等）
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
