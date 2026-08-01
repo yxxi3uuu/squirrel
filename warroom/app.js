@@ -841,11 +841,13 @@ async function renderDrawerContent(type) {
   }
 
   // 其餘一律當成 SOP-1 壅塞分級的路段 ID 查詢
-  titleEl.textContent = '判斷依據 — 決策解釋鏈';
+  titleEl.textContent = '決策推理與解釋';
+  titleEl.style.cssText = 'display:flex;align-items:center;gap:10px;font-size:1rem;padding:8px 0 4px;';
+  titleEl.innerHTML = '<span style="width:3.5px;height:16px;border-radius:2px;background:var(--accent);flex:none"></span>決策推理與解釋';
   bodyEl.innerHTML = `<div class="spinner">載入決策分析…</div>`;
   const currentTs = timelineTimestamps[timelineIndex] || '2026-05-20 22:15';
   try {
-    const res = await fetch(`/api/reasoning/demo?timestamp=${encodeURIComponent(currentTs)}&event_id=TPE_2026_ACC_001`);
+    const res = await fetch(`/api/reasoning/demo?timestamp=${encodeURIComponent(currentTs)}`);
     if (!res.ok) throw new Error(await res.text());
     const record = await res.json();
     bodyEl.innerHTML = renderM4Inline(record);
@@ -872,7 +874,7 @@ async function renderDrawerContent(type) {
             <span class="step-lbl">SOP-1 分級</span> ${levelText}
           </div></div>
         </div>
-        <div class="card-yellow" style="margin-top:10px">模組四詳細分析載入失敗：${escapeHtml(e.message)}</div>`;
+        <div class="card-yellow" style="margin-top:10px">目前時間點尚無事件觸發，僅顯示 SOP-1 壅塞分級。</div>`;
     } catch (e2) {
       bodyEl.innerHTML = `<p>資料載入失敗：${escapeHtml(e2.message)}</p>`;
     }
@@ -1568,7 +1570,7 @@ async function loadM4DeepAnalysis(segmentId) {
     const record = await res.json();
     container.innerHTML = renderM4Inline(record);
   } catch (e) {
-    container.innerHTML = `<div class="card-yellow" style="margin-top:8px">模組四載入失敗：${escapeHtml(e.message)}</div>`;
+    container.innerHTML = `<div class="card-yellow" style="margin-top:8px">目前時間點尚無事件觸發，請將時間軸調至 22:10 之後查看完整決策分析。</div>`;
   }
 }
 
@@ -1621,6 +1623,8 @@ function renderM4Inline(record) {
     <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
       <button class="btn-explain" onclick="toggleM4Panel('m4-rel-panel')">可靠度</button>
       <button class="btn-explain" onclick="toggleM4Panel('m4-cf-panel'); runM4CF()">反事實</button>
+      <button class="btn-explain" onclick="toggleM4Panel('m4-forecast-panel'); runM4Forecast()">壅塞預測</button>
+      <button class="btn-explain" onclick="toggleM4Panel('m4-anomaly-panel'); runM4Anomaly()">異常偵測</button>
     </div>
 
     <div id="m4-rel-panel" class="hidden" style="margin-top:8px">
@@ -1631,6 +1635,12 @@ function renderM4Inline(record) {
     </div>
 
     <div id="m4-cf-panel" class="hidden" style="margin-top:8px">
+    </div>
+
+    <div id="m4-forecast-panel" class="hidden" style="margin-top:8px">
+    </div>
+
+    <div id="m4-anomaly-panel" class="hidden" style="margin-top:8px">
     </div>
   `;
 }
@@ -1695,7 +1705,7 @@ async function loadAiSummary(timestamp) {
   const sourceEl = document.getElementById('m4-summary-source');
   if (!textEl || !sourceEl) return;
   try {
-    const res = await fetch(`/api/reasoning/summary?timestamp=${encodeURIComponent(timestamp)}&event_id=TPE_2026_ACC_001`);
+    const res = await fetch(`/api/reasoning/summary?timestamp=${encodeURIComponent(timestamp)}`);
     if (!res.ok) return;
     const data = await res.json();
     textEl.textContent = data.summary;
@@ -2053,4 +2063,52 @@ function confirmPublish() {
   // Change badge to SENT
   const badge = body.querySelector('.publish-badge');
   if (badge) { badge.textContent = 'SENT'; badge.classList.add('sent'); }
+}
+
+
+async function runM4Forecast() {
+  const panel = document.getElementById('m4-forecast-panel');
+  if (!panel || panel.innerHTML.trim()) return;
+  panel.innerHTML = `<div class="spinner">預測中…</div>`;
+  try {
+    const ts = timelineTimestamps[timelineIndex] || '2026-05-20 22:15';
+    const res = await fetch(`/api/reasoning/forecast?timestamp=${encodeURIComponent(ts)}`);
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+    if (data.warnings && data.warnings.length) {
+      panel.innerHTML = data.warnings.map(w => `
+        <div class="formula-box align-left" style="margin-bottom:6px;border-left:3px solid var(--caution)">
+          <div style="font-weight:600;font-size:13px">${escapeHtml(w)}</div>
+        </div>
+      `).join('') + `<div style="font-size:11px;color:var(--text-dim);margin-top:6px">共 ${data.total_segments} 路段分析，${data.approaching_threshold} 條接近門檻</div>`;
+    } else {
+      panel.innerHTML = `<div class="card-yellow">目前所有路段趨勢穩定，無接近門檻預警。</div>`;
+    }
+  } catch (e) {
+    panel.innerHTML = `<div style="color:var(--critical)">壅塞預測失敗：${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function runM4Anomaly() {
+  const panel = document.getElementById('m4-anomaly-panel');
+  if (!panel || panel.innerHTML.trim()) return;
+  panel.innerHTML = `<div class="spinner">偵測中…</div>`;
+  try {
+    const ts = timelineTimestamps[timelineIndex] || '2026-05-20 22:15';
+    const res = await fetch(`/api/reasoning/anomaly?timestamp=${encodeURIComponent(ts)}`);
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+    if (data.alerts && data.alerts.length) {
+      panel.innerHTML = data.alerts.map(a => `
+        <div class="formula-box align-left" style="margin-bottom:6px;border-left:3px solid ${a.severity === 'critical' ? 'var(--critical)' : 'var(--caution)'}">
+          <div style="font-weight:600;font-size:13px">[${a.severity}] ${escapeHtml(a.segment_name)}</div>
+          <div style="font-size:12px;color:var(--text-dim);margin-top:4px">${escapeHtml(a.description)}</div>
+        </div>
+      `).join('') + `<div style="font-size:11px;color:var(--text-dim);margin-top:6px">共偵測到 ${data.anomaly_count} 個異常</div>`;
+    } else {
+      panel.innerHTML = `<div class="card-yellow">目前無資料異常。</div>`;
+    }
+  } catch (e) {
+    panel.innerHTML = `<div style="color:var(--critical)">異常偵測失敗：${escapeHtml(e.message)}</div>`;
+  }
 }

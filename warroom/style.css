@@ -396,11 +396,24 @@ body {
 }
 .drawer.hidden { transform: translateX(100%); opacity: 0; pointer-events: none; }
 .drawer-head {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 16px 20px; border-bottom: 1px solid var(--border);
+  display: flex; justify-content: space-between; align-items: flex-start;
+  padding: 20px 20px 14px; border-bottom: 1px solid var(--border);
+  position: relative;
 }
-.drawer-head h3 { font-family: var(--font-display); font-weight: 700; font-size: .95rem; color: var(--text); }
-.drawer-close { background: none; border: none; color: var(--text-dim); font-size: 1.2rem; cursor: pointer; }
+.drawer-head h3 {
+  font-family: var(--font-display); font-weight: 700; font-size: .8rem;
+  color: var(--text); letter-spacing: .2px;
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 0; margin-top: 4px;
+}
+.drawer-head h3::before {
+  content: ''; width: 3px; height: 14px; border-radius: 2px;
+  background: var(--accent); flex: none;
+}
+.drawer-close {
+  background: none; border: none; color: var(--text-dim); font-size: 1.2rem;
+  cursor: pointer; position: absolute; top: 12px; right: 16px;
+}
 .drawer-body { padding: 20px; overflow-y: auto; flex: 1; }
 .backdrop {
   position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 490;
