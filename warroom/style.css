@@ -137,6 +137,7 @@ body {
 .ks-value {
   font-family: var(--font-mono); font-size: 1.15rem; font-weight: 700;
   margin-top: 3px; display: flex; align-items: baseline; gap: 4px;
+  transition: color .3s ease;
 }
 .ks-unit { font-size: .64rem; color: var(--text-dim); font-family: 'Noto Sans TC', sans-serif; font-weight: 400; }
 .ks-delta { font-size: .64rem; color: var(--text-dim); margin-top: 2px; }
@@ -267,6 +268,8 @@ body {
 .alert-card.sop6 { border-color: var(--accent); background: rgba(116,179,168,.06); }
 .alert-card.sop4 { border-color: var(--caution); background: rgba(234,184,92,.08); }
 .alert-card.sop3 { border-color: var(--safe); background: rgba(133,217,154,.06); }
+.alert-card.sop3.cascade-active { border-color: var(--caution); background: rgba(234,184,92,.08); }
+.cascade-hint { font-size: .75rem; color: var(--caution); font-weight: 600; margin: 4px 0; }
 .alert-hdr { display: flex; justify-content: space-between; align-items: center; margin-bottom: 7px; }
 .alert-tag {
   font-family: var(--font-display); font-size: .64rem; font-weight: 700; padding: 2px 7px;

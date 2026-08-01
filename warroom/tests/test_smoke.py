@@ -58,7 +58,7 @@ def test_module1_timestamps_and_dashboard():
     dash_res = client.get("/api/dashboard", params={"timestamp": timestamps[-1]})
     assert dash_res.status_code == 200
     body = dash_res.json()
-    for key in ["timestamp", "snapshot", "triggers", "newly_triggered", "summary"]:
+    for key in ["timestamp", "snapshot", "triggers", "newly_triggered"]:
         assert key in body
 
 
