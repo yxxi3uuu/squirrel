@@ -12,7 +12,7 @@
 
 <!-- ══ TOP BAR ══════════════════════════════════════════════════════════════ -->
 <header id="topbar">
-  <div class="brand">
+  <div class="brand" id="brand-home" role="button" tabindex="0" aria-label="回到儀表板首頁">
     <span class="logo">🐿️</span>
     <span class="title">SQUIRREL 交通指揮中心</span>
   </div>
@@ -21,7 +21,6 @@
     <button class="tab" data-tab="incident">事件處置</button>
   </nav>
   <div class="top-right">
-    <span class="badge"><span class="status-dot pulse"></span>LLM 模式: Ollama</span>
     <button class="bell" id="bell-btn">🔔</button>
   </div>
 </header>
@@ -52,7 +51,7 @@
           </div>
           <div class="kpi-strip-card">
             <div class="ks-label">重點壅塞路段</div>
-            <div class="ks-value"><span id="ks-seg-value">--</span><span class="ks-unit">/ 15</span></div>
+            <div class="ks-value"><span id="ks-seg-value">--</span><span class="ks-unit" id="ks-seg-total">/ --</span></div>
             <div class="ks-delta" id="ks-seg-delta"></div>
           </div>
           <div class="kpi-strip-card">
@@ -283,7 +282,7 @@
 
 <!-- ══ OVERLAY: Module 4 Explanation Drawer ════════════════════════════════ -->
 <div id="drawer-backdrop" class="backdrop hidden" onclick="closeDrawer()"></div>
-<aside id="drawer" class="drawer">
+<aside id="drawer" class="drawer hidden"
   <div class="drawer-head">
     <h3 id="drawer-title">判斷依據 — 解釋鏈</h3>
     <button class="drawer-close" onclick="closeDrawer()">✕</button>
@@ -379,7 +378,12 @@
       </div>
       <div id="m5-sop-banner"></div>
       <button class="btn btn-primary" id="m5-btn-generate" onclick="m5Generate()">生成多語告警</button>
-      <div id="m5-spinner" class="spinner hidden">Ollama 推論中…</div>
+      <div id="m5-spinner" class="spinner hidden">
+        <div style="margin-bottom:8px">🤖 LLM 推論中… <span id="m5-progress-pct">0%</span></div>
+        <div style="width:100%;height:8px;background:#1e2a3a;border-radius:4px;overflow:hidden">
+          <div id="m5-progress-bar" style="width:0%;height:100%;background:var(--accent);border-radius:4px;transition:width .3s ease"></div>
+        </div>
+      </div>
       <div id="m5-editor" class="hidden">
         <p class="editor-title">警告文字（可編輯後發布）</p>
         <div id="m5-lang-tabs" class="lang-tabs"></div>

@@ -44,7 +44,9 @@ body {
   box-shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 10px 24px -18px rgba(0,0,0,.6);
   flex: none;
 }
-.brand { display: flex; align-items: center; gap: 10px; }
+.brand { display: flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
+.brand:hover .title { opacity: .8; }
+.brand:active .title { opacity: .6; }
 .brand .logo { font-size: 1.5rem; }
 .brand .title { font-family: var(--font-display); font-weight: 700; font-size: 1.1rem; letter-spacing: .3px; }
 .tabs { display: flex; gap: 4px; }
@@ -348,13 +350,13 @@ body {
 .drawer {
   position: fixed; top: 0; right: 0; width: 520px; max-width: 90vw; height: 100vh;
   background: var(--panel); border-left: 1px solid var(--border);
-  z-index: 500; transform: translateX(100%);
+  z-index: 500; transform: translateX(0);
   transition: transform .35s cubic-bezier(.4,0,.2,1), opacity .35s ease;
-  opacity: 0;
+  opacity: 1;
   display: flex; flex-direction: column;
   box-shadow: -8px 0 30px rgba(0,0,0,.5);
 }
-.drawer.open { transform: translateX(0); opacity: 1; }
+.drawer.hidden { transform: translateX(100%); opacity: 0; pointer-events: none; }
 .drawer-head {
   display: flex; justify-content: space-between; align-items: center;
   padding: 16px 20px; border-bottom: 1px solid var(--border);
@@ -362,8 +364,11 @@ body {
 .drawer-head h3 { font-family: var(--font-display); font-weight: 700; font-size: .95rem; color: var(--text); }
 .drawer-close { background: none; border: none; color: var(--text-dim); font-size: 1.2rem; cursor: pointer; }
 .drawer-body { padding: 20px; overflow-y: auto; flex: 1; }
-.backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 490; }
-.backdrop.hidden { display: none; }
+.backdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 490;
+  opacity: 1; transition: opacity .3s ease; pointer-events: auto;
+}
+.backdrop.hidden { opacity: 0; pointer-events: none; }
 
 /* Chain */
 .chain { display: flex; flex-direction: column; gap: 0; margin-bottom: 20px; }
@@ -677,7 +682,13 @@ select:focus { outline: none; border-color: var(--accent); }
 /* ── Map z-index fix（不擋 chat panel 和 drawer）── */
 .leaflet-control-container { z-index: 10 !important; }
 .leaflet-control-zoom { z-index: 10 !important; }
-.leaflet-control-attribution { z-index: 10 !important; }
+.leaflet-control-attribution {
+  z-index: 5 !important;
+  background: rgba(10,14,23,.55) !important;
+  opacity: .55;
+  font-size: .65rem;
+}
+.leaflet-control-attribution a { color: var(--text-dim) !important; }
 .leaflet-attribution-flag { display: none !important; }
 .leaflet-pane { z-index: 10 !important; }
 .leaflet-top, .leaflet-bottom { z-index: 10 !important; }

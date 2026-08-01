@@ -13,7 +13,7 @@ Ollama 是獨立應用程式，需自行下載安裝，不包含在 git repo 內
 
 安裝完成後下載模型：
 ```bash
-ollama pull qwen2.5:3b
+ollama pull qwen2.5:7b
 ```
 
 **2. 安裝 Python 套件**
@@ -40,5 +40,5 @@ streamlit run omn.py
 複製 `.env.example` 為 `.env` 並修改：
 ```
 OLLAMA_URL=http://localhost:11434
-OLLAMA_MODEL=qwen2.5:3b
+OLLAMA_MODEL=qwen2.5:7b
 ```

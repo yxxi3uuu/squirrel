@@ -57,11 +57,13 @@ Module 1 可自行產出「純門檻型」的 `TriggerDecision`（第 1/3 條，
   "entity_id": "BS_MRT_BL17",
   "entity_name": "捷運國父紀念館站",
   "basis": "User_Count 40,000 > 門檻 25,000",
-  "actions": ["過站不停", "調度接駁專車", "引導至 BS_MRT_BL18"],
+  "actions": [],
   "severity": "yellow",
   "timestamp": "2026-05-20 22:30"
 }
 ```
+
+`actions` 固定回傳空陣列：調度/引導等行動建議不是 Module 1 的職責（那是 Module 2 事件處置的範圍），Module 1 只做門檻判斷與預警提示。
 
 第 2/4/5/6/7 條**不**由 Module 1 產出 `TriggerDecision`；`live_incidents.json` 相關（第 2/5/7 條）完全交給 Module 2，Module 1 不讀取、不顯示事件。
 
@@ -78,3 +80,30 @@ Module 1 可自行產出「純門檻型」的 `TriggerDecision`（第 1/3 條，
 ## 7. 開放問題
 
 - 門檻「由未觸發變為觸發」比對，需要 Module 1 自行保存上一次快照狀態（非 shared 層職責），實作時另建本地 state。
+
+## 8. 資料量變動的應變措施
+
+比賽現場資料筆數/複雜度可能比目前測資（15 路段、9 站點、19 個時間點）更大，以下是各層目前對「資料變多」的耐受度，已經沒問題的不用改，真正的風險點列在後面：
+
+**已經沒問題，不用改：**
+- `data/snapshot.py`：`road_segments` / `stations` 都是照 `road_network_geometry.json` / CSV 裡實際有幾筆就處理幾筆，新增路段/站點只要加進原始資料檔即可，這層程式碼完全不用改。
+- `thresholds.py` 的 `evaluate_clause1`（SOP 第 1 條）：對 `road_segments` 逐一 for-loop 判斷，天然支援任意數量的路段。
+- 時間軸：`available_timestamps()` 動態讀取實際存在的時間點，UI 沒有假設固定間隔（見第 2 節），時間點變多/間隔變密都不用改。
+
+**風險點與應變：**
+
+1. **地圖座標是手動維護清單，新路段/站點不會自動出現在地圖上。**
+   `warroom/data_source/road_coords.json` 是獨立於官方資料的手動座標檔（官方的 `road_network_geometry.json` 本身沒有經緯度）。新增路段時：
+   - 先把新路段加進 `road_network_geometry.json`
+   - 執行 `python scripts/fetch_road_coords.py`，會自動用路名去查 OpenStreetMap 補座標（只補缺的，不動已有的）
+   - 新站點沒辦法自動查（不是 OSM 上有名字的地標），腳本會列出缺座標的站點 ID，需手動補概略經緯度
+   - 前端現在如果缺座標，會在 console 印警告（不會像之前一樣直接無聲消失不顯示）
+
+2. **SOP 第 3 條目前寫死只檢查單一站點 `BS_MRT_BL17`。**
+   `thresholds.py` 的 `evaluate_clause3` 是針對這一個站寫的，如果比賽資料之後新增其他捷運站也要套用同一條門檻規則，需要先決定規則範圍（例如所有 `BS_MRT_` 開頭的站都套用同一組門檻，還是維持白名單逐一列出），**這是業務邏輯決定，不是純技術問題**，建議賽前先跟隊友確認清楚再改，避免自己猜錯範圍。
+
+3. **`data/snapshot.py` 用 `@lru_cache(maxsize=1)` 快取整份原始檔，資料檔案被替換後不會自動重讀。**
+   如果比賽現場需要在不重啟 server 的情況下換資料檔，目前的作法是重啟 server（cache 會清空重讀）。現階段資料量小、比賽用固定測資，這樣已經夠用，先不做熱重載機制，真的需要再加。
+
+4. **前端不該再出現寫死的筆數/單位文字。**
+   已檢查過 KPI 卡片，目前只有「重點壅塞路段」的分母（原本寫死 `/ 15`）已經改成從 API 回傳的 `summary.total` 動態帶入；其餘 KPI 數值本來就是動態算的，沒有類似問題。之後新增 UI 元件時，同樣要避免把目前的筆數（15 條路段、9 個站點）當常數寫死。

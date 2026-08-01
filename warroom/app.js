@@ -6,23 +6,30 @@ let latestDecisions = [];
 let latestSnapshot = null;
 let latestIncident = null;
 
-// 9 個人流站點的概略座標（需要真實地標經緯度，這裡用近似座標，跟路段 roadCoords 同一套做法）
-const STATION_COORDS = {
-  BS_TPE_DOME:   [25.0453, 121.5570],
-  BS_MRT_BL17:   [25.0400, 121.5577],
-  BS_SS_PARK:    [25.0442, 121.5605],
-  BS_MRT_BL16:   [25.0418, 121.5490],
-  BS_XY_VIESHOW: [25.0335, 121.5677],
-  BS_TPE_101:    [25.0339, 121.5645],
-  BS_BUS_TERM:   [25.0375, 121.5677],
-  BS_XY_ATT:     [25.0322, 121.5665],
-  BS_MRT_BL18:   [25.0408, 121.5654],
-};
+// 路段／站點經緯度座標改由後端 /api/traffic/coords 載入（見 warroom/data_source/road_coords.json），
+// 不再寫死在前端，方便其他模組重用同一份資料、也不用改程式碼就能更新座標。
+let STATION_COORDS = {};
+let ROAD_COORDS = {};
 
-document.addEventListener('DOMContentLoaded', () => {
+async function loadRoadCoords() {
+  try {
+    const res = await fetch('/api/traffic/coords');
+    const data = await res.json();
+    STATION_COORDS = data.stations || {};
+    ROAD_COORDS = data.segments || {};
+  } catch (e) { console.error('路網座標載入失敗', e); }
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadRoadCoords();
   mapInstance = L.map('leaflet-map', { zoomControl: false }).setView([25.0370, 121.5625], 14.5);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(mapInstance);
   L.control.zoom({ position: 'topleft' }).addTo(mapInstance);
+  // L.circleMarker（站點）預設跟 L.polyline（路段）共用 overlayPane，疊放順序只看
+  // DOM 加入先後，而路段/站點是兩支獨立 API 非同步載入，順序不固定，導致站點有時
+  // 會被路段線蓋住點不到。開一個獨立、z-index 更高的 pane 讓站點永遠疊在路段上面。
+  mapInstance.createPane('stationPane');
+  mapInstance.getPane('stationPane').style.zIndex = 450;
   // 地圖高度改用 flex:1 撐滿面板剩餘空間（見 style.css .map-wrap），視窗尺寸變動時
   // 容器實際像素高度會跟著變，Leaflet 需要重新量測才不會顯示錯位/留白。
   window.addEventListener('resize', () => mapInstance.invalidateSize());
@@ -47,6 +54,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (row) showEntityHistory(row.dataset.entityId, row.dataset.entityName);
   });
   checkAdvisorStatus();
+  loadAdvisorAlerts();
 });
 
 /* ── 模組一：車流資料 ─────────────────────────────────────────────────────── */
@@ -84,7 +92,11 @@ async function loadBaseStationPanel(timestamp) {
 function renderStationMarkers(stations) {
   stations.forEach(s => {
     const coords = STATION_COORDS[s.station_id];
-    if (!coords) return;
+    if (!coords) {
+      console.warn(`[地圖] 站點 ${s.station_id}（${s.station_name}）沒有座標資料，不會顯示在地圖上。` +
+        '請在 warroom/data_source/road_coords.json 的 "stations" 補上，或執行 scripts/fetch_road_coords.py。');
+      return;
+    }
     const growthPct = ((s.growth_rate || 0) * 100).toFixed(0);
     const growthSign = s.growth_rate > 0 ? '+' : '';
     const roamingPct = ((s.roaming_rate || 0) * 100).toFixed(1);
@@ -97,6 +109,7 @@ function renderStationMarkers(stations) {
       stationMarkers[s.station_id].setTooltipContent(tooltipHtml);
     } else {
       const marker = L.circleMarker(coords, {
+        pane: 'stationPane',
         radius: 6, color: '#fff', weight: 1.5,
         fillColor: s.roaming_rate >= 0.30 ? '#f27a84' : '#7ec8bc',
         fillOpacity: 0.9,
@@ -125,8 +138,8 @@ function renderBaseStationPanel(stations) {
 }
 
 /* ── 模組一：動態時序（時間軸）─────────────────────────────────────────────
-   資料來源：/api/timestamps + /api/snapshot?timestamp=（module1_dashboard 的
-   data/snapshot.py 共用資料層）。時間軸樣式比照戰情室原型設計稿（滑桿＋倍速
+   資料來源：/api/timestamps + /api/snapshot?timestamp=（data/snapshot.py
+   共用資料層）。時間軸樣式比照戰情室原型設計稿（滑桿＋倍速
    播放），切換時間點時沿用既有的 renderTrafficKPI / renderTrafficAlerts /
    renderTrafficMap，不用另開頁面。 */
 let timelineTimestamps = [];
@@ -432,6 +445,7 @@ function renderTrafficKPI(summary) {
 
   const segCount = summary.a_count + summary.b_count;
   document.getElementById('ks-seg-value').textContent = segCount;
+  document.getElementById('ks-seg-total').textContent = `/ ${summary.total}`;
   const segDelta = document.getElementById('ks-seg-delta');
   segDelta.textContent = segCount > 0 ? '需留意' : '全線正常';
   segDelta.className = 'ks-delta ' + (segCount > 0 ? 'up' : 'down');
@@ -529,28 +543,13 @@ function renderModule5AlertCard() {
 
 function renderTrafficMap(segments) {
   const colorMap = { A: '#f27a84', B: '#eab85c', OK: '#85d99a' };
-  // 路段座標（15 條互相共用端點，組成連通網格，比舊版各自亂點的座標更接近真實路網外觀；
-  // 座標來源沿用 feature/module-2-incident-response 分支的 961071c 調整結果）
-  const roadCoords = {
-    'RD_TPE_001': [[25.0418, 121.5530], [25.0418, 121.5680]],
-    'RD_TPE_002': [[25.0460, 121.5575], [25.0330, 121.5575]],
-    'RD_TPE_003': [[25.0418, 121.5680], [25.0295, 121.5680]],
-    'RD_TPE_004': [[25.0460, 121.5480], [25.0460, 121.5575]],
-    'RD_TPE_005': [[25.0330, 121.5480], [25.0330, 121.5680]],
-    'RD_TPE_006': [[25.0460, 121.5480], [25.0330, 121.5480]],
-    'RD_TPE_007': [[25.0380, 121.5650], [25.0380, 121.5750]],
-    'RD_TPE_008': [[25.0418, 121.5530], [25.0330, 121.5530]],
-    'RD_TPE_009': [[25.0418, 121.5690], [25.0370, 121.5690]],
-    'RD_TPE_010': [[25.0380, 121.5750], [25.0310, 121.5750]],
-    'RD_TPE_011': [[25.0340, 121.5650], [25.0340, 121.5770]],
-    'RD_TPE_012': [[25.0330, 121.5480], [25.0250, 121.5480]],
-    'RD_TPE_013': [[25.0295, 121.5650], [25.0295, 121.5770]],
-    'RD_TPE_014': [[25.0380, 121.5770], [25.0295, 121.5770]],
-    'RD_TPE_015': [[25.0460, 121.5430], [25.0418, 121.5430]],
-  };
   segments.forEach(s => {
-    const pts = roadCoords[s.Segment_ID];
-    if (!pts) return;
+    const pts = ROAD_COORDS[s.Segment_ID];
+    if (!pts) {
+      console.warn(`[地圖] 路段 ${s.Segment_ID}（${s.Road_Name}）沒有座標資料，不會顯示在地圖上。` +
+        '請在 warroom/data_source/road_coords.json 的 "segments" 補上，或執行 scripts/fetch_road_coords.py。');
+      return;
+    }
     const color = colorMap[s.level] || '#85d99a';
     if (roadPolylines[s.Segment_ID]) {
       roadPolylines[s.Segment_ID].setStyle({ color });
@@ -683,20 +682,30 @@ document.querySelectorAll('.tab').forEach(btn => {
   });
 });
 
+/* ── Brand Home：點擊標題回到主儀表板 ─────────────────────────────────────── */
+document.getElementById('brand-home').addEventListener('click', () => {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelector('.tab[data-tab="dashboard"]').classList.add('active');
+  document.getElementById('panel-dashboard').classList.add('active');
+});
+document.getElementById('brand-home').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    document.getElementById('brand-home').click();
+  }
+});
+
 /* ── Drawer (Module 4) ────────────────────────────────────────────────────────
    SOP-1 直接查 /api/traffic；SOP-2/SOP-5 則讀最近一次事件注入後的真實 decisions。 */
 function openDrawer(type) {
-  document.getElementById('drawer').classList.add('open');
-  const backdrop = document.getElementById('drawer-backdrop');
-  backdrop.classList.remove('hidden');
-  backdrop.classList.add('open');
+  document.getElementById('drawer').classList.remove('hidden');
+  document.getElementById('drawer-backdrop').classList.remove('hidden');
   renderDrawerContent(type);
 }
 function closeDrawer() {
-  document.getElementById('drawer').classList.remove('open');
-  const backdrop = document.getElementById('drawer-backdrop');
-  backdrop.classList.remove('open');
-  backdrop.classList.add('hidden');
+  document.getElementById('drawer').classList.add('hidden');
+  document.getElementById('drawer-backdrop').classList.add('hidden');
 }
 
 async function renderDrawerContent(type) {
@@ -804,6 +813,26 @@ function renderDecisionExplanation(decision) {
 }
 
 /* ── Chat (Module 3) ──────────────────────────────────────────────────────── */
+let advisorHistory = [];  // 對話歷史，支援多輪追問
+
+// 主動預警：頁面載入時掃描數據
+async function loadAdvisorAlerts() {
+  try {
+    const res = await fetch('/api/advisor/alerts');
+    const data = await res.json();
+    if (data.alerts && data.alerts.length > 0) {
+      const box = document.getElementById('chat-messages');
+      if (box) {
+        const alertMsg = document.createElement('div');
+        alertMsg.className = 'msg ai';
+        alertMsg.innerHTML = '<div class="answer-lead">📊 主動預警掃描結果</div>' +
+          data.alerts.map(a => `<div class="advisor-action">${a.message}</div>`).join('');
+        box.appendChild(alertMsg);
+      }
+    }
+  } catch (e) { /* ignore */ }
+}
+
 const advisorRoadNames = [
   '忠孝東路四段', '光復南路', '基隆路一段', '市民大道四段', '仁愛路四段',
   '敦化南路一段', '松高路', '延吉街', '基隆路地下道', '市府路',
@@ -831,7 +860,7 @@ const advisorScenarioSets = {
 function toggleChat() {
   document.getElementById('chat-panel').classList.toggle('hidden');
   document.getElementById('chat-backdrop').classList.toggle('hidden');
-  // 首次開啟時檢查 Ollama 狀態
+  // 首次開啟時檢查目前 LLM 後端（Bedrock / Ollama / Mock）狀態
   if (!window._advisorStatusChecked) {
     window._advisorStatusChecked = true;
     checkAdvisorStatus();
@@ -844,9 +873,9 @@ async function checkAdvisorStatus() {
   try {
     const res = await fetch('/api/advisor/status');
     const data = await res.json();
-    if (data.mode === 'llm') {
+    if (data.ok) {
       dot.className = 'mode-dot mode-dot-llm';
-      text.textContent = 'LLM 模式 · Ollama 已連線';
+      text.textContent = data.message || `LLM 模式 · ${data.mode || 'ready'}`;
     } else {
       dot.className = 'mode-dot mode-dot-rules';
       text.textContent = data.message || '規則引擎 · 即時快照';
@@ -883,6 +912,8 @@ async function sendAdvisorMessage(forcedMessage) {
   if (!message) return;
   input.value = '';
   appendChatMessage('user', message);
+  // 記錄到對話歷史
+  advisorHistory.push({role: 'user', content: message});
   const pending = appendChatMessage('ai', '');
   pending.innerHTML = `<div class="sq-thinking">
     <div class="sq-track">
@@ -897,31 +928,34 @@ async function sendAdvisorMessage(forcedMessage) {
     </div>
     <span class="sq-label">Squirrel 正在檢索 SOP…</span>
   </div>`;
-  const startTime = Date.now();
   try {
     const res = await fetch('/api/advisor/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         message,
+        history: advisorHistory.slice(0, -1),
         current_event: latestIncident,
         current_decisions: latestDecisions,
       }),
     });
+    const startTime = Date.now();
     const data = await res.json();
-    // 確保松鼠至少跑 800ms 再顯示答案
+    // 松鼠至少跑 800ms
     const elapsed = Date.now() - startTime;
     if (elapsed < 800) await new Promise(r => setTimeout(r, 800 - elapsed));
     pending.innerHTML = formatAdvisorAnswer(data.answer);
+    // 記錄 AI 回答到歷史
+    advisorHistory.push({role: 'assistant', content: data.answer});
     // 更新模式指示
     const dot = document.getElementById('advisor-mode-dot');
     const text = document.getElementById('advisor-mode-text');
-    if (data.source === 'llm+rules') {
+    if (data.source === 'llm') {
       dot.className = 'mode-dot mode-dot-llm';
-      text.textContent = 'LLM 模式 · Ollama';
+      text.textContent = data.mode ? `LLM 模式 · ${data.mode}` : 'LLM 模式';
     } else {
-      dot.className = 'mode-dot mode-dot-rules';
-      text.textContent = '規則引擎 · 即時快照';
+      dot.className = 'mode-dot mode-dot-llm';
+      text.textContent = 'LLM + 規則引擎';
     }
   } catch (e) {
     pending.textContent = '顧問服務暫時無法回應：' + e.message;
@@ -1053,6 +1087,19 @@ async function m5Generate() {
   btn.classList.add('loading');
   btn.textContent = '🤖 推論中，請稍候…';
   document.getElementById('m5-spinner').classList.remove('hidden');
+
+  // 模擬進度條（漸慢曲線跑到 95%，收到結果後跳 100%）
+  let progress = 0;
+  const bar = document.getElementById('m5-progress-bar');
+  const pct = document.getElementById('m5-progress-pct');
+  const progressTimer = setInterval(() => {
+    if (progress < 95) {
+      progress += (95 - progress) * 0.04;
+      bar.style.width = progress.toFixed(0) + '%';
+      pct.textContent = progress.toFixed(0) + '%';
+    }
+  }, 500);
+
   try {
     const res = await fetch('/api/notify/generate', {
       method: 'POST',
@@ -1065,17 +1112,25 @@ async function m5Generate() {
       }),
     });
     const data = await res.json();
+    clearInterval(progressTimer);
+    bar.style.width = '100%';
+    pct.textContent = '100%';
     m5Alerts = data.alerts;
     m5RenderEditor(multi);
     document.getElementById('m5-btn-publish').disabled = false;
     if (data.source === 'mock') {
       document.getElementById('m5-sop-banner').insertAdjacentHTML('beforeend',
-        `<div class="card-yellow" style="margin-top:8px">Ollama 未連線，目前顯示為預設模板文字（${data.ollama_status?.message || ''}）</div>`);
+        `<div class="card-yellow" style="margin-top:8px">LLM 未連線，目前顯示為預設模板文字（${data.llm_status?.message || ''}）</div>`);
     }
   } catch (e) {
+    clearInterval(progressTimer);
     alert('生成失敗：' + e.message);
   } finally {
-    document.getElementById('m5-spinner').classList.add('hidden');
+    setTimeout(() => {
+      document.getElementById('m5-spinner').classList.add('hidden');
+      bar.style.width = '0%';
+      pct.textContent = '0%';
+    }, 600);
     btn.disabled = false;
     btn.classList.remove('loading');
     btn.textContent = '⚡ 生成多語告警';

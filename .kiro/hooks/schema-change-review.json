@@ -1,0 +1,15 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Schema 修改審查",
+      "trigger": "PreToolUse",
+      "description": "確保對 shared/schemas.py 的修改符合跨模組資料契約，不會破壞下游模組",
+      "matcher": "fs_write|str_replace",
+      "action": {
+        "type": "agent",
+        "prompt": "如果這次寫入/修改的檔案是 shared/schemas.py，請在執行前確認：1) 新增的欄位有設 Optional 或 default，避免破壞既有 API 回傳；2) 沒有移除其他模組正在使用的欄位；3) 使用 StrictBaseModel 且 extra='forbid'。如果不是 schemas.py 的修改，則跳過此檢查。"
+      }
+    }
+  ]
+}
