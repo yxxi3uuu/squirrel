@@ -8,6 +8,7 @@ let latestIncident = null;
 let latestDashboardTriggers = []; // Module 1 即時警報門檻觸發（SOP-1/3/4）
 let injectedTimelineData = {}; // { timestamp: { event, decisions, snapshot } }
 let currentM4Request = {};
+let crowdReasoningTrendTarget = null;
 
 // 路段／站點經緯度座標改由後端 /api/traffic/coords 載入（見 warroom/data_source/road_coords.json），
 // 不再寫死在前端，方便其他模組重用同一份資料、也不用改程式碼就能更新座標。
@@ -275,6 +276,12 @@ async function showEntityHistory(entityId, label) {
   document.getElementById('chart-toggle-btn').classList.remove('active');
   networkChartOpen = true;
   renderEntityChart();
+}
+
+function openTrendAndReasoning(entityId, label, reasoningType) {
+  crowdReasoningTrendTarget = { entityId, label };
+  closeChartPopup();
+  openDrawer(reasoningType);
 }
 
 function renderEntityChart() {
@@ -604,7 +611,7 @@ function renderSop3Card(dashboard) {
           ${sop3.basis}
           ${cascadeFromSop4 ? '<div class="cascade-hint">由 SOP-4 散場連動啟動</div>' : ''}
         </div>
-        <button class="btn-explain" onclick="showEntityHistory('${sop3.entity_id}', '${sop3.entity_name}')">查看歷史趨勢</button>
+        <button class="btn-explain" onclick="openTrendAndReasoning('${sop3.entity_id}', '${sop3.entity_name}', 'sop3')">趨勢與判斷依據</button>
       </div>`;
   }
   if (cascadeFromSop4) {
@@ -615,7 +622,7 @@ function renderSop3Card(dashboard) {
           <div class="cascade-hint">由 SOP-4 散場連動啟動</div>
           捷運國父紀念館站尚未達自身門檻，但大巨蛋散場已觸發，提前連動接駁分流機制
         </div>
-        <button class="btn-explain" onclick="showEntityHistory('BS_MRT_BL17', '捷運國父紀念館站')">查看歷史趨勢</button>
+        <button class="btn-explain" onclick="openTrendAndReasoning('BS_MRT_BL17', '捷運國父紀念館站', 'sop3')">趨勢與判斷依據</button>
       </div>`;
   }
   return `
@@ -638,7 +645,7 @@ function renderSop4Card(dashboard) {
           ${sop4.basis}
           ${cascade ? `<br><span class="mono caution-text">${cascade}</span>` : ''}
         </div>
-        <button class="btn-explain" onclick="showEntityHistory('${sop4.entity_id}', '${sop4.entity_name}')">查看歷史趨勢</button>
+        <button class="btn-explain" onclick="openTrendAndReasoning('${sop4.entity_id}', '${sop4.entity_name}', 'sop4')">趨勢與判斷依據</button>
       </div>`;
   }
   return `
@@ -903,6 +910,7 @@ function openDrawer(type) {
 function closeDrawer() {
   document.getElementById('drawer').classList.add('hidden');
   document.getElementById('drawer-backdrop').classList.add('hidden');
+  crowdReasoningTrendTarget = null;
 }
 
 async function renderDrawerContent(type) {
@@ -915,6 +923,13 @@ async function renderDrawerContent(type) {
   bodyEl.innerHTML = `<div class="spinner">載入決策分析…</div>`;
 
   const currentTs = timelineTimestamps[timelineIndex] || '2026-05-20 22:15';
+
+  if (type === 'sop3' || type === 'sop4') {
+    const trigger = getCrowdSopTrigger(type);
+    const trend = await loadCrowdReasoningTrend(trigger);
+    bodyEl.innerHTML = renderCrowdSopReasoning(trigger, type, currentTs, trend);
+    return;
+  }
 
   // 根據 type 決定要查詢的 event_id 和 timestamp
   let eventId = null;
@@ -990,6 +1005,170 @@ async function renderDrawerContent(type) {
 
 function emptyDecisionHint(clause) {
   return `<div class="card-yellow">尚未有 ${clause} 的真實決策資料。請先在「事件處置」注入會觸發該 SOP 的情境事件。</div>`;
+}
+
+function getCrowdSopTrigger(type) {
+  const triggers = latestDashboardTriggers || [];
+  if (type === 'sop4') return triggers.find(t => t.sop_clause === '第 4 條');
+  const sop3 = triggers.find(t => t.sop_clause === '第 3 條');
+  const sop4 = triggers.find(t => t.sop_clause === '第 4 條');
+  const cascadeFromSop4 = sop4 && (sop4.cascade_checks || []).some(c => c.includes('第 3 條'));
+  if (sop3) {
+    return {
+      ...sop3,
+      linkage_items: [],
+    };
+  }
+
+  if (!cascadeFromSop4) return null;
+  return {
+    triggered: true,
+    sop_clause: '第 3 條',
+    clause_name: '捷運與接駁分流',
+    entity_id: 'BS_MRT_BL17',
+    entity_name: '捷運國父紀念館站',
+    basis: '本站尚未達自身人流門檻；因 SOP-4 大巨蛋散場啟動，提前連動接駁分流機制。',
+    cascade_checks: sop4.cascade_checks || ['連動第 3 條接駁機制'],
+    linkage_items: [],
+    severity: 'yellow',
+    timestamp: sop4.timestamp,
+  };
+}
+
+async function loadCrowdReasoningTrend(trigger) {
+  const target = crowdReasoningTrendTarget || {
+    entityId: trigger?.entity_id,
+    label: trigger?.entity_name,
+  };
+  if (!target?.entityId) return null;
+  try {
+    const res = await fetch(`/api/history?entity_id=${encodeURIComponent(target.entityId)}`);
+    if (!res.ok) throw new Error(`entity_id ${target.entityId} not found`);
+    const data = await res.json();
+    return { ...data, label: target.label || trigger?.entity_name || target.entityId };
+  } catch (e) {
+    console.error('右側解釋鏈歷史趨勢載入失敗', e);
+    return { error: e.message, label: target.label || target.entityId };
+  }
+}
+
+function renderReasoningTrendCard(trend, timestamp) {
+  if (!trend) return '';
+  if (trend.error) {
+    return `<div class="card-yellow" style="margin-bottom:14px">歷史趨勢載入失敗：${escapeHtml(trend.error)}</div>`;
+  }
+  const points = trend.points || [];
+  if (!points.length) {
+    return `<div class="card-yellow" style="margin-bottom:14px">目前沒有可顯示的歷史趨勢資料。</div>`;
+  }
+
+  const idx = findHistoryPointIndex(points, timestamp);
+  const W = 1000, H = 96;
+  const label = trend.label || trend.entity_id;
+
+  if (trend.entity_type === 'station') {
+    const userValues = points.map(p => p.user_count);
+    const growthValues = points.map(p => p.growth_rate);
+    const userMaxVal = Math.max(...userValues.filter(v => v != null), 1) * 1.15;
+    const userPath = pathFromSeries(userValues, W, H, 0, userMaxVal);
+    const growthAbsMax = Math.max(...growthValues.filter(v => v != null).map(Math.abs), 0.1) * 1.15;
+    const growthPath = pathFromSeries(growthValues, W, H, -growthAbsMax, growthAbsMax);
+    const userText = userValues[idx] != null ? userValues[idx].toLocaleString() : '--';
+    const growthText = growthValues[idx] != null
+      ? `${growthValues[idx] >= 0 ? '+' : ''}${Math.round(growthValues[idx] * 100)}%`
+      : '--';
+    return `
+      <div class="formula-box align-left" style="margin-bottom:14px">
+        <div class="formula-title">歷史趨勢</div>
+        <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:8px">
+          <div><b>${escapeHtml(label)}</b><br><span class="mono" style="font-size:11px;color:var(--text-dim)">${escapeHtml(trend.entity_id || '')}</span></div>
+          <div style="display:flex;gap:14px;text-align:right">
+            <div><div class="mono" style="color:var(--caution);font-weight:700">${userText}</div><div style="font-size:11px;color:var(--text-dim)">人流數</div></div>
+            <div><div class="mono" style="color:var(--safe);font-weight:700">${growthText}</div><div style="font-size:11px;color:var(--text-dim)">成長率</div></div>
+          </div>
+        </div>
+        <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:92px;display:block">
+          <path d="${userPath}" fill="none" stroke="#5bd4ff" stroke-width="3"/>
+          <path d="${growthPath}" fill="none" stroke="#eba4c4" stroke-width="3"/>
+        </svg>
+        <div class="mono" style="display:flex;gap:14px;font-size:11px;color:var(--text-dim);margin-top:6px">
+          <span style="color:#5bd4ff">━ 人流數</span>
+          <span style="color:#eba4c4">━ 成長率</span>
+        </div>
+      </div>`;
+  }
+
+  return '';
+}
+
+function findHistoryPointIndex(points, timestamp) {
+  if (!points.length) return 0;
+  const exact = points.findIndex(p => p.timestamp === timestamp);
+  if (exact >= 0) return exact;
+  const before = points.map((p, i) => ({ p, i })).filter(({ p }) => p.timestamp <= timestamp).pop();
+  if (before) return before.i;
+  return Math.min(Math.max(timelineIndex, 0), points.length - 1);
+}
+
+function renderCrowdSopReasoning(trigger, type, timestamp, trend) {
+  const sopId = type === 'sop3' ? 'SOP-3' : 'SOP-4';
+  const fallbackName = type === 'sop3' ? '捷運與接駁分流' : '大巨蛋散場啟動';
+  const fallbackEntity = type === 'sop3' ? '捷運國父紀念館站' : '大巨蛋場館內';
+  if (!trigger) {
+    return `<div class="card-yellow">目前時間點尚未觸發 ${sopId}，沒有可顯示的判斷依據。請切到有警報的時間點再查看。</div>`;
+  }
+
+  const clauseName = trigger.clause_name || fallbackName;
+  const entityName = trigger.entity_name || fallbackEntity;
+  const entityId = trigger.entity_id || '';
+  const timeText = (trigger.timestamp || timestamp || '').slice(11, 16) || '--:--';
+  const linkageTitle = trigger.linkage_title || '連動條款';
+  const linkageItems = trigger.linkage_items || (type === 'sop4' ? (trigger.cascade_checks || []) : []);
+  const basisParts = String(trigger.basis || '目前無判斷依據文字').split('；').filter(Boolean);
+  const summary = `${sopId} ${clauseName}｜${entityName} 已命中條件，歷史趨勢同步開啟，判斷依據如下。`;
+  const chainSteps = [
+    { order: 1, label: '讀取人流資料', detail: `${entityName}${entityId ? `（${entityId}）` : ''} 於 ${timeText} 的即時人流與成長率資料` },
+    { order: 2, label: '檢查 SOP 門檻', detail: basisParts.join('；') },
+    { order: 3, label: '命中 SOP', detail: `${sopId} ${clauseName}` },
+    { order: 4, label: '連動檢查', detail: linkageItems.length ? linkageItems.join('、') : '無額外連動' },
+    { order: 5, label: '輸出依據', detail: '同步顯示歷史趨勢，保留門檻、數值與連動原因供人工覆核' },
+  ];
+
+  return `
+    ${renderReasoningTrendCard(trend, trigger.timestamp || timestamp)}
+
+    <div class="formula-box align-left" style="border-left:3px solid var(--accent);margin-bottom:14px">
+      <div class="formula-title" style="display:flex;align-items:center;gap:6px">
+        <span>AI 摘要</span>
+        <span class="mono" style="font-size:10px;color:var(--text-dim)">deterministic</span>
+      </div>
+      <div style="font-size:13px;line-height:1.7">${escapeHtml(summary)}</div>
+    </div>
+
+    <div class="decision-summary">
+      <span class="decision-tag">${sopId}</span>
+      <span class="ete-badge mono" style="background:rgba(234,184,92,0.18);color:var(--caution)">${escapeHtml(timeText)}</span>
+      <span class="ete-badge mono" style="background:rgba(126,200,188,0.15);color:var(--accent)">歷史趨勢已開啟</span>
+    </div>
+
+    <div class="chain" style="margin-top:12px">
+      ${chainSteps.map(step => `
+        <div class="chain-step active"><div class="node">${step.order}</div><div class="step-text">
+          <span class="step-lbl">${escapeHtml(step.label)}</span> ${escapeHtml(step.detail)}
+        </div></div>
+      `).join('')}
+    </div>
+
+    <div class="formula-box align-left">
+      <div class="formula-title">判斷依據</div>
+      ${basisParts.map(part => `<div class="excluded-row">${escapeHtml(part)}</div>`).join('')}
+    </div>
+
+    ${linkageItems.length ? `<div class="formula-box align-left">
+      <div class="formula-title">${escapeHtml(linkageTitle)}</div>
+      ${linkageItems.map(item => `<div class="excluded-row">${escapeHtml(item)}</div>`).join('')}
+    </div>` : ''}
+  `;
 }
 
 function renderDecisionExplanation(decision) {
@@ -1982,8 +2161,8 @@ function addIncidentMapMarkers(event, decisions, snapshot) {
     window._incidentDetailStore[event.event_id] = { event, decisions, snapshot, segId, iconEmoji };
     marker.on('click', () => { openIncidentDetailModal(event.event_id); });
 
-    // 氣泡只顯示事件 ID（使用 tooltip 常駐，不受 marker click 影響）
-    const labelHtml = `<div class="incident-map-label-id">${escapeHtml(event.event_id)}</div>`;
+    // 氣泡顯示事件 ID + 點選提示（使用 tooltip 常駐，不受 marker click 影響）
+    const labelHtml = `<div class="incident-map-label-id">${escapeHtml(event.event_id)}</div><div class="incident-map-label-hint">點選顯示詳情</div>`;
     marker.bindTooltip(labelHtml, { permanent: true, direction: 'top', offset: [0, -20], className: 'incident-label-tooltip-container', interactive: false, pane: 'incidentTooltipPane' });
 
     incidentMapMarkers.push(marker);
