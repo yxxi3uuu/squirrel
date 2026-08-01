@@ -457,6 +457,9 @@ async function loadSnapshotAt(timestamp) {
     // 回應回來時若已有更新的請求，丟棄本次結果
     if (seq !== _snapshotSeq) return;
 
+    // 同步更新 Module 1 門檻觸發結果（SOP-1/3/4），供交通建議書使用
+    if (dashboard?.triggers) latestDashboardTriggers = dashboard.triggers;
+
     const segments = snapshotToSegments(dashboard.snapshot);
     renderTrafficKPI(computeTrafficSummary(segments));
     renderTrafficAlerts(segments, dashboard);
@@ -1477,6 +1480,8 @@ async function injectIncident(eventId) {
       latestIncident = data.event;
       latestDecisions = data.decisions || [];
       latestSnapshot = data.snapshot || null;
+      // 同步更新 Module 1 門檻觸發（SOP-1/3/4），供建議書使用
+      if (data.m1_triggers) latestDashboardTriggers = data.m1_triggers;
       closeIncidentModal();
       showInjectResultNotification(true, null, data);
       applyIncidentToDashboard(data);
@@ -1534,6 +1539,8 @@ async function injectIncidentPayload(payload) {
       latestIncident = data.event;
       latestDecisions = data.decisions || [];
       latestSnapshot = data.snapshot || null;
+      // 同步更新 Module 1 門檻觸發（SOP-1/3/4），供建議書使用
+      if (data.m1_triggers) latestDashboardTriggers = data.m1_triggers;
       closeIncidentModal();
       showInjectResultNotification(true, null, data);
       applyIncidentToDashboard(data);

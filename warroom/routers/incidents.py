@@ -16,6 +16,7 @@ from pydantic import BaseModel
 
 from warroom.module2.backend.services.sop_engine import process_incident as _engine_process_incident
 from warroom.module2.backend.services.llm_mock import generate_commander_summary
+from warroom.module1.backend.thresholds import evaluate_triggers as _m1_evaluate_triggers
 from shared.schemas import TriggerDecision
 
 router = APIRouter()
@@ -130,6 +131,10 @@ def inject_incident(req: InjectRequest):
         commander_summary_source = summary_result.get("_source", "mock")
 
     elapsed_ms = round((time.monotonic() - t0) * 1000, 2)
+
+    # 附上 Module 1 在該時間點的門檻觸發結果（SOP-1/3/4），讓前端建議書能直接使用
+    m1_triggers = _m1_evaluate_triggers(snapshot)
+
     return {
         "success": True,
         "event": new_event,
@@ -139,6 +144,7 @@ def inject_incident(req: InjectRequest):
         "processing_time_ms": elapsed_ms,
         "commander_summary": commander_summary,
         "commander_summary_source": commander_summary_source,
+        "m1_triggers": m1_triggers,
     }
 
 
