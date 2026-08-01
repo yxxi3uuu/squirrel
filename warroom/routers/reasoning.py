@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Optional
+from typing import Any, Optional
 
 router = APIRouter()
 
@@ -11,6 +11,8 @@ router = APIRouter()
 class ExplainRequest(BaseModel):
     timestamp: Optional[str] = None
     event_id: Optional[str] = None
+    event: Optional[dict[str, Any]] = None
+    snapshot: Optional[dict[str, Any]] = None
 
 
 class AskRequest(BaseModel):
@@ -22,6 +24,8 @@ class AskRequest(BaseModel):
 class CounterfactualRequest(BaseModel):
     timestamp: Optional[str] = None
     event_id: Optional[str] = None
+    event: Optional[dict[str, Any]] = None
+    snapshot: Optional[dict[str, Any]] = None
     target_segment: Optional[str] = None
     target_field: str = "saturation_score"
     direction: str = "increase"
@@ -39,10 +43,13 @@ class SensitivityRequest(BaseModel):
 @router.post("/explain")
 def explain_decision(req: ExplainRequest):
     """建立完整 DecisionRecord 並回傳結構化解釋。"""
-    from reasoning.builder import build_decision_record
+    from reasoning.builder import build_decision_record, build_decision_record_from_snapshot
 
     try:
-        record = build_decision_record(timestamp=req.timestamp, event_id=req.event_id)
+        if req.event and req.snapshot:
+            record = build_decision_record_from_snapshot(req.snapshot, req.event)
+        else:
+            record = build_decision_record(timestamp=req.timestamp, event_id=req.event_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return record.model_dump()
@@ -85,8 +92,8 @@ def counterfactual_analysis(req: CounterfactualRequest):
     from reasoning.counterfactual import find_all_counterfactuals, find_counterfactual
 
     try:
-        snapshot = get_snapshot(req.timestamp)
-        event = _select_event(snapshot, req.event_id)
+        snapshot = req.snapshot or get_snapshot(req.timestamp)
+        event = req.event or _select_event(snapshot, req.event_id)
         affected = snapshot["road_segments"].get(event["affected_segment"])
         if not affected:
             raise ValueError(f"Affected segment {event['affected_segment']} not found")

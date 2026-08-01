@@ -41,9 +41,16 @@ def build_decision_record(
     timestamp: Optional[str] = None,
     event_id: Optional[str] = None,
 ) -> DecisionRecord:
-    start = time.perf_counter()
     snapshot = get_snapshot(timestamp)
     event = _select_event(snapshot, event_id)
+    return build_decision_record_from_snapshot(snapshot, event)
+
+
+def build_decision_record_from_snapshot(
+    snapshot: Dict,
+    event: Dict,
+) -> DecisionRecord:
+    start = time.perf_counter()
     affected = snapshot["road_segments"].get(event["affected_segment"])
     if not affected:
         raise ValueError(f"Affected segment {event['affected_segment']} not found in snapshot road_segments")

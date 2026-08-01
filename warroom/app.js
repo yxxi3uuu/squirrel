@@ -7,6 +7,7 @@ let latestSnapshot = null;
 let latestIncident = null;
 let latestDashboardTriggers = []; // Module 1 即時警報門檻觸發（SOP-1/3/4）
 let injectedTimelineData = {}; // { timestamp: { event, decisions, snapshot } }
+let currentM4Request = {};
 
 // 路段／站點經緯度座標改由後端 /api/traffic/coords 載入（見 warroom/data_source/road_coords.json），
 // 不再寫死在前端，方便其他模組重用同一份資料、也不用改程式碼就能更新座標。
@@ -469,6 +470,9 @@ async function loadSnapshotAt(timestamp) {
     // 如果該時間點有注入事件，重新顯示事件標記和警報卡片
     const injected = injectedTimelineData[timestamp];
     if (injected) {
+      latestIncident = injected.event;
+      latestDecisions = injected.decisions || [];
+      latestSnapshot = injected.snapshot || null;
       renderIncidentDecisionsOnDashboard(injected.event, injected.decisions);
       addIncidentMapMarkers(injected.event, injected.decisions, injected.snapshot);
     }
@@ -925,65 +929,81 @@ async function renderDrawerContent(type) {
   const titleEl = document.getElementById('drawer-title');
   const bodyEl = document.getElementById('drawer-body-content');
 
-  if (type === 'sop2') {
-    titleEl.textContent = '判斷依據 — SOP-2 主疏散路徑';
-    const decision = latestDecisions.find(d => d.sop_clause === 'SOP-2');
-    bodyEl.innerHTML = decision ? renderDecisionExplanation(decision) : emptyDecisionHint('SOP-2');
-    return;
-  }
-
-  if (type === 'sop5') {
-    titleEl.textContent = '判斷依據 — SOP-5 號誌故障應變';
-    const decision = latestDecisions.find(d => d.sop_clause === 'SOP-5');
-    bodyEl.innerHTML = decision ? renderDecisionExplanation(decision) : emptyDecisionHint('SOP-5');
-    return;
-  }
-
-  if (type.startsWith('decision:')) {
-    const index = Number(type.split(':')[1]);
-    const decision = latestDecisions[index];
-    titleEl.textContent = '判斷依據 — 未觸發 / 轉交判斷';
-    bodyEl.innerHTML = decision ? renderDecisionExplanation(decision) : emptyDecisionHint('該決策');
-    return;
-  }
-
-  // 其餘一律當成 SOP-1 壅塞分級的路段 ID 查詢
-  titleEl.textContent = '決策推理與解釋';
+  // 統一走模組四解釋鏈
   titleEl.style.cssText = 'display:flex;align-items:center;gap:10px;font-size:1rem;padding:8px 0 4px;';
   titleEl.innerHTML = '<span style="width:3.5px;height:16px;border-radius:2px;background:var(--accent);flex:none"></span>決策推理與解釋';
   bodyEl.innerHTML = `<div class="spinner">載入決策分析…</div>`;
+
   const currentTs = timelineTimestamps[timelineIndex] || '2026-05-20 22:15';
+
+  // 根據 type 決定要查詢的 event_id 和 timestamp
+  let eventId = null;
+  let queryTs = currentTs;
+  if (type === 'sop2') {
+    eventId = latestIncident?.event_id || 'TPE_2026_ACC_001';
+    // 使用事件發生時間（或最近的有效時間點）
+    if (latestIncident?.timestamp) queryTs = latestIncident.timestamp;
+    else if (timelineTimestamps.length) queryTs = timelineTimestamps[Math.max(timelineIndex, Math.min(timelineTimestamps.length - 1, timelineIndex + 1))];
+  } else if (type === 'sop5') {
+    eventId = latestIncident?.event_id || 'TPE_2026_EVT_003';
+    queryTs = latestIncident?.timestamp || '2026-05-20 22:30'; // SOP-5 事件在 22:30
+  } else if (type.startsWith('decision:')) {
+    eventId = latestIncident?.event_id;
+    if (latestIncident?.timestamp) queryTs = latestIncident.timestamp;
+  }
+
   try {
-    const res = await fetch(`/api/reasoning/demo?timestamp=${encodeURIComponent(currentTs)}`);
+    const explainPayload = { timestamp: queryTs, event_id: eventId || null };
+    const injectedContext = latestIncident && latestSnapshot &&
+      (type === 'sop2' || type === 'sop5' || type.startsWith('decision:'));
+    if (injectedContext) {
+      explainPayload.event = latestIncident;
+      explainPayload.snapshot = latestSnapshot;
+    }
+    currentM4Request = explainPayload;
+    const res = await fetch(`/api/reasoning/explain`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(explainPayload),
+    });
     if (!res.ok) throw new Error(await res.text());
     const record = await res.json();
     bodyEl.innerHTML = renderM4Inline(record);
-    // Async load AI summary from Ollama (non-blocking)
-    loadAiSummary(currentTs);
+    setTimeout(runM4CF, 0);
+    loadAiSummary(queryTs, eventId);
   } catch (e) {
-    // Fallback to original SOP-1 display if M4 fails
-    try {
-      const [segRes, netRes] = await Promise.all([
-        fetch('/api/traffic/segments'),
-        fetch('/api/traffic/network'),
-      ]);
-      const segData = await segRes.json();
-      const netData = await netRes.json();
-      const seg = segData.segments.find(s => s.Segment_ID === type);
-      if (!seg) { bodyEl.innerHTML = `<p>找不到路段 ${type} 的資料</p>`; return; }
-      const levelText = seg.level === 'A' ? '飽和度 ≥ 0.95 → A 級癱瘓' : seg.level === 'B' ? '0.85 ≤ 飽和度 < 0.95 → B 級壅擠' : '飽和度 < 0.85 → 一般';
-      bodyEl.innerHTML = `
-        <div class="chain">
-          <div class="chain-step active"><div class="node">1</div><div class="step-text">
-            <span class="step-lbl">目前飽和度</span> ${seg.Road_Name}（${seg.Segment_ID}）<span class="mono ${seg.level === 'A' ? 'critical-text' : seg.level === 'B' ? 'caution-text' : ''}">${seg.Saturation_Score.toFixed(2)}</span>
-          </div></div>
-          <div class="chain-step active"><div class="node">2</div><div class="step-text">
-            <span class="step-lbl">SOP-1 分級</span> ${levelText}
-          </div></div>
-        </div>
-        <div class="card-yellow" style="margin-top:10px">目前時間點尚無事件觸發，僅顯示 SOP-1 壅塞分級。</div>`;
-    } catch (e2) {
-      bodyEl.innerHTML = `<p>資料載入失敗：${escapeHtml(e2.message)}</p>`;
+    // Fallback: 如果模組四失敗，嘗試顯示隊友的簡化版或錯誤訊息
+    if (type === 'sop2' || type === 'sop5' || type.startsWith('decision:')) {
+      const clause = type === 'sop2' ? 'SOP-2' : type === 'sop5' ? 'SOP-5' : '該決策';
+      const decision = type === 'sop2' ? latestDecisions.find(d => d.sop_clause === 'SOP-2')
+        : type === 'sop5' ? latestDecisions.find(d => d.sop_clause === 'SOP-5')
+        : latestDecisions[Number(type.split(':')[1])];
+      if (decision) {
+        bodyEl.innerHTML = renderDecisionExplanation(decision);
+      } else {
+        bodyEl.innerHTML = `<div class="card-yellow">模組四載入失敗：${escapeHtml(e.message)}<br>請確認時間軸在 22:10 之後（事件發生後）。</div>`;
+      }
+    } else {
+      // SOP-1 路段 fallback
+      try {
+        const [segRes] = await Promise.all([fetch('/api/traffic/segments')]);
+        const segData = await segRes.json();
+        const seg = segData.segments.find(s => s.Segment_ID === type);
+        if (!seg) { bodyEl.innerHTML = `<p>找不到路段 ${type} 的資料</p>`; return; }
+        const levelText = seg.level === 'A' ? '飽和度 ≥ 0.95 → A 級癱瘓' : seg.level === 'B' ? '0.85 ≤ 飽和度 < 0.95 → B 級壅擠' : '飽和度 < 0.85 → 一般';
+        bodyEl.innerHTML = `
+          <div class="chain">
+            <div class="chain-step active"><div class="node">1</div><div class="step-text">
+              <span class="step-lbl">目前飽和度</span> ${seg.Road_Name}（${seg.Segment_ID}）<span class="mono ${seg.level === 'A' ? 'critical-text' : seg.level === 'B' ? 'caution-text' : ''}">${seg.Saturation_Score.toFixed(2)}</span>
+            </div></div>
+            <div class="chain-step active"><div class="node">2</div><div class="step-text">
+              <span class="step-lbl">SOP-1 分級</span> ${levelText}
+            </div></div>
+          </div>
+          <div class="card-yellow" style="margin-top:10px">目前時間點尚無事件觸發，僅顯示 SOP-1 壅塞分級。</div>`;
+      } catch (e2) {
+        bodyEl.innerHTML = `<p>資料載入失敗：${escapeHtml(e2.message)}</p>`;
+      }
     }
   }
 }
@@ -1980,7 +2000,9 @@ async function loadM4DeepAnalysis(segmentId) {
     const res = await fetch('/api/reasoning/demo');
     if (!res.ok) throw new Error(await res.text());
     const record = await res.json();
+    currentM4Request = {};
     container.innerHTML = renderM4Inline(record);
+    setTimeout(runM4CF, 0);
   } catch (e) {
     container.innerHTML = `<div class="card-yellow" style="margin-top:8px">目前時間點尚無事件觸發，請將時間軸調至 22:10 之後查看完整決策分析。</div>`;
   }
@@ -2032,96 +2054,61 @@ function renderM4Inline(record) {
       <div class="formula-detail mono">= ${ete.base_minutes || 0} + ${ete.congestion_adjustment_minutes || 0} = ${ete.total_minutes || 0} min</div>
     </div>
 
-    <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
-      <button class="btn-explain" onclick="toggleM4Panel('m4-rel-panel')">可靠度</button>
-      <button class="btn-explain" onclick="toggleM4Panel('m4-cf-panel'); runM4CF()">反事實</button>
-      <button class="btn-explain" onclick="toggleM4Panel('m4-forecast-panel'); runM4Forecast()">壅塞預測</button>
-      <button class="btn-explain" onclick="toggleM4Panel('m4-anomaly-panel'); runM4Anomaly()">異常偵測</button>
-    </div>
-
-    <div id="m4-rel-panel" class="hidden" style="margin-top:8px">
+    <div id="m4-cf-panel" style="margin-top:10px">
       <div class="formula-box align-left">
-        <div class="formula-title">Decision Reliability 四維度</div>
-        ${renderM4Bars(rel)}
+        <div class="formula-title">反事實分析</div>
+        <div class="spinner">分析中…</div>
       </div>
-    </div>
-
-    <div id="m4-cf-panel" class="hidden" style="margin-top:8px">
-    </div>
-
-    <div id="m4-forecast-panel" class="hidden" style="margin-top:8px">
-    </div>
-
-    <div id="m4-anomaly-panel" class="hidden" style="margin-top:8px">
     </div>
   `;
 }
 
-function renderM4Bars(rel) {
-  const dims = [
-    { label: '資料可靠', value: rel.data_reliability || 0 },
-    { label: '規則可靠', value: rel.rule_reliability || 0 },
-    { label: '決策穩定', value: rel.decision_stability || 0 },
-    { label: '證據覆蓋', value: rel.evidence_coverage || 0 },
-  ];
-  return dims.map(d => {
-    const pct = Math.round(d.value * 100);
-    const color = pct >= 80 ? 'var(--safe)' : pct >= 60 ? 'var(--caution)' : 'var(--critical)';
-    return `<div style="display:flex;align-items:center;gap:8px;margin:4px 0">
-      <span style="width:55px;font-size:11px;color:var(--text-dim)">${d.label}</span>
-      <div style="flex:1;height:5px;background:var(--border);border-radius:3px;overflow:hidden">
-        <div style="width:${pct}%;height:100%;background:${color};border-radius:3px;transition:width .4s"></div>
-      </div>
-      <span class="mono" style="width:32px;text-align:right;font-size:11px">${pct}%</span>
-    </div>`;
-  }).join('');
-}
-
-function toggleM4Panel(id) {
-  const el = document.getElementById(id);
-  if (el) el.classList.toggle('hidden');
-}
-
 async function runM4CF() {
   const panel = document.getElementById('m4-cf-panel');
-  if (!panel || panel.innerHTML.trim()) return; // already loaded
-  panel.innerHTML = `<div class="spinner">分析中…</div>`;
+  if (!panel || panel.dataset.loaded === 'true') return;
+  panel.dataset.loaded = 'true';
+  panel.innerHTML = `<div class="formula-box align-left"><div class="formula-title">反事實分析</div><div class="spinner">分析中…</div></div>`;
   try {
     const res = await fetch('/api/reasoning/counterfactual', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
+      body: JSON.stringify(currentM4Request || {}),
     });
     if (!res.ok) throw new Error(await res.text());
     const data = await res.json();
     if (data.results && data.results.length) {
-      panel.innerHTML = data.results.map(r => `
-        <div class="formula-box align-left" style="margin-bottom:6px;border-left:3px solid var(--caution)">
-          <div style="font-weight:600;font-size:13px;margin-bottom:4px">${escapeHtml(r.narrative)}</div>
-          <div class="mono" style="font-size:11px;color:var(--text-dim)">
-            欄位：${r.changed_field} · 原始：${r.original_value} · 翻轉：${r.switch_value}
+      panel.innerHTML = `<div class="formula-box align-left">
+        <div class="formula-title">反事實分析</div>
+        ${data.results.map(r => `
+          <div class="excluded-row">
+            <div style="font-weight:600;font-size:13px;margin-bottom:4px">${escapeHtml(r.narrative)}</div>
+            <div class="mono" style="font-size:11px;color:var(--text-dim)">
+              欄位：${r.changed_field} · 原始：${r.original_value} · 翻轉：${r.switch_value}
+            </div>
           </div>
-        </div>
-      `).join('');
+        `).join('')}
+      </div>`;
     } else {
-      panel.innerHTML = `<div class="card-yellow">在搜尋範圍內未找到翻轉點</div>`;
+      panel.innerHTML = `<div class="formula-box align-left"><div class="formula-title">反事實分析</div><div class="card-yellow">在搜尋範圍內未找到翻轉點</div></div>`;
     }
   } catch (e) {
-    panel.innerHTML = `<div style="color:var(--critical)">反事實分析失敗：${escapeHtml(e.message)}</div>`;
+    panel.innerHTML = `<div class="formula-box align-left"><div class="formula-title">反事實分析</div><div style="color:var(--critical)">反事實分析失敗：${escapeHtml(e.message)}</div></div>`;
   }
 }
 
 
-async function loadAiSummary(timestamp) {
+async function loadAiSummary(timestamp, eventId) {
   const textEl = document.getElementById('m4-summary-text');
   const sourceEl = document.getElementById('m4-summary-source');
   if (!textEl || !sourceEl) return;
   try {
-    const res = await fetch(`/api/reasoning/summary?timestamp=${encodeURIComponent(timestamp)}`);
+    let url = `/api/reasoning/summary?timestamp=${encodeURIComponent(timestamp)}`;
+    if (eventId) url += `&event_id=${encodeURIComponent(eventId)}`;
+    const res = await fetch(url);
     if (!res.ok) return;
     const data = await res.json();
     textEl.textContent = data.summary;
-    sourceEl.textContent = data.source === 'ollama' ? `Ollama · ${data.model}` : 'deterministic';
+    sourceEl.textContent = data.source === 'deterministic' ? 'deterministic' : `${data.source} · ${data.model || ''}`;
   } catch (e) {
     sourceEl.textContent = 'fallback';
   }
@@ -2628,52 +2615,4 @@ function confirmPublish() {
   // Change badge to SENT
   const badge = body.querySelector('.publish-badge');
   if (badge) { badge.textContent = 'SENT'; badge.classList.add('sent'); }
-}
-
-
-async function runM4Forecast() {
-  const panel = document.getElementById('m4-forecast-panel');
-  if (!panel || panel.innerHTML.trim()) return;
-  panel.innerHTML = `<div class="spinner">預測中…</div>`;
-  try {
-    const ts = timelineTimestamps[timelineIndex] || '2026-05-20 22:15';
-    const res = await fetch(`/api/reasoning/forecast?timestamp=${encodeURIComponent(ts)}`);
-    if (!res.ok) throw new Error(await res.text());
-    const data = await res.json();
-    if (data.warnings && data.warnings.length) {
-      panel.innerHTML = data.warnings.map(w => `
-        <div class="formula-box align-left" style="margin-bottom:6px;border-left:3px solid var(--caution)">
-          <div style="font-weight:600;font-size:13px">${escapeHtml(w)}</div>
-        </div>
-      `).join('') + `<div style="font-size:11px;color:var(--text-dim);margin-top:6px">共 ${data.total_segments} 路段分析，${data.approaching_threshold} 條接近門檻</div>`;
-    } else {
-      panel.innerHTML = `<div class="card-yellow">目前所有路段趨勢穩定，無接近門檻預警。</div>`;
-    }
-  } catch (e) {
-    panel.innerHTML = `<div style="color:var(--critical)">壅塞預測失敗：${escapeHtml(e.message)}</div>`;
-  }
-}
-
-async function runM4Anomaly() {
-  const panel = document.getElementById('m4-anomaly-panel');
-  if (!panel || panel.innerHTML.trim()) return;
-  panel.innerHTML = `<div class="spinner">偵測中…</div>`;
-  try {
-    const ts = timelineTimestamps[timelineIndex] || '2026-05-20 22:15';
-    const res = await fetch(`/api/reasoning/anomaly?timestamp=${encodeURIComponent(ts)}`);
-    if (!res.ok) throw new Error(await res.text());
-    const data = await res.json();
-    if (data.alerts && data.alerts.length) {
-      panel.innerHTML = data.alerts.map(a => `
-        <div class="formula-box align-left" style="margin-bottom:6px;border-left:3px solid ${a.severity === 'critical' ? 'var(--critical)' : 'var(--caution)'}">
-          <div style="font-weight:600;font-size:13px">[${a.severity}] ${escapeHtml(a.segment_name)}</div>
-          <div style="font-size:12px;color:var(--text-dim);margin-top:4px">${escapeHtml(a.description)}</div>
-        </div>
-      `).join('') + `<div style="font-size:11px;color:var(--text-dim);margin-top:6px">共偵測到 ${data.anomaly_count} 個異常</div>`;
-    } else {
-      panel.innerHTML = `<div class="card-yellow">目前無資料異常。</div>`;
-    }
-  } catch (e) {
-    panel.innerHTML = `<div style="color:var(--critical)">異常偵測失敗：${escapeHtml(e.message)}</div>`;
-  }
 }
