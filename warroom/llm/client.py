@@ -4,7 +4,7 @@ LLM 抽象層 — 統一呼叫介面，支援三種後端切換。
 環境變數：
   LLM_MODE=ollama | bedrock | mock（預設 ollama）
   OLLAMA_URL=http://localhost:11434
-  OLLAMA_MODEL=qwen2.5:3b
+  OLLAMA_MODEL=qwen2.5:7b
   BEDROCK_MODEL_ID=us.anthropic.claude-sonnet-4-5-20250929-v1:0
   BEDROCK_REGION=us-west-2
 """
@@ -48,8 +48,13 @@ def check_status() -> dict:
     """檢查 LLM 後端連線狀態。"""
     mode = LLM_MODE.lower()
     if mode == "bedrock":
-        return {"mode": "bedrock", "model": BEDROCK_MODEL_ID, "ok": True,
-                "message": f"Bedrock 模式 · {BEDROCK_MODEL_ID}"}
+        try:
+            import boto3  # noqa: F401
+            return {"mode": "bedrock", "model": BEDROCK_MODEL_ID, "ok": True,
+                    "message": f"Bedrock 模式 · {BEDROCK_MODEL_ID}"}
+        except Exception as exc:
+            return {"mode": "bedrock", "model": BEDROCK_MODEL_ID, "ok": False,
+                    "message": f"Bedrock 模式設定中 · 缺少 boto3 或 AWS 環境：{exc}"}
     elif mode == "mock":
         return {"mode": "mock", "model": "mock", "ok": True,
                 "message": "Mock 模式 · 預錄回答"}

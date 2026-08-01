@@ -840,7 +840,7 @@ const advisorScenarioSets = {
 function toggleChat() {
   document.getElementById('chat-panel').classList.toggle('hidden');
   document.getElementById('chat-backdrop').classList.toggle('hidden');
-  // 首次開啟時檢查 Ollama 狀態
+  // 首次開啟時檢查目前 LLM 後端（Bedrock / Ollama / Mock）狀態
   if (!window._advisorStatusChecked) {
     window._advisorStatusChecked = true;
     checkAdvisorStatus();
@@ -853,9 +853,9 @@ async function checkAdvisorStatus() {
   try {
     const res = await fetch('/api/advisor/status');
     const data = await res.json();
-    if (data.mode === 'llm') {
+    if (data.ok) {
       dot.className = 'mode-dot mode-dot-llm';
-      text.textContent = 'LLM 模式 · Ollama 已連線';
+      text.textContent = data.message || `LLM 模式 · ${data.mode || 'ready'}`;
     } else {
       dot.className = 'mode-dot mode-dot-rules';
       text.textContent = data.message || '規則引擎 · 即時快照';
@@ -932,7 +932,7 @@ async function sendAdvisorMessage(forcedMessage) {
     const text = document.getElementById('advisor-mode-text');
     if (data.source === 'llm') {
       dot.className = 'mode-dot mode-dot-llm';
-      text.textContent = 'LLM 模式';
+      text.textContent = data.mode ? `LLM 模式 · ${data.mode}` : 'LLM 模式';
     } else {
       dot.className = 'mode-dot mode-dot-llm';
       text.textContent = 'LLM + 規則引擎';

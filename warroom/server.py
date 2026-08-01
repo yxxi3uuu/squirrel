@@ -8,10 +8,12 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import os, sys
 from typing import Optional
+from dotenv import load_dotenv
 
 # 確保 squirrel 根目錄在 path（讓 warroom.xxx 可以 import）
 _root = os.path.join(os.path.dirname(__file__), "..")
 sys.path.insert(0, _root)
+load_dotenv(os.path.join(_root, ".env"))
 
 from warroom.module5.backend.routers import notify, signal
 from warroom.routers import advisor, incidents, module1, traffic
