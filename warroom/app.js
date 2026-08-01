@@ -5,6 +5,7 @@ let stationMarkers = {};
 let latestDecisions = [];
 let latestSnapshot = null;
 let latestIncident = null;
+let latestDashboardTriggers = []; // Module 1 即時警報門檻觸發（SOP-1/3/4）
 let injectedTimelineData = {}; // { timestamp: { event, decisions, snapshot } }
 
 // 路段／站點經緯度座標改由後端 /api/traffic/coords 載入（見 warroom/data_source/road_coords.json），
@@ -72,6 +73,7 @@ async function loadTrafficData() {
     ]);
     const data = await segRes.json();
     const dashboard = await dashRes.json().catch(() => null);
+    if (dashboard?.triggers) latestDashboardTriggers = dashboard.triggers;
     renderTrafficKPI(computeTrafficSummary(data.segments));
     renderTrafficAlerts(data.segments, dashboard);
     renderTrafficMap(data.segments);
@@ -407,6 +409,7 @@ async function loadSnapshotAt(timestamp) {
       loadModule5Status(timestamp),
       loadBaseStationPanel(timestamp),
     ]);
+    if (dashboard?.triggers) latestDashboardTriggers = dashboard.triggers;
     const segments = snapshotToSegments(dashboard.snapshot);
     renderTrafficKPI(computeTrafficSummary(segments));
     renderTrafficAlerts(segments, dashboard);
@@ -2034,17 +2037,78 @@ async function loadAiSummary(timestamp) {
 let advisoryMarkdownCache = '';
 
 function openAdvisoryModal() {
-  if (!latestIncident || !latestDecisions.length) {
+  // 蒐集所有已注入的事件
+  const allInjected = Object.values(injectedTimelineData).filter(d => d.event && d.decisions?.length);
+  // 也加入 latestIncident（若尚未存在於 injectedTimelineData 中）
+  if (latestIncident && latestDecisions.length) {
+    const alreadyExists = allInjected.some(d => d.event.event_id === latestIncident.event_id);
+    if (!alreadyExists) {
+      allInjected.push({ event: latestIncident, decisions: latestDecisions, snapshot: latestSnapshot });
+    }
+  }
+
+  if (!allInjected.length) {
     alert('請先注入事件並取得 SOP 決策結果');
     return;
   }
+
   const overlay = document.getElementById('advisory-modal-overlay');
   overlay.classList.remove('hidden');
-  renderAdvisoryReport();
+
+  if (allInjected.length === 1) {
+    // 只有一筆事件，直接產出建議書
+    renderAdvisoryReportFor(allInjected[0].event, allInjected[0].decisions, allInjected[0].snapshot);
+  } else {
+    // 多筆事件，顯示選擇介面
+    renderAdvisoryEventSelector(allInjected);
+  }
+}
+
+function renderAdvisoryEventSelector(injectedList) {
+  const body = document.getElementById('advisory-modal-body');
+  let html = '<div class="advisory-event-selector">';
+  html += '<div class="advisory-sub-title">請選擇要產出建議書的事件：</div>';
+  html += '<div class="advisory-event-list">';
+  injectedList.forEach((item, idx) => {
+    const ev = item.event;
+    const triggeredCount = (item.decisions || []).filter(d => d.triggered).length;
+    const sopClauses = (item.decisions || []).filter(d => d.triggered).map(d => d.sop_clause).filter(Boolean).join('、') || '無';
+    html += `
+      <div class="advisory-event-option" onclick="selectAdvisoryEvent(${idx})">
+        <div class="advisory-event-option-id"><b>${escapeHtml(ev.event_id)}</b></div>
+        <div class="advisory-event-option-desc">${escapeHtml(ev.description || ev.type)}</div>
+        <div class="advisory-event-option-meta">
+          <span class="mono">${escapeHtml(ev.affected_segment)}</span>
+          <span class="advisory-event-severity severity-${ev.severity?.toLowerCase()}">${escapeHtml(ev.severity)}</span>
+          <span class="mono">${escapeHtml(ev.timestamp || '')}</span>
+        </div>
+        <div class="advisory-event-option-sop">觸發 SOP：${escapeHtml(sopClauses)}（${triggeredCount} 筆決策）</div>
+      </div>`;
+  });
+  html += '</div></div>';
+  body.innerHTML = html;
+
+  // 暫存列表供 selectAdvisoryEvent 使用
+  window._advisoryInjectedList = injectedList;
+}
+
+function selectAdvisoryEvent(idx) {
+  const list = window._advisoryInjectedList;
+  if (!list || !list[idx]) return;
+  const item = list[idx];
+  renderAdvisoryReportFor(item.event, item.decisions, item.snapshot);
 }
 
 function closeAdvisoryModal() {
   document.getElementById('advisory-modal-overlay').classList.add('hidden');
+}
+
+function renderAdvisoryReportFor(incident, decisions, snapshot) {
+  // 更新全域快取（供複製 Markdown / 模擬發布使用）
+  latestIncident = incident;
+  latestDecisions = decisions;
+  latestSnapshot = snapshot;
+  renderAdvisoryReport();
 }
 
 function renderAdvisoryReport() {
@@ -2056,6 +2120,9 @@ function renderAdvisoryReport() {
   // 1. 事件辨識
   const triggeredDecisions = decisions.filter(d => d.triggered);
   const sopClauses = triggeredDecisions.map(d => d.sop_clause).filter(Boolean).join('、') || '無觸發';
+
+  // 事件匯入時間點
+  const eventTimestamp = incident.timestamp || '';
 
   // 2. 交通分級判定
   const seg_id = incident.affected_segment;
@@ -2102,7 +2169,7 @@ function renderAdvisoryReport() {
   }
   if (!signalHtml && sop2 && sop2.primary_route) {
     const altName = snapshot?.road_segments?.[sop2.primary_route]?.name || sop2.primary_route;
-    signalHtml = `<div class="signal-action">替代道路 ${escapeHtml(altName)} 綠燈配時 +25%（事件持續期間）</div>`;
+    signalHtml = `<div class="signal-action">替代道路 <b class="signal-alt-road">${escapeHtml(altName)}</b> 綠燈配時 +25%（事件持續期間）</div>`;
   }
   if (!signalHtml) {
     signalHtml = '<span class="mono dim">本次事件未觸發號誌調整</span>';
@@ -2147,6 +2214,7 @@ function renderAdvisoryReport() {
         <div class="advisory-section-title">一、事件辨識</div>
         <div class="advisory-field"><span class="af-label">事件 ID</span><span class="af-value mono">${escapeHtml(incident.event_id)}</span></div>
         <div class="advisory-field"><span class="af-label">事件描述</span><span class="af-value">${escapeHtml(incident.description || incident.type)}</span></div>
+        <div class="advisory-field"><span class="af-label">事件時間點</span><span class="af-value mono">${escapeHtml(eventTimestamp)}</span></div>
         <div class="advisory-field"><span class="af-label">受影響路段</span><span class="af-value mono">${escapeHtml(incident.affected_segment)} — ${escapeHtml(segData?.name || '')}</span></div>
         <div class="advisory-field"><span class="af-label">觸發 SOP 條款</span><span class="af-value">${escapeHtml(sopClauses)}</span></div>
         <div class="advisory-field"><span class="af-label">對應條款名稱</span><span class="af-value">${triggeredDecisions.map(d => d.clause_name || '').filter(Boolean).join('、') || '—'}</span></div>
@@ -2157,7 +2225,7 @@ function renderAdvisoryReport() {
 
       <div class="advisory-section">
         <div class="advisory-section-title">二、交通分級判定</div>
-        <div class="advisory-level ${levelClass}">${levelText}</div>
+        <div class="advisory-level ${levelClass}">${levelText} <span class="advisory-level-road">(${escapeHtml(segData?.name || incident.affected_segment)})</span></div>
         <div class="advisory-field"><span class="af-label">路段飽和度</span><span class="af-value mono">${saturation != null ? (saturation * 100).toFixed(1) + '%' : 'N/A'}</span></div>
         <div class="advisory-field"><span class="af-label">平均車速</span><span class="af-value mono">${avgSpeed != null ? avgSpeed + ' km/h' : 'N/A'}</span></div>
         <div class="advisory-field"><span class="af-label">判定依據</span><span class="af-value">A 級：Saturation_Score >= 0.95；B 級：0.85 <= Saturation_Score < 0.95</span></div>
@@ -2179,8 +2247,67 @@ function renderAdvisoryReport() {
 
       <div class="advisory-section">
         <div class="advisory-section-title">五、跨系統聯動</div>
-        ${crossSystemHtml}
-        ${triggeredDecisions.some(d => d.cascade_checks?.length) ? `<div class="advisory-sub-title">連動檢查</div>${triggeredDecisions.flatMap(d => d.cascade_checks || []).map(c => `<div class="cross-system-item">${escapeHtml(c)}</div>`).join('')}` : ''}
+        ${(() => {
+          // 直接輸出 Module 1 在該事件時間點已判斷出的 SOP-3 和 SOP-5 結果
+          const m1Triggers = latestDashboardTriggers || [];
+          const m1Sop3 = m1Triggers.find(t => t.sop_clause === '第 3 條');
+          const m2Sop5 = triggeredDecisions.find(d => d.sop_clause === 'SOP-5');
+          let refHtml = '';
+
+          // ═══ SOP 第 3 條：捷運與接駁分流 ═══
+          refHtml += '<div class="advisory-sub-title sop-rule-header">SOP3 - 捷運與接駁分流</div>';
+          refHtml += '<div class="advisory-ref-block">';
+          if (m1Sop3) {
+            refHtml += '<div class="sop-rule-result triggered">';
+            refHtml += '<div class="advisory-field"><span class="af-label">判定結果</span><span class="af-value sop-triggered">已觸發 ✓</span></div>';
+            refHtml += `<div class="advisory-field"><span class="af-label">站點</span><span class="af-value">${escapeHtml(m1Sop3.entity_name || '')} (${escapeHtml(m1Sop3.entity_id || '')})</span></div>`;
+            refHtml += `<div class="advisory-field"><span class="af-label">判定依據</span><span class="af-value">${escapeHtml(m1Sop3.basis)}</span></div>`;
+            refHtml += `<div class="advisory-field"><span class="af-label">時間點</span><span class="af-value mono">${escapeHtml(m1Sop3.timestamp || eventTimestamp)}</span></div>`;
+            refHtml += '</div>';
+            refHtml += '<div class="sop-rule-actions">';
+            refHtml += '<div class="advisory-sub-title">▸ 對外請求</div>';
+            refHtml += '<div class="cross-system-item"><b>[北捷]</b> 建議啟動「過站不停」疏運模式</div>';
+            refHtml += '<div class="cross-system-item"><b>[公車處]</b> 通知調度接駁專車</div>';
+            refHtml += '<div class="cross-system-item"><b>[引導]</b> 引導群眾步行至 BS_MRT_BL18（捷運市政府站）</div>';
+            refHtml += '</div>';
+          } else {
+            refHtml += '<div class="sop-rule-result not-triggered">';
+            refHtml += '<div class="advisory-field"><span class="af-label">判定結果</span><span class="af-value mono dim">未觸發 — BS_MRT_BL17 當前未達分流門檻</span></div>';
+            refHtml += '</div>';
+          }
+          refHtml += '</div>';
+
+          // ═══ SOP 第 5 條：號誌故障應變 ═══
+          refHtml += '<div class="advisory-sub-title sop-rule-header">SOP5 - 號誌故障應變</div>';
+          refHtml += '<div class="advisory-ref-block">';
+          if (m2Sop5) {
+            refHtml += '<div class="sop-rule-result triggered">';
+            refHtml += '<div class="advisory-field"><span class="af-label">判定結果</span><span class="af-value sop-triggered">已觸發 ✓</span></div>';
+            refHtml += `<div class="advisory-field"><span class="af-label">受影響路段</span><span class="af-value">${escapeHtml(m2Sop5.entity_name || '')} (${escapeHtml(m2Sop5.entity_id || '')})</span></div>`;
+            refHtml += `<div class="advisory-field"><span class="af-label">判定依據</span><span class="af-value">${escapeHtml(m2Sop5.basis)}</span></div>`;
+            if (m2Sop5.cms_text) refHtml += `<div class="advisory-field"><span class="af-label">CMS 文字</span><span class="af-value">${escapeHtml(m2Sop5.cms_text)}</span></div>`;
+            if (m2Sop5.ete_minutes) refHtml += `<div class="advisory-field"><span class="af-label">估計持續時間</span><span class="af-value mono">${m2Sop5.ete_minutes} 分鐘</span></div>`;
+            refHtml += `<div class="advisory-field"><span class="af-label">時間點</span><span class="af-value mono">${escapeHtml(m2Sop5.timestamp || eventTimestamp)}</span></div>`;
+            refHtml += '</div>';
+            refHtml += '<div class="sop-rule-actions">';
+            refHtml += '<div class="advisory-sub-title">▸ 對外請求</div>';
+            if (m2Sop5.actions?.length) {
+              m2Sop5.actions.forEach(a => {
+                refHtml += `<div class="cross-system-item"><b>[警力]</b> ${escapeHtml(a)}</div>`;
+              });
+            } else {
+              refHtml += `<div class="cross-system-item"><b>[警力]</b> ${escapeHtml(m2Sop5.entity_name || '')} 各路口派遣 2 名警力接管指揮</div>`;
+            }
+            refHtml += '</div>';
+          } else {
+            refHtml += '<div class="sop-rule-result not-triggered">';
+            refHtml += '<div class="advisory-field"><span class="af-label">判定結果</span><span class="af-value mono dim">未觸發 — 本次事件非號誌故障類型</span></div>';
+            refHtml += '</div>';
+          }
+          refHtml += '</div>';
+
+          return refHtml;
+        })()}
       </div>
     </div>`;
 
@@ -2219,6 +2346,7 @@ function generateAdvisoryMarkdown(incident, decisions, snapshot) {
   md += `| 事件 ID | ${incident.event_id} |\n`;
   md += `| 事件類型 | ${incident.type} |\n`;
   md += `| 事件描述 | ${incident.description || incident.type} |\n`;
+  md += `| 事件時間點 | ${incident.timestamp || 'N/A'} |\n`;
   md += `| 受影響路段 | ${seg_id} — ${segData?.name || ''} |\n`;
   md += `| 觸發 SOP 條款 | ${sopClauses} |\n`;
   md += `| 嚴重度 | ${incident.severity} |\n`;
@@ -2226,7 +2354,7 @@ function generateAdvisoryMarkdown(incident, decisions, snapshot) {
   md += `| ETE 預計恢復 | ${eteText} |\n\n`;
 
   md += `## 二、交通分級判定\n\n`;
-  md += `- **分級結果**：${levelText}\n`;
+  md += `- **分級結果**：${levelText}（${segData?.name || seg_id}）\n`;
   md += `- **路段飽和度**：${saturation != null ? (saturation * 100).toFixed(1) + '%' : 'N/A'}\n`;
   md += `- **平均車速**：${avgSpeed != null ? avgSpeed + ' km/h' : 'N/A'}\n`;
   md += `- **判定依據**：A 級 Saturation_Score >= 0.95；B 級 >= 0.85 且 < 0.95\n`;
@@ -2272,38 +2400,54 @@ function generateAdvisoryMarkdown(incident, decisions, snapshot) {
     });
   } else if (sop2 && sop2.primary_route) {
     const altName = snapshot?.road_segments?.[sop2.primary_route]?.name || sop2.primary_route;
-    md += `- 替代道路 ${altName} 綠燈配時 +25%（事件持續期間）\n`;
+    md += `- 替代道路 **${altName}** 綠燈配時 +25%（事件持續期間）\n`;
   } else {
     md += `> 本次事件未觸發號誌調整\n`;
   }
   md += `\n`;
 
   md += `## 五、跨系統聯動\n\n`;
-  const crossItems = [];
-  if (sop5) {
-    crossItems.push(`- [警力派遣] ${sop5.entity_name || seg_id} 各路口派遣 2 名警力接管指揮`);
-  }
-  if (sop2 && incident.severity === 'Critical') {
-    crossItems.push(`- [警力] 事故現場交管＋主疏散路口疏導`);
-  }
-  const cascadeItems = [];
-  triggeredDecisions.forEach(d => { (d.cascade_checks || []).forEach(c => cascadeItems.push(c)); });
-  if (triggeredDecisions.some(d => d.sop_clause === 'SOP-3') || cascadeItems.some(c => c.includes('第 3 條') || c.includes('SOP-3'))) {
-    crossItems.push(`- [北捷] 建議啟動「過站不停」疏運`);
-    crossItems.push(`- [公車處] 調度接駁專車`);
-  }
-  if (crossItems.length) {
-    md += crossItems.join('\n') + '\n';
+
+  // Module 1 即時警報 SOP-3 / SOP-5 完整判定結果
+  const m1Triggers = latestDashboardTriggers || [];
+  const m1Sop3 = m1Triggers.find(t => t.sop_clause === '第 3 條');
+
+  md += `### ═══ 3. 捷運與接駁分流 ═══\n\n`;
+
+  if (m1Sop3) {
+    md += `**判定結果：已觸發 ✓**\n\n`;
+    md += `- **站點**：${m1Sop3.entity_name || ''} (${m1Sop3.entity_id || ''})\n`;
+    md += `- **判定依據**：${m1Sop3.basis}\n`;
+    md += `- **時間點**：${m1Sop3.timestamp || incident.timestamp || ''}\n\n`;
+    md += `**對外請求：**\n\n`;
+    md += `- **[北捷]** 建議啟動「過站不停」疏運模式\n`;
+    md += `- **[公車處]** 通知調度接駁專車\n`;
+    md += `- **[引導]** 引導群眾步行至 BS_MRT_BL18（捷運市政府站）\n\n`;
   } else {
-    md += `> 本次事件未觸發跨系統聯動\n`;
+    md += `**判定結果：未觸發** — BS_MRT_BL17 當前未達分流門檻\n\n`;
   }
-  // 連動檢查（cascade_checks from sop_engine）
-  const allCascade = triggeredDecisions.flatMap(d => d.cascade_checks || []);
-  if (allCascade.length) {
-    md += `\n### 連動檢查\n\n`;
-    allCascade.forEach(c => { md += `- ${c}\n`; });
+
+  md += `### ═══ 5. 號誌故障應變 ═══\n\n`;
+
+  if (sop5) {
+    md += `**判定結果：已觸發 ✓**\n\n`;
+    md += `- **受影響路段**：${sop5.entity_name || ''} (${sop5.entity_id || ''})\n`;
+    md += `- **判定依據**：${sop5.basis}\n`;
+    if (sop5.cms_text) md += `- **CMS 文字**：${sop5.cms_text}\n`;
+    if (sop5.ete_minutes) md += `- **估計持續時間**：${sop5.ete_minutes} 分鐘\n`;
+    md += `- **時間點**：${sop5.timestamp || incident.timestamp || ''}\n\n`;
+    md += `**對外請求：**\n\n`;
+    if (sop5.actions?.length) {
+      sop5.actions.forEach(a => { md += `- **[警力]** ${a}\n`; });
+    } else {
+      md += `- **[警力]** ${sop5.entity_name || ''} 各路口派遣 2 名警力接管指揮\n`;
+    }
+    md += `\n`;
+  } else {
+    md += `**判定結果：未觸發** — 本次事件非號誌故障類型\n\n`;
   }
-  md += `\n---\n\n`;
+
+  md += `---\n\n`;
   md += `*本建議書由 SQUIRREL 交通指揮中心自動產出，僅供決策參考。*\n`;
 
   return md;
