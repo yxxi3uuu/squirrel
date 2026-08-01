@@ -708,14 +708,25 @@ function handleImportFile(file) {
   const reader = new FileReader();
   reader.onload = (e) => {
     try {
-      let parsed = JSON.parse(e.target.result);
+      // 移除 BOM 及前後空白，避免 UTF-8 BOM 導致 JSON.parse 失敗
+      const raw = e.target.result.replace(/^\uFEFF/, '').trim();
+      if (!raw) { alert('JSON 檔案內容為空'); return; }
+      let parsed = JSON.parse(raw);
       // 支援單一物件或陣列
       if (!Array.isArray(parsed)) parsed = [parsed];
       if (!parsed.length) { alert('JSON 檔案內容為空'); return; }
       importJsonData = parsed;
       renderImportPreview(parsed);
     } catch (err) {
-      alert('JSON 解析失敗：' + err.message);
+      // JSON 格式錯誤：彈出提醒並取消上傳
+      alert('JSON 解析失敗，已取消上傳：\n' + err.message);
+      importJsonData = null;
+      const preview = document.getElementById('import-preview');
+      if (preview) { preview.innerHTML = ''; preview.classList.add('hidden'); }
+      const btn = document.getElementById('import-submit-btn');
+      if (btn) btn.disabled = true;
+      const result = document.getElementById('import-result');
+      if (result) result.classList.add('hidden');
     }
   };
   reader.readAsText(file);
@@ -1286,6 +1297,11 @@ async function injectIncident(eventId) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(event),
     });
+    if (!res.ok) {
+      hideInjectLoading();
+      alert(`注入失敗：伺服器回傳 ${res.status} 錯誤`);
+      return;
+    }
     const data = await res.json();
     hideInjectLoading();
     if (data.success) {
@@ -1332,6 +1348,11 @@ async function injectIncidentPayload(payload) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
+    if (!res.ok) {
+      hideInjectLoading();
+      alert(`注入失敗：伺服器回傳 ${res.status} 錯誤`);
+      return;
+    }
     const data = await res.json();
     hideInjectLoading();
     if (data.success) {
@@ -1344,6 +1365,7 @@ async function injectIncidentPayload(payload) {
       alert('注入失敗');
     }
   } catch (e) {
+    hideInjectLoading();
     alert('注入失敗：' + e.message);
   }
 }
@@ -1353,41 +1375,47 @@ function showInjectResult(data) {
   const event = data.event;
   const decisions = data.decisions || [];
   const elapsed = data.processing_time_ms ?? 0;
+  const commanderSummary = data.commander_summary || '';
+  const commanderSource = data.commander_summary_source || '';
 
-  // Extract CMS texts and guidance texts from all decisions, grouped by SOP clause
-  const highlightMap = {};
+  // Extract CMS texts from all decisions for display
+  const cmsTexts = [];
   decisions.forEach(d => {
-    if (d.cms_text || d.guidance_text) {
-      const key = d.sop_clause || 'other';
-      if (!highlightMap[key]) highlightMap[key] = { clause: d.sop_clause, cms: null, guidance: null };
-      if (d.cms_text) highlightMap[key].cms = d.cms_text;
-      if (d.guidance_text) highlightMap[key].guidance = d.guidance_text;
+    if (d.cms_text) {
+      cmsTexts.push({ clause: d.sop_clause || '未分類', cms: d.cms_text });
     }
   });
-  const highlights = Object.values(highlightMap);
 
-  const highlightHtml = highlights.length ? `
+  // Build highlight HTML: consolidated commander summary + per-SOP CMS
+  let highlightHtml = '';
+  if (commanderSummary || cmsTexts.length) {
+    highlightHtml = `
     <div class="decision-highlight">
       <div class="decision-highlight-title">⚡ 關鍵決策摘要</div>
-      ${highlights.map(h => `
-        <div class="highlight-group" data-sop="${h.clause || ''}">
-          <div class="highlight-group-header">
-            <span class="highlight-sop-badge">${h.clause || '未分類'}</span>
+      ${commanderSummary ? `
+        <div class="highlight-group">
+          <div class="highlight-item">
+            <div class="highlight-label"><span class="hl-icon">🎖️</span> 指揮官綜合建議</div>
+            <div class="highlight-value">${escapeHtml(commanderSummary)}</div>
           </div>
-          ${h.cms ? `<div class="highlight-item">
+          ${commanderSource ? `<div style="font-size:10px;color:var(--text-dim);margin-top:4px;text-align:right">source: ${escapeHtml(commanderSource)}</div>` : ''}
+        </div>` : ''}
+      ${cmsTexts.map(c => `
+        <div class="highlight-group" data-sop="${c.clause}">
+          <div class="highlight-group-header">
+            <span class="highlight-sop-badge">${c.clause}</span>
+          </div>
+          <div class="highlight-item">
             <div class="highlight-label"><span class="hl-icon">📺</span> CMS 電子看板</div>
-            <div class="highlight-value">${h.cms}</div>
-          </div>` : ''}
-          ${h.guidance ? `<div class="highlight-item">
-            <div class="highlight-label"><span class="hl-icon">🎖️</span> 指揮官建議</div>
-            <div class="highlight-value">${h.guidance}</div>
-          </div>` : ''}
+            <div class="highlight-value">${escapeHtml(c.cms)}</div>
+          </div>
         </div>`).join('')}
-    </div>` : '';
+    </div>`;
+  }
 
   container.innerHTML = `
     <div class="card-yellow" style="margin-bottom:14px">
-      事件 <b>${event.event_id}</b> 已注入（${event.affected_segment} · ${event.severity} · ${event.status}）。
+      事件 <b>${escapeHtml(event.event_id)}</b> 已注入（${escapeHtml(event.affected_segment)} · ${escapeHtml(event.severity)} · ${escapeHtml(event.status)}）。
       <span class="mono">規則運算 ${elapsed} ms</span>
     </div>
     ${highlightHtml}

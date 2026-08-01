@@ -115,3 +115,102 @@ def generate_guidance(decision: TriggerDecision) -> Dict[str, str]:
 def build_llm_user_prompt(decision: TriggerDecision) -> str:
     """產生送給 LLM 的 User 部分 prompt。"""
     return f"TriggerDecision：{decision.model_dump_json(indent=2)}"
+
+
+# ------------------------------------------------------------------
+# 總結指揮官建議（將多筆 SOP 結果總結成一段話）
+# ------------------------------------------------------------------
+
+SUMMARY_SYSTEM_PROMPT = """你是台北市交通應變指揮中心的AI幕僚。
+以下是同一事件觸發的多筆 SOP 規則引擎判斷結果（guidance_text），
+請你把這些結果總結成一段給指揮官看的綜合建議文字，150字以內。
+要求：
+1. 合併重複或相關的行動建議
+2. 按優先順序排列
+3. 語氣簡潔明確，適合指揮官快速閱讀
+4. 不要自己新增任何 SOP 條款或數字，只整合已有結論
+
+請只輸出 JSON，不要有其他文字：{"commander_summary": "..."}"""
+
+
+def generate_commander_summary(guidance_texts: list[dict[str, str]]) -> dict[str, str]:
+    """
+    將多筆 SOP 決策的 guidance_text 合併總結成一段指揮官綜合建議。
+    guidance_texts 格式：[{"sop_clause": "SOP-2", "guidance_text": "..."}, ...]
+
+    回傳 {"commander_summary": "...", "_source": "llm" | "mock"}
+    """
+    if not guidance_texts:
+        return {"commander_summary": "", "_source": "mock"}
+
+    # 只有一筆時不需要總結，直接回傳
+    if len(guidance_texts) == 1:
+        return {
+            "commander_summary": guidance_texts[0]["guidance_text"],
+            "_source": "mock",
+        }
+
+    # 嘗試呼叫 Ollama
+    try:
+        result = _call_ollama_summary(guidance_texts)
+        logger.info("指揮官總結生成成功（model=%s）", OLLAMA_MODEL)
+        return result
+    except httpx.ConnectError:
+        logger.warning("Ollama 連線失敗（%s），fallback 到 mock 總結", OLLAMA_BASE_URL)
+    except httpx.TimeoutException:
+        logger.warning("Ollama 逾時（%.0fs），fallback 到 mock 總結", OLLAMA_TIMEOUT)
+    except (json.JSONDecodeError, ValueError, KeyError) as exc:
+        logger.warning("Ollama 回傳格式錯誤（%s），fallback 到 mock 總結", exc)
+    except httpx.HTTPStatusError as exc:
+        logger.warning("Ollama HTTP 錯誤 %s，fallback 到 mock 總結", exc.response.status_code)
+
+    return _mock_commander_summary(guidance_texts)
+
+
+def _call_ollama_summary(guidance_texts: list[dict[str, str]]) -> dict[str, str]:
+    """呼叫 Ollama 產生總結指揮官建議。"""
+    user_content = "以下是同一事件觸發的多筆 SOP 判斷結果：\n\n"
+    for item in guidance_texts:
+        user_content += f"【{item['sop_clause']}】{item['guidance_text']}\n"
+
+    payload = {
+        "model": OLLAMA_MODEL,
+        "stream": False,
+        "messages": [
+            {"role": "system", "content": SUMMARY_SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ],
+    }
+
+    with httpx.Client(timeout=OLLAMA_TIMEOUT) as client:
+        resp = client.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload)
+        resp.raise_for_status()
+
+    raw_content: str = resp.json()["message"]["content"].strip()
+
+    if raw_content.startswith("```"):
+        raw_content = raw_content.split("```")[1]
+        if raw_content.startswith("json"):
+            raw_content = raw_content[4:]
+        raw_content = raw_content.strip()
+
+    result: dict[str, str] = json.loads(raw_content)
+
+    if "commander_summary" not in result:
+        raise ValueError(f"LLM 回傳缺少 commander_summary 欄位：{result}")
+
+    result["_source"] = "llm"
+    return result
+
+
+def _mock_commander_summary(guidance_texts: list[dict[str, str]]) -> dict[str, str]:
+    """Mock 總結：將多筆 guidance_text 串接成一段簡潔文字。"""
+    clauses = [item["sop_clause"] for item in guidance_texts]
+    texts = [item["guidance_text"] for item in guidance_texts]
+
+    summary = f"本事件同時觸發 {'、'.join(clauses)}。綜合建議：{'；'.join(texts)}"
+
+    return {
+        "commander_summary": summary,
+        "_source": "mock",
+    }
