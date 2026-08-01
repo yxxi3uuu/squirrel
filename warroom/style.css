@@ -69,7 +69,6 @@ body {
 }
 .status-dot.pulse { animation: statusPulse 1.6s infinite; }
 @keyframes statusPulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
-.bell { background: none; border: none; font-size: 1.2rem; cursor: pointer; }
 .btn-import-incident {
   background: var(--accent); color: var(--ink); border: none; border-radius: 6px;
   padding: 5px 14px; font-size: .82rem; font-weight: 600; cursor: pointer;
@@ -666,22 +665,7 @@ body {
   opacity: .7;
 }
 
-/* ── Toast (Module 5 trigger) ─────────────────────────────────────────────── */
-.toast {
-  position: fixed; top: 20px; right: 20px; z-index: 300;
-  background: linear-gradient(145deg, var(--panel), #0c1018);
-  border: 1px solid var(--accent); border-radius: 10px;
-  padding: 14px 18px; box-shadow: 0 8px 24px rgba(116,179,168,.3);
-  animation: slidein .4s ease;
-}
-.toast.hidden { display: none; }
-@keyframes slidein { from { transform: translateX(40px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-.toast-content { display: flex; align-items: center; gap: 12px; font-size: .88rem; }
-.toast-btn {
-  padding: 5px 12px; border-radius: 6px; font-size: .78rem; font-weight: 700;
-  background: var(--accent); color: var(--ink); border: none; cursor: pointer;
-}
-.toast-close { background: none; border: none; color: var(--text-dim); font-size: 1rem; cursor: pointer; }
+/* ── Toast (removed — M5 now uses CMS publish flow) ── */
 
 
 /* ── 示範內容標籤（尚未接上其他模組真實引擎的區塊都要標這個）── */
@@ -1103,6 +1087,32 @@ footer { text-align: center; padding: 20px; color: var(--text-dim); font-size: .
   background: rgba(126,200,188,.1); border-radius: 4px;
   font-size: .78rem;
 }
+.incident-popup-cms-block {
+  margin-top: 10px; padding: 10px 12px;
+  background: rgba(126,200,188,.08); border: 1.5px solid rgba(126,200,188,.3);
+  border-radius: 8px;
+}
+.incident-popup-cms-label {
+  font-size: .7rem; font-weight: 700; color: var(--accent, #7ec8bc);
+  text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px;
+}
+.incident-popup-cms-item {
+  font-size: .78rem; line-height: 1.5; margin-bottom: 4px;
+  color: var(--text, #f2f5f9);
+}
+.incident-popup-cms-tag {
+  display: inline-block; font-size: .68rem; font-weight: 700;
+  background: rgba(126,200,188,.2); color: var(--accent, #7ec8bc);
+  padding: 1px 6px; border-radius: 4px; margin-right: 6px;
+}
+.btn-publish-warning {
+  display: inline-flex; align-items: center; gap: 4px;
+  margin-top: 8px; padding: 5px 14px;
+  background: var(--accent, #7ec8bc); color: var(--ink, #0d1117);
+  border: none; border-radius: 6px; font-size: .78rem; font-weight: 700;
+  cursor: pointer; transition: opacity .15s;
+}
+.btn-publish-warning:hover { opacity: .85; }
 .incident-popup-desc {
   margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border, #2a3545);
   font-size: .78rem; color: var(--text-dim, #9aa8ba);
@@ -1169,4 +1179,57 @@ footer { text-align: center; padding: 20px; color: var(--text-dim); font-size: .
   display: inline-block;
   width: 14px;
   font-weight: 700;
+}
+
+/* ══ Incident Map Label (事件 ID 氣泡，使用 tooltip 常駐) ═════════════════════ */
+.incident-label-tooltip-container {
+  z-index: 99999 !important;
+  background: var(--panel, #141c26) !important;
+  border: 1px solid var(--border, #2a3545) !important;
+  border-radius: 6px !important;
+  color: var(--text, #f2f5f9) !important;
+  padding: 4px 10px !important;
+  box-shadow: 0 3px 12px rgba(0,0,0,.45) !important;
+  opacity: 1 !important;
+}
+.incident-label-tooltip-container::before {
+  border-top-color: var(--panel, #141c26) !important;
+}
+.incident-map-label-id {
+  font-size: .78rem;
+  font-weight: 700;
+  color: #ff6b6b;
+  white-space: nowrap;
+  text-align: center;
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+}
+
+/* ══ Incident Detail Modal ═══════════════════════════════════════════════════ */
+.incident-detail-modal {
+  max-width: 640px;
+}
+.incident-detail-modal .incident-popup {
+  font-family: var(--font-body, 'Noto Sans TC', sans-serif);
+  font-size: .85rem;
+  line-height: 1.7;
+}
+.incident-detail-modal .incident-popup-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+.incident-detail-modal .incident-popup-row {
+  margin: 4px 0;
+}
+.incident-detail-modal .incident-popup-row b {
+  display: inline-block;
+  width: 72px;
+  color: var(--text-dim, #9aa8ba);
+}
+.incident-detail-modal .incident-popup-desc {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border, #2a3545);
+  font-size: .8rem;
+  color: var(--text-dim, #9aa8ba);
 }

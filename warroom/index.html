@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>SQUIRREL 交通指揮中心</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20260725-m5toast-restored">
+<link rel="stylesheet" href="style.css?v=20260801-m5cms-publish">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 </head>
 <body>
@@ -22,7 +22,6 @@
   <div class="top-right">
     <button class="btn-import-incident" id="import-incident-btn" onclick="openIncidentModal()">匯入事件</button>
     <button class="btn-advisory-nav hidden" id="advisory-nav-btn" onclick="openAdvisoryModal()">產出建議書</button>
-    <button class="bell" id="bell-btn">🔔</button>
   </div>
 </header>
 
@@ -136,11 +135,6 @@
             </div>
             <button class="btn-explain" onclick="openDrawer('sop1b')">查看判斷依據</button>
           </div>
-          <div class="alert-card sop6">
-            <div class="alert-hdr"><span class="alert-tag accent-bg">SOP-6 多語</span></div>
-            <div class="alert-body">載入中…</div>
-            <button class="btn-explain" onclick="openModule5Modal()">查看多語通報</button>
-          </div>
         </div>
       </div>
     </div>
@@ -226,14 +220,7 @@
   </div>
 </div>
 
-<!-- ══ OVERLAY: Module 5 多語通報 Toast ════════════════════════════════════ -->
-<div id="toast" class="toast hidden">
-  <div class="toast-content">
-    <span id="toast-text">多語通報狀態載入中…</span>
-    <button class="toast-btn" onclick="openModule5Modal(); closeToast();">查看多語文案</button>
-    <button class="toast-close" onclick="closeToast()">✕</button>
-  </div>
-</div>
+
 
 
 <!-- ══ OVERLAY: Module 5 多語通報 Modal（原生，直接呼叫 /api/notify、/api/signal，接 Ollama）══ -->
@@ -268,6 +255,37 @@
         <button class="btn btn-danger" id="m5-btn-publish" disabled onclick="m5Publish()">發送簡訊＋看板</button>
       </div>
       <div id="m5-publish-result" class="hidden"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ OVERLAY: 多語化發布 Modal（從地圖 popup CMS 觸發）══ -->
+<div id="m5-cms-modal-overlay" class="modal-overlay hidden" onclick="if(event.target===this) closeM5CmsModal();">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-eyebrow">SOP-6 · 多語化通報發布</div>
+      <h4 id="m5-cms-modal-title">載入中…</h4>
+      <div class="modal-meta mono" id="m5-cms-modal-meta"></div>
+      <button class="drawer-close modal-close" onclick="closeM5CmsModal()">✕</button>
+    </div>
+    <div class="modal-body" id="m5-cms-modal-body">
+      <div id="m5-cms-sop-banner"></div>
+      <div id="m5-cms-spinner" class="spinner hidden">
+        <div style="margin-bottom:8px">多語翻譯中… <span id="m5-cms-progress-pct">0%</span></div>
+        <div style="width:100%;height:8px;background:#1e2a3a;border-radius:4px;overflow:hidden">
+          <div id="m5-cms-progress-bar" style="width:0%;height:100%;background:var(--accent);border-radius:4px;transition:width .3s ease"></div>
+        </div>
+      </div>
+      <div id="m5-cms-editor" class="hidden">
+        <p class="editor-title">通報文字（可編輯後發布）</p>
+        <div id="m5-cms-lang-tabs" class="lang-tabs"></div>
+        <div id="m5-cms-lang-panels" class="lang-panels"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" onclick="m5CmsCopyAll()">複製全部語言</button>
+        <button class="btn btn-danger" id="m5-cms-btn-publish" disabled onclick="m5CmsPublish()">發布通報</button>
+      </div>
+      <div id="m5-cms-publish-result" class="hidden"></div>
     </div>
   </div>
 </div>
@@ -442,7 +460,20 @@
   </div>
 </div>
 
+<!-- ══ OVERLAY: 事件詳情 Modal（從地圖標籤「顯示詳情」觸發）══════════════ -->
+<div id="incident-detail-modal-overlay" class="modal-overlay hidden" onclick="if(event.target===this) closeIncidentDetailModal();">
+  <div class="modal incident-detail-modal">
+    <div class="modal-head">
+      <div class="modal-eyebrow">事件詳情</div>
+      <h4>事件資訊</h4>
+      <button class="drawer-close modal-close" onclick="closeIncidentDetailModal()">✕</button>
+    </div>
+    <div class="modal-body" id="incident-detail-modal-body">
+    </div>
+  </div>
+</div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<script src="app.js?v=20260725-m5toast-restored"></script>
+<script src="app.js?v=20260801-m5cms-publish"></script>
 </body>
 </html>
