@@ -459,7 +459,6 @@ function renderTrafficAlerts(segments, dashboard) {
                          .sort((a, b) => b.Saturation_Score - a.Saturation_Score);
 
   let html = '<h3>即時警報</h3><div class="alert-scroll">';
-  html += renderAiSummaryCard(dashboard);
   html += renderSop3Card(dashboard);
   html += renderSop4Card(dashboard);
   alerts.forEach(s => {
@@ -485,16 +484,6 @@ function renderTrafficAlerts(segments, dashboard) {
   html += renderModule5AlertCard();
   html += '</div>';
   container.innerHTML = html;
-}
-
-/* ── 模組一：AI 趨勢摘要卡（LLM 產出，只有本次有新觸發門檻時才有內容）───────── */
-function renderAiSummaryCard(dashboard) {
-  if (!dashboard || !dashboard.summary) return '';
-  return `
-    <div class="alert-card ai-summary">
-      <div class="alert-hdr"><span class="alert-tag accent-bg">分析摘要</span><span class="mono">${(dashboard.timestamp || '').slice(11, 16)}</span></div>
-      <div class="alert-body">${escapeHtml(dashboard.summary).replace(/\n/g, '<br>')}</div>
-    </div>`;
 }
 
 /* ── 模組一：SOP-3 捷運分流門檻卡（BS_MRT_BL17 Growth_Rate>0.30 或 User_Count>25000）── */

@@ -1,7 +1,7 @@
 """模組一 API（整合自 module-1-dynamicTS）：動態時序戰情儀表板。
 
-沿用 warroom/module1/backend 的 thresholds.py（SOP 第 1/3 條門檻判斷）與
-llm_summary.py（LLM 趨勢摘要），以 APIRouter 掛進 warroom 主 server。
+沿用 warroom/module1/backend 的 thresholds.py（SOP 第 1/3/4 條門檻判斷），
+以 APIRouter 掛進 warroom 主 server。
 """
 
 from typing import Optional
@@ -9,7 +9,6 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 
 from data.snapshot import available_timestamps, get_snapshot
-from warroom.module1.backend.llm_summary import generate_summary
 from warroom.module1.backend.thresholds import evaluate_triggers, new_triggers
 
 router = APIRouter()
@@ -100,5 +99,4 @@ def api_dashboard(timestamp: Optional[str] = None) -> dict:
         "snapshot": snapshot,
         "triggers": triggers,
         "newly_triggered": newly_triggered,
-        "summary": generate_summary(snapshot, newly_triggered),
     }
