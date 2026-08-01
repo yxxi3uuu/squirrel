@@ -163,7 +163,7 @@ body {
 .station-row {
   background: rgba(255,255,255,.03); border: 1px solid var(--border); border-radius: 7px;
   padding: 5px 8px; margin-bottom: 5px; font-size: .68rem;
-  cursor: pointer; transition: border-color .15s;
+  cursor: pointer; transition: border-color .15s; outline: none;
 }
 .station-row:hover { border-color: var(--accent); }
 .station-row .sr-sub {
@@ -180,7 +180,7 @@ body {
 .segstat-row {
   display: flex; align-items: center; gap: 7px;
   padding: 5px 4px; font-size: .74rem; border-bottom: 1px solid var(--border);
-  cursor: pointer; transition: background .15s;
+  cursor: pointer; transition: background .15s; outline: none;
 }
 .segstat-row:hover { background: rgba(255,255,255,.04); }
 .segstat-row:last-child { border-bottom: none; }
@@ -236,6 +236,16 @@ body {
    只做透明度淡入，不加 scale/translate，避免看起來像在移動。 */
 .leaflet-tooltip.map-tooltip {
   animation: stationTooltipFade .6s ease-out both;
+  background: var(--panel, #141c26);
+  border: 1px solid var(--border, #2a3545);
+  color: var(--text, #f2f5f9);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: .75rem;
+  box-shadow: 0 4px 12px rgba(0,0,0,.4);
+}
+.leaflet-tooltip.map-tooltip::before {
+  border-top-color: var(--panel, #141c26);
 }
 @keyframes stationTooltipFade {
   from { opacity: 0; }
@@ -255,6 +265,13 @@ body {
 }
 .tl-play-btn:hover { border-color: var(--accent); color: var(--accent); }
 .tl-play-btn.playing { background: var(--accent); color: var(--ink); border-color: var(--accent); }
+.tl-step-btn {
+  width: 24px; height: 24px; border-radius: 5px; flex: none;
+  background: rgba(255,255,255,.03); border: 1px solid var(--border); color: var(--text);
+  font-size: .6rem; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: all .2s;
+}
+.tl-step-btn:hover { border-color: var(--accent); color: var(--accent); }
 .tl-speed-select {
   display: flex; gap: 3px; flex: none;
   background: rgba(255,255,255,.03); border: 1px solid var(--border); border-radius: 7px; padding: 2px;

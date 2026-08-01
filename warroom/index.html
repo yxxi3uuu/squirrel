@@ -100,7 +100,9 @@
                 <button class="tl-speed-btn active" data-speed="1" onclick="setTimelineSpeed(1)">1×</button>
               </div>
               <span class="tl-time mono" id="timeline-time">--:--</span>
+              <button class="tl-step-btn" onclick="timelineStepPrev()" title="上一格">⏮</button>
               <input type="range" id="timeline-slider" min="0" max="0" value="0" step="1" oninput="onTimelineSlide(this.value)">
+              <button class="tl-step-btn" onclick="timelineStepNext()" title="下一格">⏭</button>
               <span class="tl-range mono" id="timeline-range"></span>
             </div>
           </div>
