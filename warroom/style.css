@@ -265,6 +265,8 @@ body {
   border-radius: 10px; padding: 11px 14px; margin-bottom: 10px;
 }
 .alert-card.sop6 { border-color: var(--accent); background: rgba(116,179,168,.06); }
+.alert-card.sop4 { border-color: var(--caution); background: rgba(234,184,92,.08); }
+.alert-card.sop3 { border-color: var(--safe); background: rgba(133,217,154,.06); }
 .alert-hdr { display: flex; justify-content: space-between; align-items: center; margin-bottom: 7px; }
 .alert-tag {
   font-family: var(--font-display); font-size: .64rem; font-weight: 700; padding: 2px 7px;
