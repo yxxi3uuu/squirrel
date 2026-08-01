@@ -20,7 +20,7 @@ from shared.schemas import TriggerDecision
 logger = logging.getLogger(__name__)
 
 # ── LLM 模式設定 ──────────────────────────────────────────────────────────────
-LLM_MODE: str = os.getenv("LLM_MODE", "ollama")
+LLM_MODE: str = os.getenv("LLM_MODE", "bedrock")
 OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
 OLLAMA_TIMEOUT: float = float(os.getenv("OLLAMA_TIMEOUT", "30"))
@@ -32,14 +32,33 @@ SYSTEM_PROMPT = """你是台北市交通應變指揮中心的AI幕僚。
 你的工作只是把結構化資料轉換成給交通指揮官看的引導說明文字，
 不要自己重新判斷或修改任何SOP條款或數字。
 
-輸出一段文字（guidance_text）：給交通指揮官看的簡短引導說明，
-可以引用SOP條款編號，說明觸發原因、建議行動與預計恢復時間，100字以內。
+請輸出 JSON，格式如下（不要有其他文字）：
+{
+  "guidance_text": "（保留，簡短一行摘要，30字以內）",
+  "commander_advice": {
+    "summary": "一句話行動總結（例如：立即封閉XX路段，導引車流至YY）",
+    "reasons": [
+      {"label": "觸發條款", "value": "SOP-X 條款名稱", "level": "red|yellow|green"},
+      {"label": "嚴重度", "value": "Critical/High/...", "level": "red|yellow|green"},
+      {"label": "關鍵指標", "value": "飽和度0.96等", "level": "red|yellow|green"}
+    ],
+    "actions": [
+      {"label": "主疏散", "value": "路段名稱（飽和度X.XX）", "level": "green"},
+      {"label": "次疏散", "value": "路段名稱", "level": "yellow"},
+      {"label": "避免", "value": "路段名稱（原因）", "level": "red"}
+    ]
+  }
+}
 
-請只輸出 JSON，不要有其他文字：{"guidance_text": "..."}"""
+規則：
+- summary 必須是祈使句，一看就知道該做什麼，15-25字
+- reasons 列出2-4項判斷依據，每項附 level 顏色（red=危險/yellow=注意/green=安全）
+- actions 列出1-3項行動，level 代表優先級（green=推薦/yellow=備選/red=避免）
+- 全部內容控制在指揮官1-10秒可讀完的長度"""
 
 
 def _call_ollama(decision: TriggerDecision) -> Dict[str, str]:
-    """呼叫 Ollama REST API，成功時回傳 {"guidance_text": ..., "_source": "llm"}。"""
+    """呼叫 Ollama REST API，成功時回傳 {"guidance_text": ..., "commander_advice": ..., "_source": "llm"}。"""
     payload = {
         "model": OLLAMA_MODEL,
         "stream": False,
@@ -66,6 +85,10 @@ def _call_ollama(decision: TriggerDecision) -> Dict[str, str]:
     if "guidance_text" not in result:
         raise ValueError(f"LLM 回傳缺少 guidance_text 欄位：{result}")
 
+    # 若 LLM 未回傳 commander_advice，自動補上 None
+    if "commander_advice" not in result:
+        result["commander_advice"] = None
+
     result["_source"] = "llm"
     return result
 
@@ -77,6 +100,7 @@ def _mock_generate(decision: TriggerDecision) -> Dict[str, str]:
             "guidance_text": (
                 f"[{decision.sop_clause or '無觸發'}] {decision.basis}"
             ),
+            "commander_advice": None,
             "_source": "mock",
         }
 
@@ -88,8 +112,45 @@ def _mock_generate(decision: TriggerDecision) -> Dict[str, str]:
         parts.append(f"主疏散：{decision.primary_route}")
     parts.append(decision.basis)
 
+    # 建構結構化 commander_advice
+    reasons = [
+        {"label": "觸發條款", "value": f"{clause} {decision.clause_name}", "level": "red"},
+    ]
+    if decision.severity in ("critical", "red"):
+        reasons.append({"label": "嚴重度", "value": "Critical", "level": "red"})
+    elif decision.severity == "yellow":
+        reasons.append({"label": "嚴重度", "value": "High", "level": "yellow"})
+
+    if decision.ete_minutes is not None:
+        reasons.append({"label": "預計恢復", "value": f"ETE {decision.ete_minutes} 分鐘", "level": "yellow"})
+
+    actions = []
+    if decision.primary_route:
+        actions.append({"label": "主疏散", "value": decision.primary_route, "level": "green"})
+    if decision.secondary_routes:
+        for sr in decision.secondary_routes[:2]:
+            actions.append({"label": "次疏散", "value": sr, "level": "yellow"})
+
+    summary = ""
+    if decision.sop_clause == "SOP-2":
+        entity = decision.entity_name or decision.entity_id
+        if decision.primary_route:
+            summary = f"封閉{entity}，導引車流至{decision.primary_route}"
+        else:
+            summary = f"封閉{entity}，啟動替代路徑導引"
+    elif decision.sop_clause == "SOP-5":
+        entity = decision.entity_name or decision.entity_id
+        summary = f"{entity}號誌故障，立即派遣警力人工指揮"
+    else:
+        summary = f"{clause} 已觸發，請依 SOP 執行應變"
+
     return {
         "guidance_text": " | ".join(parts),
+        "commander_advice": {
+            "summary": summary,
+            "reasons": reasons,
+            "actions": actions,
+        },
         "_source": "mock",
     }
 
@@ -130,7 +191,7 @@ def generate_guidance(decision: TriggerDecision) -> Dict[str, str]:
 
 
 def _call_bedrock(decision: TriggerDecision) -> Dict[str, str]:
-    """呼叫 AWS Bedrock Claude，回傳 {"guidance_text": ..., "_source": "bedrock"}。"""
+    """呼叫 AWS Bedrock Claude，回傳 {"guidance_text": ..., "commander_advice": ..., "_source": "bedrock"}。"""
     import boto3
     client = boto3.client("bedrock-runtime", region_name=BEDROCK_REGION)
     user_prompt = build_llm_user_prompt(decision)
@@ -153,6 +214,8 @@ def _call_bedrock(decision: TriggerDecision) -> Dict[str, str]:
     result = json.loads(raw)
     if "guidance_text" not in result:
         raise ValueError(f"Bedrock 回傳缺少 guidance_text：{result}")
+    if "commander_advice" not in result:
+        result["commander_advice"] = None
     result["_source"] = "bedrock"
     return result
 

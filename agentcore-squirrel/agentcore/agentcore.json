@@ -1,19 +1,28 @@
 {
+  "$schema": "https://schema.agentcore.aws.dev/v1/agentcore.json",
   "name": "SquirrelAdvisor",
-  "version": "1.0.0",
-  "description": "城市應變 AI 策略諮詢顧問 — What-if SOP 判斷",
-  "agents": {
-    "SquirrelAdvisor": {
-      "language": "Python",
-      "framework": "Strands",
-      "modelProvider": "Bedrock",
-      "entrypoint": "app/SquirrelAdvisor/main.py",
-      "runtime": {
-        "requestHeaderAllowlist": [
-          "X-Amzn-Bedrock-AgentCore-Runtime-Custom-User-Id",
-          "Authorization"
-        ]
-      }
+  "version": 1,
+  "managedBy": "CDK",
+  "tags": {
+    "agentcore:created-by": "agentcore-cli",
+    "agentcore:project-name": "SquirrelAdvisor"
+  },
+  "runtimes": [],
+  "memories": [],
+  "knowledgeBases": [],
+  "credentials": [],
+  "evaluators": [],
+  "onlineEvalConfigs": [],
+  "agentCoreGateways": [],
+  "policyEngines": [],
+  "configBundles": [],
+  "abTests": [],
+  "harnesses": [
+    {
+      "name": "SquirrelAdvisor",
+      "path": "app/SquirrelAdvisor"
     }
-  }
+  ],
+  "datasets": [],
+  "payments": []
 }

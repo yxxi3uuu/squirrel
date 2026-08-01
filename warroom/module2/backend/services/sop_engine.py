@@ -421,6 +421,7 @@ def build_sop2_decision(incident: dict, snapshot: dict) -> TriggerDecision:
 
     llm_result = generate_guidance(draft_decision)
     guidance_text = llm_result.get("guidance_text", "")
+    commander_advice = llm_result.get("commander_advice")
 
     actions = [
         f"重新導引車流：主疏散路徑 {primary_seg_id or '無'}",
@@ -429,7 +430,7 @@ def build_sop2_decision(incident: dict, snapshot: dict) -> TriggerDecision:
     if guidance_text:
         actions.append(f"指揮官建議：{guidance_text}")
 
-    return TriggerDecision(
+    decision = TriggerDecision(
         triggered=True,
         sop_clause="SOP-2",
         clause_name="事故與路障應變",
@@ -446,6 +447,10 @@ def build_sop2_decision(incident: dict, snapshot: dict) -> TriggerDecision:
         cms_text=cms_text,
         timestamp=incident.get("timestamp"),
     )
+
+    # 將 commander_advice 附加到 model 外（透過 dict 層傳遞）
+    decision._commander_advice = commander_advice
+    return decision
 
 
 # ------------------------------------------------------------------
@@ -500,6 +505,7 @@ def build_sop5_decision(incident: dict, snapshot: dict) -> TriggerDecision:
 
     llm_result = generate_guidance(draft_decision)
     guidance_text = llm_result.get("guidance_text", "")
+    commander_advice = llm_result.get("commander_advice")
 
     actions = [
         f"人工指揮派遣：{seg_name} 派遣 {police_needed} 名警力接管交通指揮",
@@ -508,7 +514,7 @@ def build_sop5_decision(incident: dict, snapshot: dict) -> TriggerDecision:
     if guidance_text:
         actions.append(f"指揮官建議：{guidance_text}")
 
-    return TriggerDecision(
+    decision = TriggerDecision(
         triggered=True,
         sop_clause="SOP-5",
         clause_name="號誌故障應變",
@@ -525,6 +531,9 @@ def build_sop5_decision(incident: dict, snapshot: dict) -> TriggerDecision:
         cms_text=cms_text,
         timestamp=incident.get("timestamp"),
     )
+
+    decision._commander_advice = commander_advice
+    return decision
 
 
 # ------------------------------------------------------------------

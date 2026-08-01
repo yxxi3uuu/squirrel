@@ -4,7 +4,7 @@
 
 ## 前一天準備（確認清單）
 
-- [ ] GitHub 程式碼已推上最新版（`feature/module-3-advisory` branch）
+- [ ] GitHub 程式碼已推上最新版（merge 到 `frontend-integration` branch）
 - [ ] 本機測試 `python3 -m uvicorn warroom.server:app --port 8000` 可正常運行
 - [ ] 比賽帳號可以登入 AWS Console
 - [ ] 確認比賽指定 Region（預設 us-west-2）

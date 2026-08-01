@@ -1,0 +1,14 @@
+{
+  "name": "SquirrelAdvisor",
+  "model": {
+    "provider": "bedrock",
+    "modelId": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    "temperature": 0.15
+  },
+  "tools": [],
+  "skills": [],
+  "memory": {
+    "mode": "disabled"
+  },
+  "maxIterations": 10
+}
