@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Save 後自動跑 Smoke Test",
+      "trigger": "PostFileSave",
+      "description": "Python 檔案存檔後自動跑 smoke test，確保 server 基本功能沒壞",
+      "matcher": "\\.(py)$",
+      "action": {
+        "type": "command",
+        "command": "cd c:\\Users\\mengr\\squirrel && python -m pytest warroom/tests/test_smoke.py -x -q --tb=short 2>&1 | head -30",
+        "timeout": 30
+      }
+    }
+  ]
+}

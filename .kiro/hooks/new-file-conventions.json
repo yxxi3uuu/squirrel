@@ -1,0 +1,15 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "新 Python 檔慣例提醒",
+      "trigger": "PostFileCreate",
+      "description": "新增 Python 檔案時提醒開發者遵循專案結構慣例",
+      "matcher": "\\.(py)$",
+      "action": {
+        "type": "agent",
+        "prompt": "新建 Python 檔案時請確認：1) 如果是 router，放在 warroom/routers/ 且用 APIRouter()，並提醒後續要到 warroom/server.py 註冊；2) 如果是資料處理層，不應直接讀取 warroom/data_source/ 原始檔，要走 data/snapshot.py；3) 如果是 schema，放在 shared/schemas.py 而非各模組內部；4) 檔案頂部要有中文 docstring 說明用途。"
+      }
+    }
+  ]
+}

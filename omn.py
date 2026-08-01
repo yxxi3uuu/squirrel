@@ -4,10 +4,10 @@
 
 LLM 後端：Ollama  (http://localhost:11434)
   安裝：https://ollama.com/download/windows
-  拉模型：ollama pull qwen2.5:3b
+  拉模型：ollama pull qwen2.5:7b
 
 .env 設定（選填）：
-  OLLAMA_MODEL=qwen2.5:3b
+  OLLAMA_MODEL=qwen2.5:7b
   OLLAMA_URL=http://localhost:11434
 """
 
@@ -97,7 +97,7 @@ html, body, [data-testid="stAppViewContainer"] {
 DATA_PATH         = os.path.join("warroom", "data_source", "signaling_crowd_density.csv")
 ROAMING_THRESHOLD = 0.30
 OLLAMA_URL        = os.environ.get("OLLAMA_URL",   "http://localhost:11434")
-OLLAMA_MODEL      = os.environ.get("OLLAMA_MODEL", "qwen2.5:3b")
+OLLAMA_MODEL      = os.environ.get("OLLAMA_MODEL", "qwen2.5:7b")
 
 # ── 欄位別名映射 ───────────────────────────────────────────────────────────────
 _ALIASES = {
@@ -263,7 +263,7 @@ with st.sidebar:
     st.markdown("**⚙️ Ollama 設定**")
     ollama_url_input   = st.text_input("API 位址", value=OLLAMA_URL)
     ollama_model_input = st.text_input("模型名稱", value=OLLAMA_MODEL,
-                                        help="ollama pull qwen2.5:3b")
+                                        help="ollama pull qwen2.5:7b")
     if st.button("🔄 重新檢查連線", use_container_width=True):
         st.cache_resource.clear()
         st.rerun()

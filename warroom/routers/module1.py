@@ -1,9 +1,7 @@
 """模組一 API（整合自 module-1-dynamicTS）：動態時序戰情儀表板。
 
-沿用 module1_dashboard/backend 的 thresholds.py（SOP 第 1/3 條門檻判斷）與
-llm_summary.py（LLM 趨勢摘要），改以 APIRouter 掛進 warroom 主 server，
-路由路徑與原本 module1_dashboard/backend/main.py 保持一致，
-讓 module1_dashboard/frontend 不需修改即可直接呼叫。
+沿用 warroom/module1/backend 的 thresholds.py（SOP 第 1/3 條門檻判斷）與
+llm_summary.py（LLM 趨勢摘要），以 APIRouter 掛進 warroom 主 server。
 """
 
 from typing import Optional
@@ -11,8 +9,8 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 
 from data.snapshot import available_timestamps, get_snapshot
-from module1_dashboard.backend.llm_summary import generate_summary
-from module1_dashboard.backend.thresholds import evaluate_triggers, new_triggers
+from warroom.module1.backend.llm_summary import generate_summary
+from warroom.module1.backend.thresholds import evaluate_triggers, new_triggers
 
 router = APIRouter()
 
@@ -33,7 +31,11 @@ def api_snapshot(timestamp: Optional[str] = None) -> dict:
 @router.get("/history")
 def api_history(entity_id: str) -> dict:
     """單一路段/站點跨時間軸的指標，供前端畫時間序列圖表用。
-    路段回傳飽和度＋車速雙指標；站點回傳人流數＋成長率雙指標。"""
+    路段回傳飽和度＋車速雙指標；站點回傳人流數＋成長率雙指標。
+
+    路段/站點不必從第一個時間點就有資料——中途才出現的實體，缺資料的時間點
+    直接跳過，不會讓整支 API 失敗；只有「從頭到尾都找不到這個 entity_id」
+    才視為真的不存在，回傳 404。"""
     timestamps = available_timestamps()
     points = []
     entity_type = None
@@ -55,8 +57,10 @@ def api_history(entity_id: str) -> dict:
                 "user_count": station["user_count"],
                 "growth_rate": station["growth_rate"],
             })
-        else:
-            raise HTTPException(status_code=404, detail=f"Unknown entity_id {entity_id!r}")
+        # 這個時間點還沒有這個實體的資料（例如中途才上線的站點）——跳過，不中斷。
+
+    if entity_type is None:
+        raise HTTPException(status_code=404, detail=f"Unknown entity_id {entity_id!r}")
     return {"entity_id": entity_id, "entity_type": entity_type, "points": points}
 
 

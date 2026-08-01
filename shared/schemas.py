@@ -98,4 +98,6 @@ class TriggerDecision(StrictBaseModel):
     # [{"segment_id": ..., "reason": ...}] 排除理由（模組 4 解釋鏈要求）
     ete_minutes: Optional[float] = None     # SOP 7 公式結果（程式算，LLM 只解釋）
     cms_text: Optional[str] = None          # SOP 2b 產出的 CMS 文字
+    guidance_text: Optional[str] = None     # LLM 產出的指揮官引導文字
+    guidance_source: Optional[str] = None   # llm / bedrock / mock
     timestamp: Optional[str] = None
