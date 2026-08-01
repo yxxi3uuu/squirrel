@@ -5,6 +5,7 @@ let stationMarkers = {};
 let latestDecisions = [];
 let latestSnapshot = null;
 let latestIncident = null;
+let injectedTimelineData = {}; // { timestamp: { event, decisions, snapshot } }
 
 // 路段／站點經緯度座標改由後端 /api/traffic/coords 載入（見 warroom/data_source/road_coords.json），
 // 不再寫死在前端，方便其他模組重用同一份資料、也不用改程式碼就能更新座標。
@@ -30,6 +31,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 會被路段線蓋住點不到。開一個獨立、z-index 更高的 pane 讓站點永遠疊在路段上面。
   mapInstance.createPane('stationPane');
   mapInstance.getPane('stationPane').style.zIndex = 450;
+  // 事件標記 pane：z-index 高於站點，確保事件 popup 不會被遮住
+  mapInstance.createPane('incidentPane');
+  mapInstance.getPane('incidentPane').style.zIndex = 650;
+  // 確保 popup pane 永遠在最上層（解決站點標記蓋住 popup 的問題）
+  mapInstance.getPane('popupPane').style.zIndex = 900;
   // 地圖高度改用 flex:1 撐滿面板剩餘空間（見 style.css .map-wrap），視窗尺寸變動時
   // 容器實際像素高度會跟著變，Leaflet 需要重新量測才不會顯示錯位/留白。
   window.addEventListener('resize', () => mapInstance.invalidateSize());
@@ -376,23 +382,43 @@ function startTimelinePlayLoop() {
 
 async function loadSnapshotAt(timestamp) {
   try {
+    // 先清除地圖上的事件標記（只在非事件時間點清除）
+    clearIncidentMapMarkers();
+
     // /api/dashboard 是 /api/snapshot 的超集：同一份快照之外，還多附上門檻判斷
     // （triggers）、這次新觸發的項目（newly_triggered）跟 LLM 趨勢摘要（summary），
     // 一次打完不用再分開呼叫 /api/snapshot。
     // 模組五（基地台狀態／SOP-6 多語卡）跟模組一原本是兩套獨立系統，這裡一起帶
     // 同一個 timestamp，讓整個儀表板（含地圖站點標記）都跟著時間軸走，不會有
     // 「時間軸調到 18:00，SOP-6 卡片卻還停在最新時間點」的不一致。
-    const [dashRes] = await Promise.all([
-      fetch(`/api/dashboard?timestamp=${encodeURIComponent(timestamp)}`),
+
+    // 如果該 timestamp 是注入事件的時間點（後端可能沒有此精確時間），用最近的可用時間
+    let queryTs = timestamp;
+    let dashRes = await fetch(`/api/dashboard?timestamp=${encodeURIComponent(queryTs)}`);
+    if (!dashRes.ok && injectedTimelineData[timestamp]) {
+      // 找最近的前一個可用時間點
+      const candidates = timelineTimestamps.filter(t => t <= timestamp && !injectedTimelineData[t]);
+      const fallbackTs = candidates.length ? candidates[candidates.length - 1] : timelineTimestamps.find(t => !injectedTimelineData[t]) || timelineTimestamps[0];
+      dashRes = await fetch(`/api/dashboard?timestamp=${encodeURIComponent(fallbackTs)}`);
+    }
+
+    const [dashboard] = await Promise.all([
+      dashRes.json(),
       loadModule5Status(timestamp),
       loadBaseStationPanel(timestamp),
     ]);
-    const dashboard = await dashRes.json();
     const segments = snapshotToSegments(dashboard.snapshot);
     renderTrafficKPI(computeTrafficSummary(segments));
     renderTrafficAlerts(segments, dashboard);
     renderTrafficMap(segments);
     renderSegmentStatusList(segments);
+
+    // 如果該時間點有注入事件，重新顯示事件標記和警報卡片
+    const injected = injectedTimelineData[timestamp];
+    if (injected) {
+      renderIncidentDecisionsOnDashboard(injected.event, injected.decisions);
+      addIncidentMapMarkers(injected.event, injected.decisions, injected.snapshot);
+    }
   } catch (e) { console.error('快照載入失敗', e); }
 }
 
@@ -772,18 +798,19 @@ async function submitImportJson() {
       body: JSON.stringify(importJsonData),
     });
     const data = await res.json();
-    const resultEl = document.getElementById('import-result');
-    resultEl.classList.remove('hidden');
     if (data.success) {
-      resultEl.innerHTML = `<div class="card-yellow">✓ 成功匯入 ${data.imported_count} 筆事件（目前共 ${data.total} 筆）</div>`;
+      closeIncidentModal();
+      showInjectResultNotification(true, null, {
+        event: { event_id: `批次匯入 ${data.imported_count} 筆`, affected_segment: '—', severity: '—', status: '—' },
+        decisions: [],
+        processing_time_ms: 0,
+      });
       loadIncidentData();
     } else {
-      resultEl.innerHTML = `<div class="card-red">匯入失敗：${escapeHtml(JSON.stringify(data))}</div>`;
+      showInjectResultNotification(false, JSON.stringify(data));
     }
   } catch (e) {
-    const resultEl = document.getElementById('import-result');
-    resultEl.classList.remove('hidden');
-    resultEl.innerHTML = `<div class="card-red">匯入失敗：${escapeHtml(e.message)}</div>`;
+    showInjectResultNotification(false, e.message);
   } finally {
     btn.disabled = false;
     btn.textContent = '匯入事件';
@@ -1312,8 +1339,15 @@ function m5CopyAll() {
 }
 
 /* ── Incident Injection ────────────────────────────────────────────────────── */
+function openIncidentModal() {
+  document.getElementById('incident-modal-overlay').classList.remove('hidden');
+}
+function closeIncidentModal() {
+  document.getElementById('incident-modal-overlay').classList.add('hidden');
+}
+
 function showInjectLoading() {
-  const panel = document.querySelector('#panel-incident');
+  const panel = document.getElementById('incident-modal-body');
   if (!panel) return;
   // Remove existing overlay if any
   const existing = panel.querySelector('.inject-loading-overlay');
@@ -1358,7 +1392,7 @@ async function injectIncident(eventId) {
     const listRes = await fetch('/api/incidents/list');
     const listData = await listRes.json();
     const event = listData.incidents.find(i => i.event_id === eventId);
-    if (!event) { hideInjectLoading(); alert('找不到該事件'); return; }
+    if (!event) { hideInjectLoading(); showInjectResultNotification(false, '找不到該事件'); return; }
 
     const res = await fetch('/api/incidents/inject', {
       method: 'POST',
@@ -1367,7 +1401,7 @@ async function injectIncident(eventId) {
     });
     if (!res.ok) {
       hideInjectLoading();
-      alert(`注入失敗：伺服器回傳 ${res.status} 錯誤`);
+      showInjectResultNotification(false, `伺服器回傳 ${res.status} 錯誤`);
       return;
     }
     const data = await res.json();
@@ -1376,10 +1410,15 @@ async function injectIncident(eventId) {
       latestIncident = data.event;
       latestDecisions = data.decisions || [];
       latestSnapshot = data.snapshot || null;
-      showInjectResult(data);
+      closeIncidentModal();
+      showInjectResultNotification(true, null, data);
+      applyIncidentToDashboard(data);
+    } else {
+      showInjectResultNotification(false, '注入失敗');
     }
   } catch (e) {
-    alert('注入失敗：' + e.message);
+    hideInjectLoading();
+    showInjectResultNotification(false, e.message);
   }
 }
 
@@ -1418,7 +1457,7 @@ async function injectIncidentPayload(payload) {
     });
     if (!res.ok) {
       hideInjectLoading();
-      alert(`注入失敗：伺服器回傳 ${res.status} 錯誤`);
+      showInjectResultNotification(false, `伺服器回傳 ${res.status} 錯誤`);
       return;
     }
     const data = await res.json();
@@ -1427,68 +1466,293 @@ async function injectIncidentPayload(payload) {
       latestIncident = data.event;
       latestDecisions = data.decisions || [];
       latestSnapshot = data.snapshot || null;
-      showInjectResult(data);
+      closeIncidentModal();
+      showInjectResultNotification(true, null, data);
+      applyIncidentToDashboard(data);
       loadIncidentData();
     } else {
-      alert('注入失敗');
+      showInjectResultNotification(false, '注入失敗');
     }
   } catch (e) {
     hideInjectLoading();
-    alert('注入失敗：' + e.message);
+    showInjectResultNotification(false, e.message);
   }
 }
 
 function showInjectResult(data) {
-  const container = document.getElementById('decision-cards');
-  const event = data.event;
-  const decisions = data.decisions || [];
-  const elapsed = data.processing_time_ms ?? 0;
-  const commanderSummary = data.commander_summary || '';
-  const commanderSource = data.commander_summary_source || '';
+  // Legacy: kept for compatibility; new flow uses showInjectResultNotification + applyIncidentToDashboard
+  applyIncidentToDashboard(data);
+}
 
-  // Extract CMS texts from all decisions for display
-  const cmsTexts = [];
-  decisions.forEach(d => {
-    if (d.cms_text) {
-      cmsTexts.push({ clause: d.sop_clause || '未分類', cms: d.cms_text });
-    }
-  });
+/* ── 匯入結果通知 Modal ─────────────────────────────────────────────────── */
+function showInjectResultNotification(success, errorMsg, data) {
+  const overlay = document.getElementById('inject-result-modal-overlay');
+  const title = document.getElementById('inject-result-title');
+  const body = document.getElementById('inject-result-body');
 
-  // Build highlight HTML: consolidated commander summary + per-SOP CMS
-  let highlightHtml = '';
-  if (commanderSummary || cmsTexts.length) {
-    highlightHtml = `
-    <div class="decision-highlight">
-      <div class="decision-highlight-title">⚡ 關鍵決策摘要</div>
-      ${commanderSummary ? `
-        <div class="highlight-group">
-          <div class="highlight-item">
-            <div class="highlight-label"><span class="hl-icon">🎖️</span> 指揮官綜合建議</div>
-            <div class="highlight-value">${escapeHtml(commanderSummary)}</div>
-          </div>
-          ${commanderSource ? `<div style="font-size:10px;color:var(--text-dim);margin-top:4px;text-align:right">source: ${escapeHtml(commanderSource)}</div>` : ''}
-        </div>` : ''}
-      ${cmsTexts.map(c => `
-        <div class="highlight-group" data-sop="${c.clause}">
-          <div class="highlight-group-header">
-            <span class="highlight-sop-badge">${c.clause}</span>
-          </div>
-          <div class="highlight-item">
-            <div class="highlight-label"><span class="hl-icon">📺</span> CMS 電子看板</div>
-            <div class="highlight-value">${escapeHtml(c.cms)}</div>
-          </div>
-        </div>`).join('')}
-    </div>`;
+  if (success && data) {
+    const event = data.event;
+    const decisions = data.decisions || [];
+    const elapsed = data.processing_time_ms ?? 0;
+    const triggeredCount = decisions.filter(d => d.triggered).length;
+    const sopClauses = decisions.filter(d => d.triggered).map(d => d.sop_clause).filter(Boolean).join('、') || '無';
+
+    title.textContent = '✓ 匯入成功';
+    title.style.color = 'var(--safe, #85d99a)';
+    body.innerHTML = `
+      <div class="inject-result-success">
+        <div class="inject-result-icon">✓</div>
+        <div class="inject-result-detail">
+          <p>事件 <b>${escapeHtml(event.event_id)}</b> 已成功注入</p>
+          <p class="mono" style="font-size:12px;color:var(--text-dim)">
+            ${escapeHtml(event.affected_segment)} · ${escapeHtml(event.severity)} · ${escapeHtml(event.status)}
+          </p>
+          <p style="margin-top:10px">觸發 SOP 條款：<b>${escapeHtml(sopClauses)}</b>（${triggeredCount} 筆決策）</p>
+          <p class="mono" style="font-size:11px;color:var(--text-dim)">規則運算 ${elapsed} ms</p>
+        </div>
+      </div>`;
+  } else {
+    title.textContent = '✗ 匯入失敗';
+    title.style.color = 'var(--critical, #f27a84)';
+    body.innerHTML = `
+      <div class="inject-result-fail">
+        <div class="inject-result-icon fail">✗</div>
+        <div class="inject-result-detail">
+          <p>事件注入失敗</p>
+          <p style="color:var(--critical)">${escapeHtml(errorMsg || '未知錯誤')}</p>
+        </div>
+      </div>`;
   }
 
-  container.innerHTML = `
-    <div class="card-yellow" style="margin-bottom:14px">
-      事件 <b>${escapeHtml(event.event_id)}</b> 已注入（${escapeHtml(event.affected_segment)} · ${escapeHtml(event.severity)} · ${escapeHtml(event.status)}）。
-      <span class="mono">規則運算 ${elapsed} ms</span>
-    </div>
-    ${highlightHtml}
-    ${decisions.map(renderDecisionCard).join('')}
-    <button class="btn btn-advisory" onclick="openAdvisoryModal()">產出交控中心建議書</button>`;
+  overlay.classList.remove('hidden');
+}
+
+function closeInjectResultModal() {
+  document.getElementById('inject-result-modal-overlay').classList.add('hidden');
+}
+
+/* ── 將匯入事件的 SOP 決策結果反映到儀表板 ─────────────────────────────────── */
+function applyIncidentToDashboard(data) {
+  const event = data.event;
+  const decisions = data.decisions || [];
+  const snapshot = data.snapshot || latestSnapshot;
+
+  // 1. 在右側即時警報區加入簡化的 SOP 決策卡片
+  renderIncidentDecisionsOnDashboard(event, decisions);
+
+  // 2. 在地圖上標記事件位置（閃爍圖示 + 封閉路段標紅）
+  addIncidentMapMarkers(event, decisions, snapshot);
+
+  // 3. 更新事件數量 KPI
+  const alertEl = document.getElementById('ks-alert-value');
+  if (alertEl) {
+    const current = parseInt(alertEl.textContent) || 0;
+    alertEl.textContent = current + 1;
+  }
+
+  // 4. 顯示 nav bar 上的「產出建議書」按鈕
+  const advisoryNavBtn = document.getElementById('advisory-nav-btn');
+  if (advisoryNavBtn) advisoryNavBtn.classList.remove('hidden');
+
+  // 5. 將時間軸移動到事件時間點（如不存在則新增）
+  insertIncidentTimestamp(event, data);
+}
+
+/* ── 在時間軸插入事件時間點並跳轉 ─────────────────────────────────────────── */
+
+function insertIncidentTimestamp(event, data) {
+  const ts = event.timestamp;
+  if (!ts || !timelineTimestamps.length) return;
+
+  // 儲存事件資料到對應時間點
+  injectedTimelineData[ts] = {
+    event: data.event,
+    decisions: data.decisions || [],
+    snapshot: data.snapshot || latestSnapshot,
+  };
+
+  // 檢查時間軸是否已包含此時間點
+  const existingIdx = timelineTimestamps.indexOf(ts);
+  if (existingIdx >= 0) {
+    // 時間點已存在，直接跳轉
+    timelineIndex = existingIdx;
+  } else {
+    // 找到插入位置（保持排序）
+    let insertIdx = timelineTimestamps.findIndex(t => t > ts);
+    if (insertIdx === -1) insertIdx = timelineTimestamps.length;
+    timelineTimestamps.splice(insertIdx, 0, ts);
+
+    // 更新 slider 範圍
+    const slider = document.getElementById('timeline-slider');
+    slider.max = timelineTimestamps.length - 1;
+    timelineIndex = insertIdx;
+  }
+
+  // 更新 slider 顯示
+  const slider = document.getElementById('timeline-slider');
+  slider.value = timelineIndex;
+  document.getElementById('timeline-range').textContent =
+    `${shortTime(timelineTimestamps[0])} ─ ${shortTime(timelineTimestamps[timelineTimestamps.length - 1])}`;
+  updateTimelineDisplay();
+
+  // 載入該時間點的資料
+  loadSnapshotAt(ts);
+}
+
+/* ── 在儀表板右側即時警報區渲染簡化 SOP 決策卡片 ──────────────────────────── */
+function renderIncidentDecisionsOnDashboard(event, decisions) {
+  const container = document.querySelector('#panel-dashboard .dash-alerts .alert-scroll');
+  if (!container) return;
+
+  const triggeredDecisions = decisions.filter(d => d.triggered);
+  if (!triggeredDecisions.length) return;
+
+  // 生成每筆 SOP 決策的簡化警報卡片（只顯示最基本資訊，詳細內容在「為什麼」裡）
+  let cardsHtml = '';
+  triggeredDecisions.forEach(d => {
+    const sopClass = d.sop_clause === 'SOP-1' ? 'sop1'
+      : d.sop_clause === 'SOP-2' ? 'sop2'
+      : d.sop_clause === 'SOP-5' ? 'sop5'
+      : d.sop_clause === 'SOP-3' ? 'sop3'
+      : d.sop_clause === 'SOP-6' ? 'sop6'
+      : 'sop2';
+    const tagBg = d.severity === 'critical' || d.severity === 'red' ? '' : 'caution-bg';
+    const timeStr = (event.timestamp || '').slice(11, 16);
+
+    // 簡化卡片：只顯示實體名稱 + 一行摘要
+    let bodyHtml = `<b>${escapeHtml(d.entity_name || event.location)} (${escapeHtml(d.entity_id || event.affected_segment)})</b>`;
+
+    // 只顯示一行重點
+    if (d.sop_clause === 'SOP-2') {
+      if (d.primary_route) bodyHtml += `<br>疏散 → ${escapeHtml(d.primary_route_name || d.primary_route)}`;
+    } else if (d.sop_clause === 'SOP-5') {
+      bodyHtml += `<br>人工指揮派遣`;
+    } else if (d.sop_clause === 'SOP-1') {
+      const shortBasis = d.basis.split('（')[0] || d.basis;
+      bodyHtml += `<br>${escapeHtml(shortBasis)}`;
+    }
+
+    const explainType = d.sop_clause === 'SOP-2' ? 'sop2'
+      : d.sop_clause === 'SOP-5' ? 'sop5'
+      : d.sop_clause === 'SOP-1' && d.entity_id?.startsWith('RD_') ? d.entity_id
+      : 'sop2';
+
+    cardsHtml += `
+      <div class="alert-card ${sopClass} injected-alert">
+        <div class="alert-hdr">
+          <span class="alert-tag ${tagBg}">${d.sop_clause || '事件'} ${escapeHtml(d.clause_name || '')}</span>
+          ${d.ete_minutes && d.sop_clause !== 'SOP-2' && d.sop_clause !== 'SOP-5' ? `<span class="ete-badge mono">ETE ${d.ete_minutes} min</span>` : ''}
+          <span class="mono">${timeStr}</span>
+        </div>
+        <div class="alert-body">${bodyHtml}</div>
+        <button class="btn-explain" onclick="openDrawer('${explainType}')">查看判斷依據</button>
+      </div>`;
+  });
+
+  // 在 alert-scroll 最前面插入
+  container.insertAdjacentHTML('afterbegin', cardsHtml);
+}
+
+/* ── 地圖事件標記：閃爍圖示 + 封閉路段標紅 ─────────────────────────────────── */
+let incidentMapMarkers = [];
+let incidentAffectedSegments = []; // 紀錄被標紅的路段，切換時間點要還原
+
+function clearIncidentMapMarkers() {
+  // 移除所有事件 marker
+  incidentMapMarkers.forEach(m => { if (mapInstance) mapInstance.removeLayer(m); });
+  incidentMapMarkers = [];
+  // 還原被標紅的路段（恢復為正常配色，等 renderTrafficMap 重新上色）
+  incidentAffectedSegments.forEach(segId => {
+    if (roadPolylines[segId]) {
+      roadPolylines[segId].setStyle({ weight: 5, opacity: 0.9 });
+      const el = roadPolylines[segId].getElement();
+      if (el) {
+        el.classList.remove('road-incident-blink');
+        el.style.filter = '';
+      }
+    }
+  });
+  incidentAffectedSegments = [];
+  // 清除 dashboard 上的注入事件卡片
+  const container = document.querySelector('#panel-dashboard .dash-alerts .alert-scroll');
+  if (container) {
+    container.querySelectorAll('.injected-alert').forEach(el => el.remove());
+  }
+}
+
+function addIncidentMapMarkers(event, decisions, snapshot) {
+  if (!mapInstance) return;
+  const segId = event.affected_segment;
+
+  // 1. 將受影響路段標紅並加粗（封閉效果）
+  if (segId && segId.startsWith('RD_') && roadPolylines[segId]) {
+    roadPolylines[segId].setStyle({
+      color: '#ff2244',
+      weight: 8,
+      opacity: 1,
+    });
+    // 加上閃爍 CSS class
+    const el = roadPolylines[segId].getElement();
+    if (el) el.classList.add('road-incident-blink');
+    incidentAffectedSegments.push(segId);
+  }
+
+  // 2. 在事件位置放一個閃爍圖示標記
+  let markerCoords = null;
+
+  // 優先使用路段座標的中點
+  if (segId && ROAD_COORDS[segId] && ROAD_COORDS[segId].length) {
+    const pts = ROAD_COORDS[segId];
+    const midIdx = Math.floor(pts.length / 2);
+    markerCoords = pts[midIdx];
+  }
+  // 其次使用站點座標
+  if (!markerCoords && segId && STATION_COORDS[segId]) {
+    markerCoords = STATION_COORDS[segId];
+  }
+
+  if (markerCoords) {
+    // 決定圖示：車禍 vs 號誌故障
+    const isSignalFailure = event.type === 'Power_Failure' ||
+      (event.description && (event.description.includes('號誌') || event.description.includes('信號')));
+    const iconEmoji = isSignalFailure ? '🚦' : '🚨';
+    const severityColor = event.severity === 'Critical' ? '#ff2244'
+      : event.severity === 'High' ? '#f27a84'
+      : '#eab85c';
+
+    const icon = L.divIcon({
+      className: 'incident-map-marker',
+      html: `<div class="incident-marker-pulse" style="--pulse-color:${severityColor}">
+        <span class="incident-marker-icon">${iconEmoji}</span>
+      </div>`,
+      iconSize: [36, 36],
+      iconAnchor: [18, 18],
+    });
+
+    const marker = L.marker(markerCoords, { icon, zIndexOffset: 500, pane: 'incidentPane' }).addTo(mapInstance);
+
+    // Popup 顯示事件詳細資料
+    const triggeredSops = decisions.filter(d => d.triggered).map(d => d.sop_clause).filter(Boolean).join('、') || '無';
+    const eteDecision = decisions.find(d => d.ete_minutes);
+    const cmsDecision = decisions.find(d => d.cms_text);
+    let popupHtml = `
+      <div class="incident-popup">
+        <div class="incident-popup-title">${iconEmoji} ${escapeHtml(event.event_id)}</div>
+        <div class="incident-popup-row"><b>類型</b> ${escapeHtml(event.type)}</div>
+        <div class="incident-popup-row"><b>位置</b> ${escapeHtml(event.location)}</div>
+        <div class="incident-popup-row"><b>嚴重度</b> <span class="severity-${event.severity.toLowerCase()}">${escapeHtml(event.severity)}</span></div>
+        <div class="incident-popup-row"><b>狀態</b> ${escapeHtml(event.status)}</div>
+        <div class="incident-popup-row"><b>路段</b> ${escapeHtml(segId)}</div>
+        <div class="incident-popup-row"><b>觸發 SOP</b> ${escapeHtml(triggeredSops)}</div>
+        ${eteDecision ? `<div class="incident-popup-row"><b>ETE</b> ${eteDecision.ete_minutes} 分鐘</div>` : ''}
+        ${cmsDecision ? `<div class="incident-popup-row incident-popup-cms"><b>CMS</b> ${escapeHtml(cmsDecision.cms_text)}</div>` : ''}
+        <div class="incident-popup-desc">${escapeHtml(event.description)}</div>
+      </div>`;
+    marker.bindPopup(popupHtml, { maxWidth: 320, className: 'incident-popup-container' });
+    marker.openPopup();
+
+    incidentMapMarkers.push(marker);
+  }
 }
 
 function renderDecisionCard(decision, index) {
@@ -1520,7 +1784,7 @@ function renderDecisionCard(decision, index) {
         ${cmsLine}
         ${actions}
       </div>
-      <button class="btn-explain" onclick="openDrawer('${explainType}')">為什麼</button>
+      <button class="btn-explain" onclick="openDrawer('${explainType}')">查看判斷依據</button>
     </div>`;
 }
 
