@@ -1111,3 +1111,62 @@ footer { text-align: center; padding: 20px; color: var(--text-dim); font-size: .
 .severity-high { color: #f27a84; font-weight: 600; }
 .severity-medium { color: #eab85c; }
 .severity-low { color: var(--text-dim); }
+
+/* ── 指揮官建議區塊（地圖 popup 內） ─────────────────────────────────────── */
+.incident-popup-commander {
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: rgba(234, 184, 92, .08);
+  border: 1px solid rgba(234, 184, 92, .25);
+  border-radius: 6px;
+  font-size: .78rem;
+  line-height: 1.5;
+}
+.cmd-adv-header {
+  font-weight: 700;
+  font-size: .72rem;
+  letter-spacing: .04em;
+  color: var(--caution, #eab85c);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+}
+.cmd-adv-summary {
+  font-weight: 700;
+  font-size: .85rem;
+  color: var(--text, #f2f5f9);
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+.cmd-adv-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 6px;
+}
+.cmd-adv-table td {
+  padding: 2px 0;
+  font-size: .75rem;
+  vertical-align: top;
+}
+.cmd-adv-label {
+  width: 70px;
+  color: var(--text-dim, #9aa8ba);
+  white-space: nowrap;
+}
+.cmd-adv-value {
+  font-weight: 600;
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+}
+.cmd-adv-actions {
+  padding-top: 4px;
+  border-top: 1px solid rgba(255,255,255,.06);
+}
+.cmd-adv-action {
+  font-size: .75rem;
+  margin: 2px 0;
+}
+.cmd-adv-dot {
+  display: inline-block;
+  width: 14px;
+  font-weight: 700;
+}

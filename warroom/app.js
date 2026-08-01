@@ -1755,6 +1755,38 @@ function clearIncidentMapMarkers() {
   }
 }
 
+/* ── 指揮官建議 popup 渲染 ──────────────────────────────────────────────── */
+function renderCommanderAdvicePopup(advice) {
+  if (!advice) return '';
+  const levelColor = { red: 'var(--critical, #f27a84)', yellow: 'var(--caution, #eab85c)', green: 'var(--safe, #85d99a)' };
+
+  let reasonsHtml = '';
+  if (advice.reasons && advice.reasons.length) {
+    reasonsHtml = advice.reasons.map(r => `
+      <tr>
+        <td class="cmd-adv-label">${escapeHtml(r.label)}</td>
+        <td class="cmd-adv-value" style="color:${levelColor[r.level] || 'var(--text)'}">${escapeHtml(r.value)}</td>
+      </tr>`).join('');
+  }
+
+  let actionsHtml = '';
+  if (advice.actions && advice.actions.length) {
+    actionsHtml = advice.actions.map(a => {
+      const dot = a.level === 'green' ? '▸' : a.level === 'red' ? '✕' : '▹';
+      const color = levelColor[a.level] || 'var(--text)';
+      return `<div class="cmd-adv-action" style="color:${color}"><span class="cmd-adv-dot">${dot}</span><b>${escapeHtml(a.label)}</b> ${escapeHtml(a.value)}</div>`;
+    }).join('');
+  }
+
+  return `
+    <div class="incident-popup-commander">
+      <div class="cmd-adv-header">指揮官建議</div>
+      <div class="cmd-adv-summary">${escapeHtml(advice.summary || '')}</div>
+      ${reasonsHtml ? `<table class="cmd-adv-table">${reasonsHtml}</table>` : ''}
+      ${actionsHtml ? `<div class="cmd-adv-actions">${actionsHtml}</div>` : ''}
+    </div>`;
+}
+
 function addIncidentMapMarkers(event, decisions, snapshot) {
   if (!mapInstance) return;
   const segId = event.affected_segment;
@@ -1810,6 +1842,7 @@ function addIncidentMapMarkers(event, decisions, snapshot) {
     const triggeredSops = decisions.filter(d => d.triggered).map(d => d.sop_clause).filter(Boolean).join('、') || '無';
     const eteDecision = decisions.find(d => d.ete_minutes);
     const cmsDecision = decisions.find(d => d.cms_text);
+    const adviceDecision = decisions.find(d => d.commander_advice);
     let popupHtml = `
       <div class="incident-popup">
         <div class="incident-popup-title">${iconEmoji} ${escapeHtml(event.event_id)}</div>
@@ -1821,6 +1854,7 @@ function addIncidentMapMarkers(event, decisions, snapshot) {
         <div class="incident-popup-row"><b>觸發 SOP</b> ${escapeHtml(triggeredSops)}</div>
         ${eteDecision ? `<div class="incident-popup-row"><b>ETE</b> ${eteDecision.ete_minutes} 分鐘</div>` : ''}
         ${cmsDecision ? `<div class="incident-popup-row incident-popup-cms"><b>CMS</b> ${escapeHtml(cmsDecision.cms_text)}</div>` : ''}
+        ${adviceDecision ? renderCommanderAdvicePopup(adviceDecision.commander_advice) : ''}
         <div class="incident-popup-desc">${escapeHtml(event.description)}</div>
       </div>`;
     marker.bindPopup(popupHtml, { maxWidth: 320, className: 'incident-popup-container' });
