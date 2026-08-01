@@ -1087,6 +1087,19 @@ async function m5Generate() {
   btn.classList.add('loading');
   btn.textContent = '🤖 推論中，請稍候…';
   document.getElementById('m5-spinner').classList.remove('hidden');
+
+  // 模擬進度條（漸慢曲線跑到 95%，收到結果後跳 100%）
+  let progress = 0;
+  const bar = document.getElementById('m5-progress-bar');
+  const pct = document.getElementById('m5-progress-pct');
+  const progressTimer = setInterval(() => {
+    if (progress < 95) {
+      progress += (95 - progress) * 0.04;
+      bar.style.width = progress.toFixed(0) + '%';
+      pct.textContent = progress.toFixed(0) + '%';
+    }
+  }, 500);
+
   try {
     const res = await fetch('/api/notify/generate', {
       method: 'POST',
@@ -1099,6 +1112,9 @@ async function m5Generate() {
       }),
     });
     const data = await res.json();
+    clearInterval(progressTimer);
+    bar.style.width = '100%';
+    pct.textContent = '100%';
     m5Alerts = data.alerts;
     m5RenderEditor(multi);
     document.getElementById('m5-btn-publish').disabled = false;
@@ -1107,9 +1123,14 @@ async function m5Generate() {
         `<div class="card-yellow" style="margin-top:8px">LLM 未連線，目前顯示為預設模板文字（${data.llm_status?.message || ''}）</div>`);
     }
   } catch (e) {
+    clearInterval(progressTimer);
     alert('生成失敗：' + e.message);
   } finally {
-    document.getElementById('m5-spinner').classList.add('hidden');
+    setTimeout(() => {
+      document.getElementById('m5-spinner').classList.add('hidden');
+      bar.style.width = '0%';
+      pct.textContent = '0%';
+    }, 600);
     btn.disabled = false;
     btn.classList.remove('loading');
     btn.textContent = '⚡ 生成多語告警';
