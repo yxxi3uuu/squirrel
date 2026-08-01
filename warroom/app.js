@@ -25,6 +25,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   mapInstance = L.map('leaflet-map', { zoomControl: false }).setView([25.0370, 121.5625], 14.5);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(mapInstance);
   L.control.zoom({ position: 'topleft' }).addTo(mapInstance);
+  // L.circleMarker（站點）預設跟 L.polyline（路段）共用 overlayPane，疊放順序只看
+  // DOM 加入先後，而路段/站點是兩支獨立 API 非同步載入，順序不固定，導致站點有時
+  // 會被路段線蓋住點不到。開一個獨立、z-index 更高的 pane 讓站點永遠疊在路段上面。
+  mapInstance.createPane('stationPane');
+  mapInstance.getPane('stationPane').style.zIndex = 450;
   // 地圖高度改用 flex:1 撐滿面板剩餘空間（見 style.css .map-wrap），視窗尺寸變動時
   // 容器實際像素高度會跟著變，Leaflet 需要重新量測才不會顯示錯位/留白。
   window.addEventListener('resize', () => mapInstance.invalidateSize());
@@ -104,6 +109,7 @@ function renderStationMarkers(stations) {
       stationMarkers[s.station_id].setTooltipContent(tooltipHtml);
     } else {
       const marker = L.circleMarker(coords, {
+        pane: 'stationPane',
         radius: 6, color: '#fff', weight: 1.5,
         fillColor: s.roaming_rate >= 0.30 ? '#f27a84' : '#7ec8bc',
         fillOpacity: 0.9,
@@ -674,6 +680,20 @@ document.querySelectorAll('.tab').forEach(btn => {
     btn.classList.add('active');
     document.getElementById(`panel-${btn.dataset.tab}`).classList.add('active');
   });
+});
+
+/* ── Brand Home：點擊標題回到主儀表板 ─────────────────────────────────────── */
+document.getElementById('brand-home').addEventListener('click', () => {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelector('.tab[data-tab="dashboard"]').classList.add('active');
+  document.getElementById('panel-dashboard').classList.add('active');
+});
+document.getElementById('brand-home').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    document.getElementById('brand-home').click();
+  }
 });
 
 /* ── Drawer (Module 4) ────────────────────────────────────────────────────────
