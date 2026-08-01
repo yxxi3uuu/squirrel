@@ -1299,8 +1299,15 @@ function m5CopyAll() {
 }
 
 /* ── Incident Injection ────────────────────────────────────────────────────── */
+function openIncidentModal() {
+  document.getElementById('incident-modal-overlay').classList.remove('hidden');
+}
+function closeIncidentModal() {
+  document.getElementById('incident-modal-overlay').classList.add('hidden');
+}
+
 function showInjectLoading() {
-  const panel = document.querySelector('#panel-incident');
+  const panel = document.getElementById('incident-modal-body');
   if (!panel) return;
   // Remove existing overlay if any
   const existing = panel.querySelector('.inject-loading-overlay');
