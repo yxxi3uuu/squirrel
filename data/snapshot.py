@@ -13,7 +13,7 @@ from typing import Dict, List, Optional
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
-DATA_SOURCE_DIR = ROOT_DIR / "data_source"
+DATA_SOURCE_DIR = ROOT_DIR / "warroom" / "data_source"
 
 TRAFFIC_FLOW_PATH = DATA_SOURCE_DIR / "city_traffic_flow.csv"
 CROWD_DENSITY_PATH = DATA_SOURCE_DIR / "signaling_crowd_density.csv"
