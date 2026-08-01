@@ -15,6 +15,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from warroom.module2.backend.services.sop_engine import process_incident as _engine_process_incident
+from warroom.module2.backend.services.llm_mock import generate_commander_summary
 from shared.schemas import TriggerDecision
 
 router = APIRouter()
@@ -105,6 +106,29 @@ def inject_incident(req: InjectRequest):
         station_decisions = _build_station_decisions(new_event, snapshot)
         decisions.extend(station_decisions)
 
+    # 產生總結指揮官建議：擷取所有 decisions 的 guidance_text，合併成一段
+    guidance_items = []
+    for d in decisions:
+        gt = d.get("guidance_text") or ""
+        if not gt:
+            # 從 actions 中找「指揮官建議：」開頭的項目
+            for action in (d.get("actions") or []):
+                if action.startswith("指揮官建議："):
+                    gt = action.replace("指揮官建議：", "")
+                    break
+        if gt:
+            guidance_items.append({
+                "sop_clause": d.get("sop_clause") or "未分類",
+                "guidance_text": gt,
+            })
+
+    commander_summary = ""
+    commander_summary_source = "none"
+    if guidance_items:
+        summary_result = generate_commander_summary(guidance_items)
+        commander_summary = summary_result.get("commander_summary", "")
+        commander_summary_source = summary_result.get("_source", "mock")
+
     elapsed_ms = round((time.monotonic() - t0) * 1000, 2)
     return {
         "success": True,
@@ -113,6 +137,8 @@ def inject_incident(req: InjectRequest):
         "decisions": decisions,
         "snapshot": snapshot,
         "processing_time_ms": elapsed_ms,
+        "commander_summary": commander_summary,
+        "commander_summary_source": commander_summary_source,
     }
 
 
@@ -126,6 +152,19 @@ def resolve_incident(event_id: str):
     return {"success": False, "message": f"找不到 {event_id}"}
 
 
+@router.post("/import")
+def import_incidents(events: list[InjectRequest]):
+    """批次匯入多筆事件（JSON 檔上傳用），逐筆注入並回傳所有決策。"""
+    results = []
+    for req in events:
+        new_event = req.model_dump()
+        existing_ids = {inc.get("event_id") for inc in _incidents}
+        if new_event["event_id"] not in existing_ids:
+            _incidents.append(new_event)
+        results.append({"event_id": new_event["event_id"], "imported": True})
+    return {"success": True, "imported_count": len(results), "total": len(_incidents), "results": results}
+
+
 @router.get("/reload")
 def reload_incidents():
     """重新載入 live_incidents.json"""
@@ -134,7 +173,9 @@ def reload_incidents():
 
 
 # ------------------------------------------------------------------
-# 站點事件處理（SOP-3 / SOP-6，sop_engine 不負責這些）
+# 站點事件處理（SOP-6，sop_engine 不負責這些）
+# SOP-3 捷運分流由 Module 1 thresholds (evaluate_clause3) 負責判斷，
+# 注入站點事件時不再重複產出 SOP-3 決策，避免和 Dashboard 已有的 SOP-3 卡重疊。
 # ------------------------------------------------------------------
 def _build_station_decisions(incident: dict[str, Any], snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     station_id = incident.get("affected_segment")
@@ -161,40 +202,7 @@ def _build_station_decisions(incident: dict[str, Any], snapshot: dict[str, Any])
         ]
 
     decisions: list[dict[str, Any]] = []
-    user_count = station.get("user_count") or 0
-    growth = station.get("growth_rate") or 0
     roaming = station.get("roaming_user_pct") or 0
-
-    if user_count > 25000 or growth > 0.30 or incident.get("type") == "Crowd_Surge_Injury":
-        basis = (
-            f"{station['name']}人潮 {user_count:,}、成長率 {growth:.2f}；"
-            "符合 SOP-3 人潮 >25,000 或成長率 >30% 的捷運與接駁分流判斷。"
-        )
-        decisions.append(
-            {
-                "triggered": True,
-                "sop_clause": "SOP-3",
-                "clause_name": "捷運與接駁分流",
-                "entity_id": station_id,
-                "entity_name": station["name"],
-                "basis": basis,
-                "actions": [
-                    "通知北捷評估過站不停或班距調整",
-                    "公車處加開接駁專車，導引旅客往捷運市政府站分流",
-                    "現場動線中斷時，優先開放替代出口與醫護通道",
-                ],
-                "cascade_checks": ["若大巨蛋人潮峰值 >=30,000 且成長率 <=-0.20，連動 SOP-4 散場啟動。"],
-                "severity": _map_severity(incident.get("severity", "High")),
-                "primary_route": None,
-                "secondary_routes": [],
-                "excluded_routes": [],
-                "ete_minutes": None,
-                "cms_text": f"{station['name']}人潮壅塞，請依現場指引分流至捷運市政府站或接駁車候車區",
-                "guidance_text": "已觸發 SOP-3，建議立即啟動捷運與接駁分流，並保留救護動線。",
-                "guidance_source": "rules",
-                "timestamp": incident.get("timestamp"),
-            }
-        )
 
     if roaming >= 0.30:
         decisions.append(

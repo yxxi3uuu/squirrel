@@ -178,7 +178,7 @@ def ai_summary(timestamp: Optional[str] = None, event_id: Optional[str] = None):
     from reasoning.builder import build_decision_record
 
     OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
-    OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3:1.7b")
+    OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:7b")
 
     try:
         record = build_decision_record(timestamp=timestamp, event_id=event_id or "TPE_2026_ACC_001")
@@ -240,3 +240,68 @@ def ai_summary(timestamp: Optional[str] = None, event_id: Optional[str] = None):
 
     except Exception as e:
         return {"summary": deterministic_summary, "source": "deterministic", "reason": str(e)}
+
+
+@router.get("/anomaly")
+def detect_anomalies_endpoint(timestamp: Optional[str] = None):
+    """偵測當前快照的資料異常。"""
+    from data.snapshot import available_timestamps, get_snapshot
+    from reasoning.anomaly import detect_anomalies
+
+    ts = timestamp or available_timestamps()[-1]
+    snapshot = get_snapshot(ts)
+
+    # Build history from earlier timestamps
+    all_ts = available_timestamps()
+    current_idx = all_ts.index(ts) if ts in all_ts else len(all_ts) - 1
+    history_segments = []
+    for prev_ts in all_ts[max(0, current_idx - 5):current_idx]:
+        prev_snap = get_snapshot(prev_ts)
+        history_segments.append(prev_snap.get("road_segments", {}))
+
+    alerts = detect_anomalies(snapshot, history_segments)
+    return {
+        "timestamp": ts,
+        "anomaly_count": len(alerts),
+        "alerts": [a.to_dict() for a in alerts],
+    }
+
+
+@router.get("/forecast")
+def forecast_endpoint(timestamp: Optional[str] = None):
+    """預測各路段未來 5/10/15 分鐘的飽和度。"""
+    from data.snapshot import available_timestamps, get_snapshot
+    from reasoning.forecast import forecast_congestion
+
+    all_ts = available_timestamps()
+    ts = timestamp or all_ts[-1]
+    snapshot = get_snapshot(ts)
+    current_segments = snapshot.get("road_segments", {})
+
+    # Build history
+    current_idx = all_ts.index(ts) if ts in all_ts else len(all_ts) - 1
+    history_segments = []
+    for prev_ts in all_ts[max(0, current_idx - 5):current_idx]:
+        prev_snap = get_snapshot(prev_ts)
+        history_segments.append(prev_snap.get("road_segments", {}))
+
+    # Estimate interval between data points
+    if current_idx >= 2:
+        from datetime import datetime
+        t1 = datetime.strptime(all_ts[current_idx - 1], "%Y-%m-%d %H:%M")
+        t2 = datetime.strptime(all_ts[current_idx], "%Y-%m-%d %H:%M")
+        interval = (t2 - t1).total_seconds() / 60.0
+    else:
+        interval = 15.0
+
+    results = forecast_congestion(current_segments, history_segments, interval)
+    approaching = [r for r in results if r.approaching_threshold]
+
+    return {
+        "timestamp": ts,
+        "interval_minutes": interval,
+        "total_segments": len(results),
+        "approaching_threshold": len(approaching),
+        "forecasts": [r.to_dict() for r in results],
+        "warnings": [r._narrative() for r in approaching],
+    }

@@ -444,3 +444,91 @@ def _margin_score(candidates: List[RouteCandidate]) -> float:
     ranked = sorted(candidates, key=lambda item: item.score)
     gap = max(0.0, ranked[1].score - ranked[0].score)
     return round(min(1.0, gap / 0.30), 2)
+
+
+# ═══════════════════════════════════════════════════════════
+# SOP-5: 號誌故障應變
+# ═══════════════════════════════════════════════════════════
+
+def build_rule_hit_for_signal_failure(event: Dict, evidence_ids: List[str]) -> Optional[RuleHit]:
+    """SOP-5: type=Power_Failure 或描述含號誌故障/號誌失效。"""
+    event_type = event.get("type", "")
+    description = event.get("description", "")
+    is_signal = (
+        event_type == "Power_Failure"
+        or "號誌故障" in description
+        or "號誌失效" in description
+    )
+    if not is_signal:
+        return None
+    return RuleHit(
+        sop_id="SOP-5",
+        clause="第 5 條",
+        title="號誌故障人工交管",
+        condition="type=Power_Failure 或描述含「號誌故障/號誌失效」",
+        observed={"type": event_type, "description_excerpt": description[:60]},
+        threshold={"type": "Power_Failure", "keywords": ["號誌故障", "號誌失效"]},
+        result="TRIGGERED",
+        evidence_ids=evidence_ids,
+    )
+
+
+# ═══════════════════════════════════════════════════════════
+# SOP-3: 捷運與接駁分流
+# ═══════════════════════════════════════════════════════════
+
+def build_rule_hit_for_crowd_diversion(snapshot: Dict, evidence_ids: List[str]) -> Optional[RuleHit]:
+    """SOP-3: BS_MRT_BL17 Growth_Rate > 0.30 或 User_Count > 25000。"""
+    stations = snapshot.get("stations", {})
+    bl17 = stations.get("BS_MRT_BL17", {})
+    user_count = bl17.get("user_count", 0)
+    growth_rate = bl17.get("growth_rate", 0)
+
+    triggered = user_count > 25000 or growth_rate > 0.30
+    if not triggered:
+        return None
+
+    condition_parts = []
+    if user_count > 25000:
+        condition_parts.append(f"User_Count={user_count:,} > 25,000")
+    if growth_rate > 0.30:
+        condition_parts.append(f"Growth_Rate={growth_rate:.2f} > 0.30")
+
+    return RuleHit(
+        sop_id="SOP-3",
+        clause="第 3 條",
+        title="捷運與接駁分流",
+        condition=" 且 ".join(condition_parts) if len(condition_parts) > 1 else condition_parts[0],
+        observed={"station": "BS_MRT_BL17", "user_count": user_count, "growth_rate": growth_rate},
+        threshold={"user_count": 25000, "growth_rate": 0.30},
+        result="TRIGGERED",
+        evidence_ids=evidence_ids,
+    )
+
+
+# ═══════════════════════════════════════════════════════════
+# SOP-4: 大巨蛋散場啟動
+# ═══════════════════════════════════════════════════════════
+
+def build_rule_hit_for_dome_dispersal(snapshot: Dict, evidence_ids: List[str]) -> Optional[RuleHit]:
+    """SOP-4: BS_TPE_DOME 峰值曾 >= 30000 且當前 Growth_Rate <= -0.20。"""
+    stations = snapshot.get("stations", {})
+    dome = stations.get("BS_TPE_DOME", {})
+    user_count = dome.get("user_count", 0)
+    growth_rate = dome.get("growth_rate", 0)
+    peak = dome.get("peak_user_count", 0)
+
+    triggered = peak >= 30000 and growth_rate <= -0.20
+    if not triggered:
+        return None
+
+    return RuleHit(
+        sop_id="SOP-4",
+        clause="第 4 條",
+        title="大巨蛋散場啟動",
+        condition=f"峰值人數={peak:,} >= 30,000 且 Growth_Rate={growth_rate:.2f} <= -0.20",
+        observed={"station": "BS_TPE_DOME", "peak": peak, "current_count": user_count, "growth_rate": growth_rate},
+        threshold={"peak_user_count": 30000, "growth_rate": -0.20},
+        result="TRIGGERED",
+        evidence_ids=evidence_ids,
+    )

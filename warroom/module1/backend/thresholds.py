@@ -24,6 +24,11 @@ CLAUSE3_STATION_ID = "BS_MRT_BL17"
 CLAUSE3_GROWTH_THRESHOLD = 0.30
 CLAUSE3_USER_COUNT_THRESHOLD = 25000
 
+# SOP 第 4 條
+CLAUSE4_STATION_ID = "BS_TPE_DOME"
+CLAUSE4_PEAK_THRESHOLD = 30000
+CLAUSE4_GROWTH_RATE_THRESHOLD = -0.20
+
 
 def saturation_level(score: Optional[float]) -> SaturationLevel:
     """Saturation_Score -> Dashboard 紅黃燈顏色（SOP 第 1 條分級）。"""
@@ -103,9 +108,55 @@ def evaluate_clause3(snapshot: dict) -> List[dict]:
     ]
 
 
+def evaluate_clause4(snapshot: dict) -> List[dict]:
+    """BS_TPE_DOME 大巨蛋散場判斷（SOP 第 4 條）。
+
+    觸發條件（兩項同時成立）：
+    - 歷史峰值 peak_user_count 曾達 >= 30,000
+    - 當前 Growth_Rate <= -0.20（人潮正在快速流出）
+
+    模組一只做門檻判斷，不產出調度行動建議（連動第 3 條接駁機制由模組二負責）。
+    """
+    station = snapshot.get("stations", {}).get(CLAUSE4_STATION_ID)
+    if not station:
+        return []
+
+    peak_user_count = station.get("peak_user_count")
+    growth_rate = station.get("growth_rate", 0.0)
+
+    # peak_user_count 可能為 None（資料尚未累積歷史峰值）
+    if peak_user_count is None:
+        return []
+
+    peak_reached = peak_user_count >= CLAUSE4_PEAK_THRESHOLD
+    declining = growth_rate <= CLAUSE4_GROWTH_RATE_THRESHOLD
+
+    if not (peak_reached and declining):
+        return []
+
+    basis = (
+        f"歷史峰值 {peak_user_count:,} >= 門檻 {CLAUSE4_PEAK_THRESHOLD:,}，"
+        f"且當前 Growth_Rate {growth_rate:.2f} <= {CLAUSE4_GROWTH_RATE_THRESHOLD}"
+    )
+
+    return [
+        TriggerDecision(
+            triggered=True,
+            sop_clause="第 4 條",
+            clause_name="大巨蛋散場啟動",
+            entity_id=CLAUSE4_STATION_ID,
+            entity_name=station.get("name", CLAUSE4_STATION_ID),
+            basis=basis,
+            cascade_checks=["連動第 3 條接駁機制"],
+            severity="yellow",
+            timestamp=snapshot.get("timestamp"),
+        ).model_dump()
+    ]
+
+
 def evaluate_triggers(snapshot: dict) -> List[dict]:
-    """Module 1 目前範圍內（第 1/3 條）的完整觸發清單。"""
-    return evaluate_clause1(snapshot) + evaluate_clause3(snapshot)
+    """Module 1 目前範圍內（第 1/3/4 條）的完整觸發清單。"""
+    return evaluate_clause1(snapshot) + evaluate_clause3(snapshot) + evaluate_clause4(snapshot)
 
 
 def _trigger_key(decision: dict) -> Tuple[str, str]:

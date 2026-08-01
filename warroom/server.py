@@ -3,15 +3,20 @@
 啟動：cd squirrel && uvicorn warroom.server:app --reload --port 8000
 瀏覽器開 http://localhost:8000
 """
+from dotenv import load_dotenv
+load_dotenv()  # 讀取 .env（LLM_MODE, BEDROCK_REGION 等）
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import os, sys
 from typing import Optional
+from dotenv import load_dotenv
 
 # 確保 squirrel 根目錄在 path（讓 warroom.xxx 可以 import）
 _root = os.path.join(os.path.dirname(__file__), "..")
 sys.path.insert(0, _root)
+load_dotenv(os.path.join(_root, ".env"))
 
 from warroom.module5.backend.routers import notify, signal
 from warroom.routers import advisor, incidents, module1, traffic
@@ -29,9 +34,9 @@ app.include_router(traffic.router,   prefix="/api/traffic",   tags=["Traffic (M1
 app.include_router(incidents.router, prefix="/api/incidents",  tags=["Incidents (M2)"])
 app.include_router(advisor.router,   prefix="/api/advisor",   tags=["Advisor (M3)"])
 app.include_router(reasoning.router, prefix="/api/reasoning", tags=["Reasoning (M4)"])
-# module-1-dynamicTS 動態時序儀表板：路徑沿用原本 module1_dashboard/frontend
-# 的呼叫慣例（/api/timestamps、/api/snapshot、/api/history、/api/dashboard），
-# 不掛在 /api/traffic 下，避免與既有 M1 前端呼叫的 /api/traffic/* 衝突。
+# module-1-dynamicTS 動態時序儀表板：呼叫慣例為 /api/timestamps、/api/snapshot、
+# /api/history、/api/dashboard，不掛在 /api/traffic 下，避免與既有 M1 前端
+# 呼叫的 /api/traffic/* 衝突。
 app.include_router(module1.router,   prefix="/api",           tags=["Module1 (Dynamic Dashboard)"])
 
 # ── 路徑 ──────────────────────────────────────────────────────────────────
