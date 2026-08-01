@@ -405,6 +405,41 @@
   </div>
 </div>
 
+<!-- ══ OVERLAY: 交控中心建議書 Modal ══════════════════════════════════════ -->
+<div id="advisory-modal-overlay" class="modal-overlay hidden" onclick="if(event.target===this) closeAdvisoryModal();">
+  <div class="modal advisory-modal">
+    <div class="modal-head">
+      <div class="modal-eyebrow">交通管制中心</div>
+      <h4>交控中心建議書</h4>
+      <button class="drawer-close modal-close" onclick="closeAdvisoryModal()">✕</button>
+    </div>
+    <div class="modal-body" id="advisory-modal-body">
+      <div class="advisory-loading">建議書生成中…</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="copyAdvisoryMarkdown()">複製 Markdown</button>
+      <button class="btn btn-primary" onclick="showPublishSimulation()">模擬發布事件書</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ OVERLAY: 模擬發布事件書 Modal ══════════════════════════════════════ -->
+<div id="publish-sim-modal-overlay" class="modal-overlay hidden" onclick="if(event.target===this) closePublishSimModal();">
+  <div class="modal advisory-modal publish-sim-modal">
+    <div class="modal-head">
+      <div class="modal-eyebrow">模擬發布</div>
+      <h4>事件建議書（Markdown 預覽）</h4>
+      <button class="drawer-close modal-close" onclick="closePublishSimModal()">✕</button>
+    </div>
+    <div class="modal-body" id="publish-sim-body">
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="copyPublishMarkdown()">複製全文</button>
+      <button class="btn btn-danger" onclick="confirmPublish()">確認發布（模擬）</button>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="app.js?v=20260725-m5toast-restored"></script>
 </body>
