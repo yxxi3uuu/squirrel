@@ -31,12 +31,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   // DOM 加入先後，而路段/站點是兩支獨立 API 非同步載入，順序不固定，導致站點有時
   // 會被路段線蓋住點不到。開一個獨立、z-index 更高的 pane 讓站點永遠疊在路段上面。
   mapInstance.createPane('stationPane');
-  mapInstance.getPane('stationPane').style.zIndex = 450;
+  mapInstance.getPane('stationPane').style.zIndex = 420;
   // 事件標記 pane：z-index 高於站點，確保事件 popup 不會被遮住
   mapInstance.createPane('incidentPane');
   mapInstance.getPane('incidentPane').style.zIndex = 650;
   // 確保 popup pane 永遠在最上層（解決站點標記蓋住 popup 的問題）
   mapInstance.getPane('popupPane').style.zIndex = 900;
+  // 確保站點標記不會擋住 popup 的滑鼠事件
+  mapInstance.getPane('stationPane').style.pointerEvents = 'auto';
   // 地圖高度改用 flex:1 撐滿面板剩餘空間（見 style.css .map-wrap），視窗尺寸變動時
   // 容器實際像素高度會跟著變，Leaflet 需要重新量測才不會顯示錯位/留白。
   window.addEventListener('resize', () => mapInstance.invalidateSize());
@@ -82,21 +84,38 @@ async function loadTrafficData() {
 }
 
 /* ── 模組一：基地台狀態（左側常駐面板，資料來源與模組5共用 /api/signal/stations）── */
+let _stationSeq = 0;
 async function loadBaseStationPanel(timestamp) {
+  const seq = ++_stationSeq;
   try {
     const url = timestamp ? `/api/signal/stations?timestamp=${encodeURIComponent(timestamp)}` : '/api/signal/stations';
     const res = await fetch(url);
+    if (seq !== _stationSeq) return;
     const data = await res.json();
     renderBaseStationPanel(data.stations || []);
     renderStationMarkers(data.stations || []);
   } catch (e) {
+    if (seq !== _stationSeq) return;
     console.error('基地台狀態載入失敗', e);
     const el = document.getElementById('station-status-list');
     if (el) el.innerHTML = '<div class="station-row">基地台狀態載入失敗</div>';
   }
 }
 
-/* ── 模組一：地圖站點標記（滑鼠移上去顯示人流成長率等即時狀況）───────────────── */
+/* ── 模組一：地圖站點標記（整合站點分類＋即時數據 tooltip）───────────────────
+   站點類型依 station_id 判斷：BS_MRT_ = 捷運、BS_BUS_ = 公車、其餘 = 地標/場館。
+   顏色邏輯：若外籍旅客比例 ≥ 30%（SOP-6 觸發）則紅色，否則依類型顯示。 */
+const STATION_TYPE_STYLE = {
+  mrt:   { color: '#00cec9', radius: 8 },
+  bus:   { color: '#fdcb6e', radius: 7 },
+  venue: { color: '#fd79a8', radius: 7 },
+};
+function getStationType(stationId) {
+  if (stationId.startsWith('BS_MRT_')) return 'mrt';
+  if (stationId.startsWith('BS_BUS_')) return 'bus';
+  return 'venue';
+}
+
 function renderStationMarkers(stations) {
   stations.forEach(s => {
     const coords = STATION_COORDS[s.station_id];
@@ -108,21 +127,31 @@ function renderStationMarkers(stations) {
     const growthPct = ((s.growth_rate || 0) * 100).toFixed(0);
     const growthSign = s.growth_rate > 0 ? '+' : '';
     const roamingPct = ((s.roaming_rate || 0) * 100).toFixed(1);
+    const type = getStationType(s.station_id);
+    const typeLabel = type === 'mrt' ? '[捷運]' : type === 'bus' ? '[公車]' : '[地標]';
     const tooltipHtml = `
-      <b>${s.station_name}</b><br>
+      <b>${s.station_name}</b> <span style="opacity:.6">${typeLabel}</span><br>
       人流 ${s.user_count.toLocaleString()} 人 · 成長率 ${growthSign}${growthPct}%<br>
       外籍旅客比例 ${roamingPct}%${s.roaming_rate >= 0.30 ? '（已達門檻）' : ''}`;
 
+    const style = STATION_TYPE_STYLE[type];
+    const fillColor = s.roaming_rate >= 0.30 ? '#f27a84' : style.color;
+    // 站點半徑依人流數動態縮放（5k以下=5px, 40k以上=14px）
+    const dynamicRadius = Math.max(5, Math.min(14, 5 + (s.user_count / 40000) * 9));
+
     if (stationMarkers[s.station_id]) {
       stationMarkers[s.station_id].setTooltipContent(tooltipHtml);
+      stationMarkers[s.station_id].setStyle({ fillColor, radius: dynamicRadius });
     } else {
       const marker = L.circleMarker(coords, {
         pane: 'stationPane',
-        radius: 6, color: '#fff', weight: 1.5,
-        fillColor: s.roaming_rate >= 0.30 ? '#f27a84' : '#7ec8bc',
+        radius: dynamicRadius, color: '#fff', weight: 1.5,
+        fillColor,
         fillOpacity: 0.9,
       }).addTo(mapInstance);
       marker.bindTooltip(tooltipHtml, { direction: 'top', offset: [0, -6], className: 'map-tooltip', opacity: 1 });
+      marker.on('mouseover', () => marker.setRadius(dynamicRadius + 4));
+      marker.on('mouseout', () => marker.setRadius(dynamicRadius));
       stationMarkers[s.station_id] = marker;
     }
   });
@@ -342,6 +371,23 @@ function onTimelineSlide(value) {
   loadSnapshotAt(timelineTimestamps[timelineIndex]);
 }
 
+/* ── 時間軸上一格／下一格按鈕 ─────────────────────────────────────────────── */
+function timelineStepPrev() {
+  if (timelineIndex <= 0) return;
+  timelineIndex--;
+  document.getElementById('timeline-slider').value = timelineIndex;
+  updateTimelineDisplay();
+  loadSnapshotAt(timelineTimestamps[timelineIndex]);
+}
+
+function timelineStepNext() {
+  if (timelineIndex >= timelineTimestamps.length - 1) return;
+  timelineIndex++;
+  document.getElementById('timeline-slider').value = timelineIndex;
+  updateTimelineDisplay();
+  loadSnapshotAt(timelineTimestamps[timelineIndex]);
+}
+
 function setTimelineSpeed(mult) {
   timelineSpeed = mult;
   document.querySelectorAll('.tl-speed-btn').forEach(btn => {
@@ -379,26 +425,24 @@ function startTimelinePlayLoop() {
     document.getElementById('timeline-slider').value = timelineIndex;
     updateTimelineDisplay();
     loadSnapshotAt(timelineTimestamps[timelineIndex]);
-  }, 1200 / timelineSpeed);
+  }, 1500 / timelineSpeed);
 }
 
+/* ── 時間軸快照載入（含 race condition 防護）───────────────────────────────
+   每次 loadSnapshotAt 呼叫時遞增 _snapshotSeq，回應回來後比對序號，
+   若有更新的請求已送出，就丟棄這次過期的回應，避免畫面閃爍不同步。 */
+let _snapshotSeq = 0;
+
 async function loadSnapshotAt(timestamp) {
+  const seq = ++_snapshotSeq;
   try {
     // 先清除地圖上的事件標記（只在非事件時間點清除）
     clearIncidentMapMarkers();
-
-    // /api/dashboard 是 /api/snapshot 的超集：同一份快照之外，還多附上門檻判斷
-    // （triggers）、這次新觸發的項目（newly_triggered）跟 LLM 趨勢摘要（summary），
-    // 一次打完不用再分開呼叫 /api/snapshot。
-    // 模組五（基地台狀態／SOP-6 多語卡）跟模組一原本是兩套獨立系統，這裡一起帶
-    // 同一個 timestamp，讓整個儀表板（含地圖站點標記）都跟著時間軸走，不會有
-    // 「時間軸調到 18:00，SOP-6 卡片卻還停在最新時間點」的不一致。
 
     // 如果該 timestamp 是注入事件的時間點（後端可能沒有此精確時間），用最近的可用時間
     let queryTs = timestamp;
     let dashRes = await fetch(`/api/dashboard?timestamp=${encodeURIComponent(queryTs)}`);
     if (!dashRes.ok && injectedTimelineData[timestamp]) {
-      // 找最近的前一個可用時間點
       const candidates = timelineTimestamps.filter(t => t <= timestamp && !injectedTimelineData[t]);
       const fallbackTs = candidates.length ? candidates[candidates.length - 1] : timelineTimestamps.find(t => !injectedTimelineData[t]) || timelineTimestamps[0];
       dashRes = await fetch(`/api/dashboard?timestamp=${encodeURIComponent(fallbackTs)}`);
@@ -409,7 +453,10 @@ async function loadSnapshotAt(timestamp) {
       loadModule5Status(timestamp),
       loadBaseStationPanel(timestamp),
     ]);
-    if (dashboard?.triggers) latestDashboardTriggers = dashboard.triggers;
+
+    // 回應回來時若已有更新的請求，丟棄本次結果
+    if (seq !== _snapshotSeq) return;
+
     const segments = snapshotToSegments(dashboard.snapshot);
     renderTrafficKPI(computeTrafficSummary(segments));
     renderTrafficAlerts(segments, dashboard);
@@ -422,7 +469,7 @@ async function loadSnapshotAt(timestamp) {
       renderIncidentDecisionsOnDashboard(injected.event, injected.decisions);
       addIncidentMapMarkers(injected.event, injected.decisions, injected.snapshot);
     }
-  } catch (e) { console.error('快照載入失敗', e); }
+  } catch (e) { if (seq === _snapshotSeq) console.error('快照載入失敗', e); }
 }
 
 function snapshotToSegments(snapshot) {
@@ -461,25 +508,42 @@ function computeTrafficSummary(segments) {
   return { a_count, b_count, avg_speed, avg_saturation, impacted, total: segments.length };
 }
 
+/* ── KPI 數字動畫：數值變化時做 countup 過場 ────────────────────────────────── */
+function animateValue(el, newValue, duration = 350, decimals = 0) {
+  const start = parseFloat(el.textContent) || 0;
+  const end = parseFloat(newValue);
+  if (isNaN(end) || start === end) { el.textContent = newValue; return; }
+  const startTime = performance.now();
+  function tick(now) {
+    const progress = Math.min((now - startTime) / duration, 1);
+    const eased = 1 - Math.pow(1 - progress, 3); // ease-out cubic
+    const current = start + (end - start) * eased;
+    el.textContent = decimals > 0 ? current.toFixed(decimals) : Math.round(current);
+    if (progress < 1) requestAnimationFrame(tick);
+    else el.textContent = newValue; // 確保最後顯示精確值
+  }
+  requestAnimationFrame(tick);
+}
+
 function renderTrafficKPI(summary) {
-  document.getElementById('ks-speed-value').textContent = summary.avg_speed;
+  animateValue(document.getElementById('ks-speed-value'), summary.avg_speed);
   const speedDelta = document.getElementById('ks-speed-delta');
   speedDelta.textContent = summary.avg_speed < 25 ? '▲ 壅塞' : '▼ 順暢';
   speedDelta.className = 'ks-delta ' + (summary.avg_speed < 25 ? 'up' : 'down');
 
-  document.getElementById('ks-sat-value').textContent = Math.round(summary.avg_saturation * 100);
+  animateValue(document.getElementById('ks-sat-value'), Math.round(summary.avg_saturation * 100));
   const satDelta = document.getElementById('ks-sat-delta');
   satDelta.textContent = summary.avg_saturation >= 0.85 ? '超過門檻' : '低於門檻';
   satDelta.className = 'ks-delta ' + (summary.avg_saturation >= 0.85 ? 'up' : 'down');
 
   const segCount = summary.a_count + summary.b_count;
-  document.getElementById('ks-seg-value').textContent = segCount;
+  animateValue(document.getElementById('ks-seg-value'), segCount);
   document.getElementById('ks-seg-total').textContent = `/ ${summary.total}`;
   const segDelta = document.getElementById('ks-seg-delta');
   segDelta.textContent = segCount > 0 ? '需留意' : '全線正常';
   segDelta.className = 'ks-delta ' + (segCount > 0 ? 'up' : 'down');
 
-  document.getElementById('ks-impact-value').textContent = (summary.impacted / 1000).toFixed(1);
+  animateValue(document.getElementById('ks-impact-value'), (summary.impacted / 1000).toFixed(1), 350, 1);
 }
 
 function renderTrafficAlerts(segments, dashboard) {
@@ -488,7 +552,6 @@ function renderTrafficAlerts(segments, dashboard) {
                          .sort((a, b) => b.Saturation_Score - a.Saturation_Score);
 
   let html = '<h3>即時警報</h3><div class="alert-scroll">';
-  html += renderAiSummaryCard(dashboard);
   html += renderSop3Card(dashboard);
   html += renderSop4Card(dashboard);
   alerts.forEach(s => {
@@ -516,28 +579,33 @@ function renderTrafficAlerts(segments, dashboard) {
   container.innerHTML = html;
 }
 
-/* ── 模組一：AI 趨勢摘要卡（LLM 產出，只有本次有新觸發門檻時才有內容）───────── */
-function renderAiSummaryCard(dashboard) {
-  if (!dashboard || !dashboard.summary) return '';
-  return `
-    <div class="alert-card ai-summary">
-      <div class="alert-hdr"><span class="alert-tag accent-bg">分析摘要</span><span class="mono">${(dashboard.timestamp || '').slice(11, 16)}</span></div>
-      <div class="alert-body">${escapeHtml(dashboard.summary).replace(/\n/g, '<br>')}</div>
-    </div>`;
-}
-
 /* ── 模組一：SOP-3 捷運分流門檻卡（BS_MRT_BL17 Growth_Rate>0.30 或 User_Count>25000）── */
 function renderSop3Card(dashboard) {
   const sop3 = (dashboard?.triggers || []).find(t => t.sop_clause === '第 3 條');
+  const sop4 = (dashboard?.triggers || []).find(t => t.sop_clause === '第 4 條');
+  const cascadeFromSop4 = sop4 && (sop4.cascade_checks || []).some(c => c.includes('第 3 條'));
+
   if (sop3) {
     return `
-      <div class="alert-card sop3">
-        <div class="alert-hdr"><span class="alert-tag safe-bg">SOP-3 捷運分流</span></div>
+      <div class="alert-card sop3 ${cascadeFromSop4 ? 'cascade-active' : ''}">
+        <div class="alert-hdr"><span class="alert-tag safe-bg">SOP-3 捷運分流</span><span class="mono">${(sop3.timestamp || '').slice(11, 16)}</span></div>
         <div class="alert-body">
           <b>${sop3.entity_name}</b><br>
           ${sop3.basis}
+          ${cascadeFromSop4 ? '<div class="cascade-hint">由 SOP-4 散場連動啟動</div>' : ''}
         </div>
         <button class="btn-explain" onclick="showEntityHistory('${sop3.entity_id}', '${sop3.entity_name}')">查看歷史趨勢</button>
+      </div>`;
+  }
+  if (cascadeFromSop4) {
+    return `
+      <div class="alert-card sop3 cascade-active">
+        <div class="alert-hdr"><span class="alert-tag caution-bg">SOP-3 捷運分流</span></div>
+        <div class="alert-body">
+          <div class="cascade-hint">由 SOP-4 散場連動啟動</div>
+          捷運國父紀念館站尚未達自身門檻，但大巨蛋散場已觸發，提前連動接駁分流機制
+        </div>
+        <button class="btn-explain" onclick="showEntityHistory('BS_MRT_BL17', '捷運國父紀念館站')">查看歷史趨勢</button>
       </div>`;
   }
   return `
@@ -558,7 +626,7 @@ function renderSop4Card(dashboard) {
         <div class="alert-body">
           <b>${sop4.entity_name}</b> (${sop4.entity_id})<br>
           ${sop4.basis}
-          ${cascade ? `<br><span class="mono caution-text">⚡ ${cascade}</span>` : ''}
+          ${cascade ? `<br><span class="mono caution-text">${cascade}</span>` : ''}
         </div>
         <button class="btn-explain" onclick="showEntityHistory('${sop4.entity_id}', '${sop4.entity_name}')">查看歷史趨勢</button>
       </div>`;
@@ -609,38 +677,12 @@ function renderTrafficMap(segments) {
     } else {
       const line = L.polyline(pts, { color, weight: 5, opacity: 0.9 }).addTo(mapInstance);
       line.bindTooltip(`${s.Road_Name} (${s.Segment_ID})<br>飽和: ${s.Saturation_Score.toFixed(2)}`, { className: 'map-tooltip', opacity: 1 });
+      // Hover 加粗效果
+      line.on('mouseover', () => line.setStyle({ weight: 9, opacity: 1 }));
+      line.on('mouseout', () => line.setStyle({ weight: 5, opacity: 0.9 }));
       roadPolylines[s.Segment_ID] = line;
     }
   });
-
-  // 加入站點標記（捷運站、地標、公車轉運站）— 來自 Module 2 TrafficMap
-  if (!window._stationMarkersAdded) {
-    window._stationMarkersAdded = true;
-    const stations = [
-      { id: "BS_MRT_BL17", name: "捷運國父紀念館站", type: "mrt", coords: [25.0408, 121.5576] },
-      { id: "BS_MRT_BL16", name: "捷運忠孝敦化站",   type: "mrt", coords: [25.0415, 121.5483] },
-      { id: "BS_MRT_BL18", name: "捷運市政府站",     type: "mrt", coords: [25.0406, 121.5659] },
-      { id: "BS_TPE_DOME", name: "大巨蛋",           type: "venue", coords: [25.0357, 121.5573] },
-      { id: "BS_TPE_101",  name: "台北101",           type: "landmark", coords: [25.0339, 121.5645] },
-      { id: "BS_XY_VIESHOW", name: "信義威秀",       type: "venue", coords: [25.0380, 121.5680] },
-      { id: "BS_XY_ATT",  name: "ATT4FUN",           type: "venue", coords: [25.0368, 121.5680] },
-      { id: "BS_BUS_TERM", name: "市府轉運站",       type: "bus",   coords: [25.0405, 121.5660] },
-      { id: "BS_SS_PARK", name: "松山文創園區",      type: "venue", coords: [25.0462, 121.5605] },
-    ];
-    stations.forEach(st => {
-      const color = st.type === 'mrt' ? '#00cec9' : st.type === 'bus' ? '#fdcb6e' : '#fd79a8';
-      const size = st.type === 'mrt' ? 14 : 12;
-      const radius = st.type === 'mrt' ? '50%' : st.type === 'venue' ? '3px' : '50%';
-      const icon = L.divIcon({
-        className: '',
-        html: `<div style="width:${size}px;height:${size}px;border-radius:${radius};background:${color};border:2px solid #fff;box-shadow:0 0 6px ${color}aa;"></div>`,
-        iconSize: [size, size], iconAnchor: [size/2, size/2],
-      });
-      const marker = L.marker(st.coords, { icon, zIndexOffset: 200 }).addTo(mapInstance);
-      const typeLabel = st.type === 'mrt' ? '[捷運]' : st.type === 'bus' ? '[公車]' : '[地標]';
-      marker.bindPopup(`<div style="font-family:sans-serif;min-width:140px"><b style="font-size:13px">${st.name}</b><div style="font-size:11px;color:#888;margin-top:4px">${typeLabel}</div></div>`);
-    });
-  }
 }
 
 /* ── 模組一：路段即時狀態清單（15 路段速覽，色點＋速度＋飽和度）───────────── */
@@ -1175,14 +1217,17 @@ function escapeHtml(value) {
    鈴鐺時彈出，不會跟著時間軸每一格都跳，避免快速拖動時 toast 一直閃現互蓋。 */
 let m5Triggered = [];
 
+let _m5Seq = 0;
 async function loadModule5Status(timestamp) {
+  const seq = ++_m5Seq;
   try {
     const url = timestamp ? `/api/signal/triggered?timestamp=${encodeURIComponent(timestamp)}` : '/api/signal/triggered';
     const res = await fetch(url);
+    if (seq !== _m5Seq) return;
     const data = await res.json();
     m5Triggered = data.triggered || [];
   } catch (e) {
-    console.error('模組 5 狀態載入失敗', e);
+    if (seq === _m5Seq) console.error('模組 5 狀態載入失敗', e);
   }
 }
 
@@ -1772,6 +1817,8 @@ function addIncidentMapMarkers(event, decisions, snapshot) {
         <div class="incident-popup-desc">${escapeHtml(event.description)}</div>
       </div>`;
     marker.bindPopup(popupHtml, { maxWidth: 320, className: 'incident-popup-container' });
+    marker.on('popupopen', () => { mapInstance.getPane('stationPane').style.display = 'none'; });
+    marker.on('popupclose', () => { mapInstance.getPane('stationPane').style.display = ''; });
     marker.openPopup();
 
     incidentMapMarkers.push(marker);

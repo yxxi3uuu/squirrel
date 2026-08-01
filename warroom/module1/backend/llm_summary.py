@@ -4,7 +4,7 @@ LLM 摘要生成（Module 1 的 LLM 職責：產生趨勢異常摘要與預警�
 門檻判斷已經由 thresholds.py 用程式算完，這裡只把 TriggerDecision 轉成
 中文提示文字，不重新計算任何門檻數值。
 
-呼叫本機 Ollama（預設模型 qwen2.5:7b）生成摘要；Ollama 不可用或逾時時，
+呼叫本機 Ollama（預設模型 qwen2.5:3b）生成摘要；Ollama 不可用或逾時時，
 自動退回 `_fallback_summary`（規則式樣板文字，明確標示為佔位輸出），
 不讓 API 整個掛掉。
 """
