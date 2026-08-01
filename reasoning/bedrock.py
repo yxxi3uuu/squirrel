@@ -17,9 +17,9 @@ from typing import Optional
 from reasoning.models import DecisionExplanation, DecisionRecord
 
 
-BEDROCK_ENABLED = os.getenv("BEDROCK_ENABLED", "false").lower() == "true"
-BEDROCK_MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-3-5-sonnet-20241022-v2:0")
-AWS_REGION = os.getenv("AWS_REGION", "us-west-2")
+BEDROCK_ENABLED = os.getenv("BEDROCK_ENABLED", "false").lower() == "true" or os.getenv("LLM_MODE", "").lower() == "bedrock"
+BEDROCK_MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
+AWS_REGION = os.getenv("AWS_REGION", os.getenv("BEDROCK_REGION", "us-west-2"))
 
 EXPLAINER_SYSTEM_PROMPT = """你是城市交通指揮中心的決策解釋員。
 
