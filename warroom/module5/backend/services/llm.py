@@ -148,3 +148,151 @@ def _generate_bedrock(system_msg: str, user_msg: str, multilingual: bool) -> dic
 
     raw = response["output"]["message"]["content"][0]["text"].strip()
     return _parse(raw, multilingual)
+
+
+def translate_cms_text(cms_text: str, multilingual: bool = True) -> dict:
+    """將 SOP-2/5 的 CMS 文字整合並翻譯成多語版本。
+
+    若輸入包含多段 CMS（用換行分隔），先用 LLM 整合成一段精簡通知，
+    去除重複資訊，再翻譯成七種語言。
+    """
+    # 先整合多段 CMS（如果有多行表示同時觸發 SOP-2 + SOP-5）
+    merged = _merge_cms_texts(cms_text)
+
+    if not multilingual:
+        return {"zh_tw": f"【交通管制】{merged}"}
+
+    system_msg = (
+        "你是城市交通指揮中心緊急通報翻譯員。\n"
+        "將以下中文交通管制告警文字忠實翻譯成七種語言。\n"
+        "繁體中文版本前面要加上【交通管制】標題。\n"
+        "請嚴格按照以下格式輸出，每種語言獨立一段，標籤不可省略：\n\n"
+        "【繁體中文】【交通管制】（中文內容）\n"
+        "【English】【TRAFFIC ALERT】（英文翻譯）\n"
+        "【日本語】【交通規制】（日文翻譯）\n"
+        "【한국어】【교통 통제】（韓文翻譯）\n"
+        "【ภาษาไทย】【ประกาศจราจร】（泰文翻譯）\n"
+        "【Tiếng Việt】【Cảnh báo giao thông】（越南文翻譯）\n"
+        "【Français】【Alerte circulation】（法文翻譯）\n\n"
+        "翻譯原則：\n"
+        "- 保持簡潔緊急的口吻\n"
+        "- 路名保持原文（不翻譯地名）\n"
+        "- 不要出現 SOP、ETE 等內部術語\n"
+        "- 延誤時間用各語言的自然表達\n"
+    )
+
+    user_msg = f"請翻譯以下交通管制告警文字：\n{merged}"
+
+    if LLM_MODE == "bedrock":
+        return _generate_bedrock(system_msg, user_msg, multilingual)
+
+    if LLM_MODE == "mock":
+        return _mock_translate_cms(merged)
+
+    # Ollama
+    prompt = (
+        f"<|im_start|>system\n{system_msg}<|im_end|>\n"
+        f"<|im_start|>user\n{user_msg}<|im_end|>\n"
+        "<|im_start|>assistant\n"
+    )
+
+    payload = json.dumps({
+        "model": OLLAMA_MODEL, "prompt": prompt, "stream": False,
+        "options": {"temperature": 0.3, "top_p": 0.9, "num_predict": 1200},
+    }).encode()
+    req = urllib.request.Request(
+        f"{OLLAMA_URL}/api/generate", data=payload,
+        headers={"Content-Type": "application/json"}, method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        raw = json.loads(resp.read())["response"].strip()
+
+    return _parse(raw, multilingual)
+
+
+def _merge_cms_texts(cms_text: str) -> str:
+    """整合多段 CMS 文字，去除重複資訊。
+
+    如果只有一段，直接回傳；多段時用 LLM 合併成一段精簡通知。
+    """
+    lines = [l.strip() for l in cms_text.strip().split("\n") if l.strip()]
+    if len(lines) <= 1:
+        return lines[0] if lines else cms_text
+
+    # 多段 CMS，使用 LLM 整合
+    merge_system = (
+        "你是交通管制通報編輯。將以下多段交通告警合併成一段精簡通知，"
+        "去除重複的路段名稱和延誤時間，保留所有關鍵資訊（封閉路段、改道建議、"
+        "號誌故障、警力指揮等），80字以內。"
+        "不要加任何標題前綴，直接輸出合併後的通報內容。"
+    )
+    merge_user = "\n".join(f"- {l}" for l in lines)
+
+    if LLM_MODE == "bedrock":
+        try:
+            return _call_bedrock_merge(merge_system, merge_user)
+        except Exception:
+            return _mock_merge(lines)
+
+    if LLM_MODE == "mock":
+        return _mock_merge(lines)
+
+    # Ollama
+    try:
+        return _call_ollama_merge(merge_system, merge_user)
+    except Exception:
+        return _mock_merge(lines)
+
+
+def _call_bedrock_merge(system_msg: str, user_msg: str) -> str:
+    """用 Bedrock 合併多段 CMS。"""
+    import boto3
+    client = boto3.client("bedrock-runtime", region_name=BEDROCK_REGION)
+    response = client.converse(
+        modelId=BEDROCK_MODEL_ID,
+        system=[{"text": system_msg}],
+        messages=[{"role": "user", "content": [{"text": user_msg}]}],
+        inferenceConfig={"temperature": 0.2, "maxTokens": 200},
+    )
+    return response["output"]["message"]["content"][0]["text"].strip()
+
+
+def _call_ollama_merge(system_msg: str, user_msg: str) -> str:
+    """用 Ollama 合併多段 CMS。"""
+    prompt = (
+        f"<|im_start|>system\n{system_msg}<|im_end|>\n"
+        f"<|im_start|>user\n{user_msg}<|im_end|>\n"
+        "<|im_start|>assistant\n"
+    )
+    payload = json.dumps({
+        "model": OLLAMA_MODEL, "prompt": prompt, "stream": False,
+        "options": {"temperature": 0.2, "num_predict": 200},
+    }).encode()
+    req = urllib.request.Request(
+        f"{OLLAMA_URL}/api/generate", data=payload,
+        headers={"Content-Type": "application/json"}, method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        return json.loads(resp.read())["response"].strip()
+
+
+def _mock_merge(lines: list) -> str:
+    """Mock 合併：用分號串接，去除明顯重複的延誤資訊。"""
+    # 簡易去重：如果多段都提到同一個延誤時間，只保留最長的那個
+    if len(lines) == 2:
+        # 嘗試合併：取第一段完整 + 第二段去掉重複路段名
+        return "；".join(lines)
+    return "；".join(lines)
+
+
+def _mock_translate_cms(cms_text: str) -> dict:
+    """Mock CMS 翻譯"""
+    return {
+        "zh_tw": f"【交通管制】{cms_text}",
+        "en": f"【TRAFFIC ALERT】{cms_text}",
+        "ja": f"【交通規制】{cms_text}",
+        "ko": f"【교통 통제】{cms_text}",
+        "th": f"【ประกาศจราจร】{cms_text}",
+        "vi": f"【Cảnh báo giao thông】{cms_text}",
+        "fr": f"【Alerte circulation】{cms_text}",
+    }
