@@ -173,7 +173,9 @@ def reload_incidents():
 
 
 # ------------------------------------------------------------------
-# 站點事件處理（SOP-3 / SOP-6，sop_engine 不負責這些）
+# 站點事件處理（SOP-6，sop_engine 不負責這些）
+# SOP-3 捷運分流由 Module 1 thresholds (evaluate_clause3) 負責判斷，
+# 注入站點事件時不再重複產出 SOP-3 決策，避免和 Dashboard 已有的 SOP-3 卡重疊。
 # ------------------------------------------------------------------
 def _build_station_decisions(incident: dict[str, Any], snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     station_id = incident.get("affected_segment")
@@ -200,40 +202,7 @@ def _build_station_decisions(incident: dict[str, Any], snapshot: dict[str, Any])
         ]
 
     decisions: list[dict[str, Any]] = []
-    user_count = station.get("user_count") or 0
-    growth = station.get("growth_rate") or 0
     roaming = station.get("roaming_user_pct") or 0
-
-    if user_count > 25000 or growth > 0.30 or incident.get("type") == "Crowd_Surge_Injury":
-        basis = (
-            f"{station['name']}人潮 {user_count:,}、成長率 {growth:.2f}；"
-            "符合 SOP-3 人潮 >25,000 或成長率 >30% 的捷運與接駁分流判斷。"
-        )
-        decisions.append(
-            {
-                "triggered": True,
-                "sop_clause": "SOP-3",
-                "clause_name": "捷運與接駁分流",
-                "entity_id": station_id,
-                "entity_name": station["name"],
-                "basis": basis,
-                "actions": [
-                    "通知北捷評估過站不停或班距調整",
-                    "公車處加開接駁專車，導引旅客往捷運市政府站分流",
-                    "現場動線中斷時，優先開放替代出口與醫護通道",
-                ],
-                "cascade_checks": ["若大巨蛋人潮峰值 >=30,000 且成長率 <=-0.20，連動 SOP-4 散場啟動。"],
-                "severity": _map_severity(incident.get("severity", "High")),
-                "primary_route": None,
-                "secondary_routes": [],
-                "excluded_routes": [],
-                "ete_minutes": None,
-                "cms_text": f"{station['name']}人潮壅塞，請依現場指引分流至捷運市政府站或接駁車候車區",
-                "guidance_text": "已觸發 SOP-3，建議立即啟動捷運與接駁分流，並保留救護動線。",
-                "guidance_source": "rules",
-                "timestamp": incident.get("timestamp"),
-            }
-        )
 
     if roaming >= 0.30:
         decisions.append(
