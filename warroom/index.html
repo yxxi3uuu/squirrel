@@ -135,11 +135,6 @@
             </div>
             <button class="btn-explain" onclick="openDrawer('sop1b')">查看判斷依據</button>
           </div>
-          <div class="alert-card sop6">
-            <div class="alert-hdr"><span class="alert-tag accent-bg">SOP-6 多語</span></div>
-            <div class="alert-body">載入中…</div>
-            <button class="btn-explain" onclick="openModule5Modal()">查看多語通報</button>
-          </div>
         </div>
       </div>
     </div>
@@ -461,6 +456,19 @@
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="copyPublishMarkdown()">複製全文</button>
       <button class="btn btn-danger" onclick="confirmPublish()">確認發布（模擬）</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ OVERLAY: 事件詳情 Modal（從地圖標籤「顯示詳情」觸發）══════════════ -->
+<div id="incident-detail-modal-overlay" class="modal-overlay hidden" onclick="if(event.target===this) closeIncidentDetailModal();">
+  <div class="modal incident-detail-modal">
+    <div class="modal-head">
+      <div class="modal-eyebrow">事件詳情</div>
+      <h4>事件資訊</h4>
+      <button class="drawer-close modal-close" onclick="closeIncidentDetailModal()">✕</button>
+    </div>
+    <div class="modal-body" id="incident-detail-modal-body">
     </div>
   </div>
 </div>
