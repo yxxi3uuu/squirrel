@@ -1,0 +1,21 @@
+{
+  "targets": {
+    "default": {
+      "resources": {
+        "harnesses": {
+          "SquirrelAdvisor": {
+            "harnessId": "SquirrelAdvisor_SquirrelAdvisor-5gugVZ4Dqs",
+            "harnessArn": "arn:aws:bedrock-agentcore:us-west-2:468486452248:harness/SquirrelAdvisor_SquirrelAdvisor-5gugVZ4Dqs",
+            "roleArn": "arn:aws:iam::468486452248:role/SquirrelAdvisor_SquirrelAdvisor",
+            "status": "READY",
+            "harnessVersion": 1,
+            "agentRuntimeArn": "arn:aws:bedrock-agentcore:us-west-2:468486452248:runtime/harness_SquirrelAdvisor_SquirrelAdvisor-RF46C9BmCi",
+            "provisioner": "cloudformation"
+          }
+        },
+        "stackName": "AgentCore-SquirrelAdvisor-default",
+        "deployHash": "62cc44fa951c3956"
+      }
+    }
+  }
+}
