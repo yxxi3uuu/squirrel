@@ -19,10 +19,13 @@ from shared.schemas import TriggerDecision
 
 logger = logging.getLogger(__name__)
 
-# ── Ollama 設定 ────────────────────────────────────────────────────────────────
+# ── LLM 模式設定 ──────────────────────────────────────────────────────────────
+LLM_MODE: str = os.getenv("LLM_MODE", "ollama")
 OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
+OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
 OLLAMA_TIMEOUT: float = float(os.getenv("OLLAMA_TIMEOUT", "30"))
+BEDROCK_REGION: str = os.getenv("BEDROCK_REGION", "us-west-2")
+BEDROCK_MODEL_ID: str = os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
 
 SYSTEM_PROMPT = """你是台北市交通應變指揮中心的AI幕僚。
 以下所有數字與結論都已經由程式規則運算完成（見TriggerDecision物件），
@@ -93,9 +96,23 @@ def _mock_generate(decision: TriggerDecision) -> Dict[str, str]:
 
 def generate_guidance(decision: TriggerDecision) -> Dict[str, str]:
     """
-    嘗試呼叫 Ollama 產生指揮官引導文字；失敗時 fallback 到 mock。
+    嘗試呼叫 LLM 產生指揮官引導文字；失敗時 fallback 到 mock。
+    根據 LLM_MODE 決定使用 Bedrock、Ollama 或直接 Mock。
     回傳結果一律包含 "guidance_text" 與 "_source"。
     """
+    if LLM_MODE == "mock":
+        return _mock_generate(decision)
+
+    if LLM_MODE == "bedrock":
+        try:
+            result = _call_bedrock(decision)
+            logger.info("Bedrock 引導文字生成成功")
+            return result
+        except Exception as exc:
+            logger.warning("Bedrock 呼叫失敗（%s），fallback 到 mock", exc)
+            return _mock_generate(decision)
+
+    # 預設 ollama
     try:
         result = _call_ollama(decision)
         logger.info("LLM 引導文字生成成功（model=%s）", OLLAMA_MODEL)
@@ -110,6 +127,34 @@ def generate_guidance(decision: TriggerDecision) -> Dict[str, str]:
         logger.warning("Ollama HTTP 錯誤 %s，fallback 到 mock", exc.response.status_code)
 
     return _mock_generate(decision)
+
+
+def _call_bedrock(decision: TriggerDecision) -> Dict[str, str]:
+    """呼叫 AWS Bedrock Claude，回傳 {"guidance_text": ..., "_source": "bedrock"}。"""
+    import boto3
+    client = boto3.client("bedrock-runtime", region_name=BEDROCK_REGION)
+    user_prompt = build_llm_user_prompt(decision)
+
+    response = client.converse(
+        modelId=BEDROCK_MODEL_ID,
+        system=[{"text": SYSTEM_PROMPT}],
+        messages=[{"role": "user", "content": [{"text": user_prompt}]}],
+        inferenceConfig={"temperature": 0.2, "maxTokens": 300},
+    )
+
+    raw = response["output"]["message"]["content"][0]["text"].strip()
+    # 嘗試解析 JSON
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+        raw = raw.strip()
+
+    result = json.loads(raw)
+    if "guidance_text" not in result:
+        raise ValueError(f"Bedrock 回傳缺少 guidance_text：{result}")
+    result["_source"] = "bedrock"
+    return result
 
 
 def build_llm_user_prompt(decision: TriggerDecision) -> str:
