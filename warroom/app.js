@@ -461,6 +461,7 @@ function renderTrafficAlerts(segments, dashboard) {
   let html = '<h3>即時警報</h3><div class="alert-scroll">';
   html += renderAiSummaryCard(dashboard);
   html += renderSop3Card(dashboard);
+  html += renderSop4Card(dashboard);
   alerts.forEach(s => {
     const isA = s.level === 'A';
     const tagClass = isA ? '' : 'caution-bg';
@@ -514,6 +515,29 @@ function renderSop3Card(dashboard) {
     <div class="alert-card sop3">
       <div class="alert-hdr"><span class="alert-tag muted-bg">SOP-3 捷運分流</span></div>
       <div class="alert-body">目前 BS_MRT_BL17（捷運國父紀念館站）未達分流門檻</div>
+    </div>`;
+}
+
+/* ── 模組一：SOP-4 大巨蛋散場卡（BS_TPE_DOME peak>=30000 且 Growth_Rate<=-0.20）── */
+function renderSop4Card(dashboard) {
+  const sop4 = (dashboard?.triggers || []).find(t => t.sop_clause === '第 4 條');
+  if (sop4) {
+    const cascade = (sop4.cascade_checks || []).join('、');
+    return `
+      <div class="alert-card sop4">
+        <div class="alert-hdr"><span class="alert-tag caution-bg">SOP-4 散場</span><span class="mono">${(sop4.timestamp || '').slice(11, 16)}</span></div>
+        <div class="alert-body">
+          <b>${sop4.entity_name}</b> (${sop4.entity_id})<br>
+          ${sop4.basis}
+          ${cascade ? `<br><span class="mono caution-text">⚡ ${cascade}</span>` : ''}
+        </div>
+        <button class="btn-explain" onclick="showEntityHistory('${sop4.entity_id}', '${sop4.entity_name}')">查看歷史趨勢</button>
+      </div>`;
+  }
+  return `
+    <div class="alert-card sop4">
+      <div class="alert-hdr"><span class="alert-tag muted-bg">SOP-4 散場</span></div>
+      <div class="alert-body">目前大巨蛋（BS_TPE_DOME）未達散場啟動條件</div>
     </div>`;
 }
 

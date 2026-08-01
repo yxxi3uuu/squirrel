@@ -18,8 +18,8 @@ from typing import List
 from data.snapshot import format_snapshot_for_prompt
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
-OLLAMA_TIMEOUT = float(os.getenv("OLLAMA_TIMEOUT", "10"))
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
+OLLAMA_TIMEOUT = float(os.getenv("OLLAMA_TIMEOUT", "30"))
 
 SYSTEM_PROMPT = (
     "你是智慧交通指揮中樞的預警助理。使用者會提供目前的交通/人流快照，"
