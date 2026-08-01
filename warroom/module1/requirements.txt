@@ -2,6 +2,6 @@
 fastapi==0.137.0
 uvicorn==0.49.0
 
-# LLM summaries call a local Ollama server (default model qwen2.5:1.5b) via
+# LLM summaries call a local Ollama server (default model qwen2.5:7b) via
 # stdlib urllib -- no extra package needed. Falls back to a rule-based
 # summary if Ollama is unreachable or not running.

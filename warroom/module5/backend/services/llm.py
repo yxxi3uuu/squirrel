@@ -3,7 +3,7 @@
 import json, urllib.request, urllib.error, os
 
 OLLAMA_URL   = os.environ.get("OLLAMA_URL",   "http://localhost:11434")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:3b")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:7b")
 
 LANG_META = {
     "zh_tw": ("🇹🇼 繁體中文", "交通管制通報",       "【繁體中文】"),

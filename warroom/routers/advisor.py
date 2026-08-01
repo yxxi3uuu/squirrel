@@ -32,6 +32,8 @@ class ChatRequest(BaseModel):
 def chat(req: ChatRequest):
     message = req.message.strip()
     snapshot = _snapshot()
+    llm_status = llm_check_status()
+    llm_mode = llm_status.get("mode", "rules")
 
     # 規則引擎先算出答案
     rule_answer = _answer(message, snapshot, req.current_event, req.current_decisions)
@@ -40,7 +42,8 @@ def chat(req: ChatRequest):
     if "■ 建議處置" in rule_answer or "■ 後續確認" in rule_answer:
         return {
             "answer": rule_answer,
-            "source": "llm",
+            "source": "rules",
+            "mode": llm_mode,
             "snapshot_timestamp": snapshot["timestamp"],
         }
 
@@ -53,6 +56,7 @@ def chat(req: ChatRequest):
         return {
             "answer": llm_answer,
             "source": "llm",
+            "mode": llm_mode,
             "snapshot_timestamp": snapshot["timestamp"],
         }
 
@@ -60,6 +64,7 @@ def chat(req: ChatRequest):
     return {
         "answer": rule_answer,
         "source": "llm+rules",
+        "mode": llm_mode,
         "snapshot_timestamp": snapshot["timestamp"],
     }
 
