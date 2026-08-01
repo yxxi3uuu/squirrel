@@ -134,18 +134,22 @@ function renderStationMarkers(stations) {
 
     const style = STATION_TYPE_STYLE[type];
     const fillColor = s.roaming_rate >= 0.30 ? '#f27a84' : style.color;
+    // 站點半徑依人流數動態縮放（5k以下=5px, 40k以上=14px）
+    const dynamicRadius = Math.max(5, Math.min(14, 5 + (s.user_count / 40000) * 9));
 
     if (stationMarkers[s.station_id]) {
       stationMarkers[s.station_id].setTooltipContent(tooltipHtml);
-      stationMarkers[s.station_id].setStyle({ fillColor });
+      stationMarkers[s.station_id].setStyle({ fillColor, radius: dynamicRadius });
     } else {
       const marker = L.circleMarker(coords, {
         pane: 'stationPane',
-        radius: style.radius, color: '#fff', weight: 1.5,
+        radius: dynamicRadius, color: '#fff', weight: 1.5,
         fillColor,
         fillOpacity: 0.9,
       }).addTo(mapInstance);
       marker.bindTooltip(tooltipHtml, { direction: 'top', offset: [0, -6], className: 'map-tooltip', opacity: 1 });
+      marker.on('mouseover', () => marker.setRadius(dynamicRadius + 4));
+      marker.on('mouseout', () => marker.setRadius(dynamicRadius));
       stationMarkers[s.station_id] = marker;
     }
   });
@@ -361,6 +365,23 @@ function updateChartReadouts(idx) {
 
 function onTimelineSlide(value) {
   timelineIndex = Number(value);
+  updateTimelineDisplay();
+  loadSnapshotAt(timelineTimestamps[timelineIndex]);
+}
+
+/* ── 時間軸上一格／下一格按鈕 ─────────────────────────────────────────────── */
+function timelineStepPrev() {
+  if (timelineIndex <= 0) return;
+  timelineIndex--;
+  document.getElementById('timeline-slider').value = timelineIndex;
+  updateTimelineDisplay();
+  loadSnapshotAt(timelineTimestamps[timelineIndex]);
+}
+
+function timelineStepNext() {
+  if (timelineIndex >= timelineTimestamps.length - 1) return;
+  timelineIndex++;
+  document.getElementById('timeline-slider').value = timelineIndex;
   updateTimelineDisplay();
   loadSnapshotAt(timelineTimestamps[timelineIndex]);
 }
@@ -654,6 +675,9 @@ function renderTrafficMap(segments) {
     } else {
       const line = L.polyline(pts, { color, weight: 5, opacity: 0.9 }).addTo(mapInstance);
       line.bindTooltip(`${s.Road_Name} (${s.Segment_ID})<br>飽和: ${s.Saturation_Score.toFixed(2)}`, { className: 'map-tooltip', opacity: 1 });
+      // Hover 加粗效果
+      line.on('mouseover', () => line.setStyle({ weight: 9, opacity: 1 }));
+      line.on('mouseout', () => line.setStyle({ weight: 5, opacity: 0.9 }));
       roadPolylines[s.Segment_ID] = line;
     }
   });
