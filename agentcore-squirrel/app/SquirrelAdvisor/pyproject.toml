@@ -1,0 +1,9 @@
+[project]
+name = "squirrel-advisor"
+version = "2.0.0"
+description = "模組三：對話式策略諮詢顧問 — AgentCore Strands Agent"
+requires-python = ">=3.11"
+dependencies = [
+    "strands-agents>=0.1.0",
+    "strands-agents-bedrock>=0.0.1",
+]
