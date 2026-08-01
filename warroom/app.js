@@ -2161,8 +2161,8 @@ function addIncidentMapMarkers(event, decisions, snapshot) {
     window._incidentDetailStore[event.event_id] = { event, decisions, snapshot, segId, iconEmoji };
     marker.on('click', () => { openIncidentDetailModal(event.event_id); });
 
-    // 氣泡只顯示事件 ID（使用 tooltip 常駐，不受 marker click 影響）
-    const labelHtml = `<div class="incident-map-label-id">${escapeHtml(event.event_id)}</div>`;
+    // 氣泡顯示事件 ID + 點選提示（使用 tooltip 常駐，不受 marker click 影響）
+    const labelHtml = `<div class="incident-map-label-id">${escapeHtml(event.event_id)}</div><div class="incident-map-label-hint">點選顯示詳情</div>`;
     marker.bindTooltip(labelHtml, { permanent: true, direction: 'top', offset: [0, -20], className: 'incident-label-tooltip-container', interactive: false, pane: 'incidentTooltipPane' });
 
     incidentMapMarkers.push(marker);

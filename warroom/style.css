@@ -1203,6 +1203,13 @@ footer { text-align: center; padding: 20px; color: var(--text-dim); font-size: .
   text-align: center;
   font-family: var(--font-mono, 'JetBrains Mono', monospace);
 }
+.incident-map-label-hint {
+  font-size: .65rem;
+  font-weight: 700;
+  color: #999;
+  text-align: center;
+  margin-top: 2px;
+}
 
 /* ══ Incident Detail Modal ═══════════════════════════════════════════════════ */
 .incident-detail-modal {
