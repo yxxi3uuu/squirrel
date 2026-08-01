@@ -5,29 +5,33 @@ SOP Rule Engine — Module 2: Live Incident Response
 輸出：List[TriggerDecision]（0 到多筆，對應本模組負責的 SOP 條款）
 
 負責的 SOP 條款：
-  - SOP-1  壅塞分級（僅在事件牽涉 RD_TPE_001/002 時順帶計算）
   - SOP-2  事故與路障應變（核心）
   - SOP-5  號誌故障應變（核心）
   - SOP-7  ETE 公式（內嵌於 SOP-2/SOP-5 結果，不獨立成一筆）
+
+SOP-1 壅塞分級由 Module 1 (warroom.module1.backend.thresholds) 負責，
+本模組在 SOP-2 需要參考壅塞資訊時，直接呼叫 Module 1 的 evaluate_clause1 取得結果。
 """
 
 from typing import List, Optional, Tuple
 
 from shared.lookup import find_entities_in_text
 from shared.schemas import TriggerDecision
+from warroom.module1.backend.thresholds import evaluate_clause1, saturation_level
 from .llm_mock import generate_guidance
 
 # ------------------------------------------------------------------
 # 常數
 # ------------------------------------------------------------------
-TRIGGER_SEGMENTS = {"RD_TPE_001", "RD_TPE_002"}
-
 SOP2_STATUS = {"Closed", "Blocked", "Restricted"}
 SOP2_SEVERITY = {"High", "Critical"}
 
 BASE_CLEARANCE = {"Critical": 60, "High": 40, "Medium": 20, "Low": 10}
 
 ENABLE_SECONDARY_ROAD_NOTE = True
+
+# Module 1 觸發路段（用於 SOP-2 cascade 判定是否同時觸發 SOP-1）
+TRIGGER_SEGMENTS = {"RD_TPE_001", "RD_TPE_002"}
 
 
 # ------------------------------------------------------------------
@@ -285,61 +289,32 @@ def plan_accident_response(incident: dict, snapshot: dict) -> dict:
 
 
 # ------------------------------------------------------------------
-# SOP-1 壅塞分級判定
+# SOP-1 壅塞資訊查詢（委派 Module 1）
 # ------------------------------------------------------------------
-def classify_congestion_level(saturation: float) -> str:
-    if saturation >= 0.95:
-        return "A"
-    if saturation >= 0.85:
-        return "B"
-    return "Normal"
+def _get_module1_congestion_info(seg_id: str, snapshot: dict) -> Optional[dict]:
+    """查詢 Module 1 thresholds 對該路段的壅塞判定結果。
 
-
-def build_sop1_decision(incident: dict, snapshot: dict) -> Optional[TriggerDecision]:
-    seg_id = incident.get("affected_segment")
-    if seg_id not in TRIGGER_SEGMENTS:
-        return None
-    segment = snapshot["road_segments"].get(seg_id)
+    回傳格式：{"level": "A"|"B"|None, "saturation": float, "decision": dict|None}
+    若路段未達 B 級門檻或不在快照中，回傳 None。
+    """
+    segment = snapshot.get("road_segments", {}).get(seg_id)
     if not segment:
         return None
-    saturation = segment.get("saturation_score")
-    if saturation is None:
-        return None
-    level = classify_congestion_level(saturation)
-    if level == "Normal":
+    score = segment.get("saturation_score")
+    if score is None:
         return None
 
-    alt_ids = segment.get("alternatives", [])
-    actions = [
-        f"長綠燈時制：替代道路 {', '.join(alt_ids)} 綠燈配時 +25%",
-        f"警力淨空路口：派遣警力至 {seg_id} ({segment['name']})",
-    ]
-    cascade = []
-    if level == "A":
-        cascade.append(
-            "A 級同時觸發 SOP-2 路網重規劃（若本次事件同時符合 SOP-2 條件）"
-        )
+    level = saturation_level(score)
+    if level == "info":
+        return None
 
-    return TriggerDecision(
-        triggered=True,
-        sop_clause="SOP-1",
-        clause_name="壅塞分級判定",
-        entity_id=seg_id,
-        entity_name=segment["name"],
-        basis=(
-            f"飽和度 {saturation:.2f}，達 {level} 級"
-            f"（{seg_id} 為城市應變觸發路段，門檻：A≥0.95 / B≥0.85）"
-        ),
-        actions=actions,
-        cascade_checks=cascade,
-        severity=_map_severity(level),
-        primary_route=None,
-        secondary_routes=[],
-        excluded_routes=[],
-        ete_minutes=None,
-        cms_text=None,
-        timestamp=incident.get("timestamp"),
+    # 從 Module 1 完整觸發清單中找出對應的 decision
+    clause1_decisions = evaluate_clause1(snapshot)
+    matched = next(
+        (d for d in clause1_decisions if d.get("entity_id") == seg_id), None
     )
+    level_label = "A" if level == "red" else "B"
+    return {"level": level_label, "saturation": score, "decision": matched}
 
 
 # ------------------------------------------------------------------
@@ -412,9 +387,12 @@ def build_sop2_decision(incident: dict, snapshot: dict) -> TriggerDecision:
     basis = " ".join(basis_parts)
 
     cascade = []
-    if seg_id in TRIGGER_SEGMENTS:
+    congestion_info = _get_module1_congestion_info(seg_id, snapshot)
+    if seg_id in TRIGGER_SEGMENTS and congestion_info:
         cascade.append(
-            f"同一路段已同步觸發 SOP-1 壅塞分級判定，見對應 TriggerDecision"
+            f"Module 1 已判定 {seg_id} 壅塞等級為 {congestion_info['level']} 級"
+            f"（飽和度 {congestion_info['saturation']:.2f}），"
+            f"相關 SOP-1 預警已由 Dashboard 模組產出"
         )
 
     excluded_for_schema = [
@@ -443,12 +421,13 @@ def build_sop2_decision(incident: dict, snapshot: dict) -> TriggerDecision:
 
     llm_result = generate_guidance(draft_decision)
     guidance_text = llm_result.get("guidance_text", "")
-    guidance_source = llm_result.get("_source", "mock")
 
     actions = [
         f"重新導引車流：主疏散路徑 {primary_seg_id or '無'}",
         f"CMS 電子看板更新：{cms_text}",
     ]
+    if guidance_text:
+        actions.append(f"指揮官建議：{guidance_text}")
 
     return TriggerDecision(
         triggered=True,
@@ -465,8 +444,6 @@ def build_sop2_decision(incident: dict, snapshot: dict) -> TriggerDecision:
         excluded_routes=excluded_for_schema,
         ete_minutes=ete_minutes,
         cms_text=cms_text,
-        guidance_text=guidance_text,
-        guidance_source=guidance_source,
         timestamp=incident.get("timestamp"),
     )
 
@@ -523,12 +500,13 @@ def build_sop5_decision(incident: dict, snapshot: dict) -> TriggerDecision:
 
     llm_result = generate_guidance(draft_decision)
     guidance_text = llm_result.get("guidance_text", "")
-    guidance_source = llm_result.get("_source", "mock")
 
     actions = [
         f"人工指揮派遣：{seg_name} 派遣 {police_needed} 名警力接管交通指揮",
         f"CMS 更新：{cms_text}",
     ]
+    if guidance_text:
+        actions.append(f"指揮官建議：{guidance_text}")
 
     return TriggerDecision(
         triggered=True,
@@ -545,8 +523,6 @@ def build_sop5_decision(incident: dict, snapshot: dict) -> TriggerDecision:
         excluded_routes=[],
         ete_minutes=ete_minutes,
         cms_text=cms_text,
-        guidance_text=guidance_text,
-        guidance_source=guidance_source,
         timestamp=incident.get("timestamp"),
     )
 
@@ -556,14 +532,10 @@ def build_sop5_decision(incident: dict, snapshot: dict) -> TriggerDecision:
 # ------------------------------------------------------------------
 def process_incident(incident: dict, snapshot: dict) -> List[TriggerDecision]:
     """
-    對一筆注入事件執行全部模組2負責的 SOP 規則，
+    對一筆注入事件執行模組2負責的 SOP 規則（SOP-2、SOP-5），
     回傳 0 到多筆 TriggerDecision。
     """
     decisions: List[TriggerDecision] = []
-
-    sop1 = build_sop1_decision(incident, snapshot)
-    if sop1:
-        decisions.append(sop1)
 
     if is_sop2_triggered(incident):
         decisions.append(build_sop2_decision(incident, snapshot))
@@ -581,7 +553,7 @@ def process_incident(incident: dict, snapshot: dict) -> List[TriggerDecision]:
                 f"未觸發完整路網重規劃，建議留意該路段是否需要人工調度"
             )
         cascade.append(
-            "此事件不符合模組2（SOP 第1/2/5條）之程式化觸發條件；"
+            "此事件不符合模組2（SOP 第2/5條）之程式化觸發條件；"
             "若涉及 BS_ 人流站點，建議轉交模組3（SOP-3 捷運分流）"
             "/模組4（SOP-4 散場）處理"
         )

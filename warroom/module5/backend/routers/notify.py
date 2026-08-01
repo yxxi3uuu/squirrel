@@ -42,13 +42,15 @@ def generate(req: GenerateRequest):
     status = check_ollama()
     if not status["ok"]:
         alerts = mock_alerts(req.station_name)
-        return {"alerts": alerts, "source": "mock", "ollama_status": status}
+        return {"alerts": alerts, "source": "mock", "llm_status": status}
     try:
         alerts = generate_alerts(
             req.station_id, req.station_name, req.user_count,
             req.roaming_rate, req.growth_rate, req.timestamp, req.multilingual,
         )
-        return {"alerts": alerts, "source": "ollama", "ollama_status": status}
+        from warroom.module5.backend.services.llm import LLM_MODE
+        source = "bedrock" if LLM_MODE == "bedrock" else "ollama"
+        return {"alerts": alerts, "source": source, "llm_status": status}
     except Exception as e:
         alerts = mock_alerts(req.station_name)
         return {"alerts": alerts, "source": "mock", "error": str(e)}

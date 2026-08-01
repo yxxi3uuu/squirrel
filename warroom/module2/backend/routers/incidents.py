@@ -11,7 +11,7 @@ FastAPI Router — /api/incidents/*
 import json
 import time
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -32,7 +32,7 @@ class IncidentIn(BaseModel):
     type: str
     location: str
     affected_segment: str
-    affected_road: str | None = None
+    affected_road: Optional[str] = None
     status: str
     severity: str
     description: str

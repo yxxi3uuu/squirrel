@@ -12,15 +12,16 @@
 
 <!-- ══ TOP BAR ══════════════════════════════════════════════════════════════ -->
 <header id="topbar">
-  <div class="brand">
+  <div class="brand" id="brand-home" role="button" tabindex="0" aria-label="回到儀表板首頁">
     <span class="logo">🐿️</span>
     <span class="title">SQUIRREL 交通指揮中心</span>
   </div>
   <nav class="tabs">
     <button class="tab active" data-tab="dashboard">儀表板</button>
-    <button class="tab" data-tab="incident">事件處置</button>
   </nav>
   <div class="top-right">
+    <button class="btn-import-incident" id="import-incident-btn" onclick="openIncidentModal()">匯入事件</button>
+    <button class="btn-advisory-nav hidden" id="advisory-nav-btn" onclick="openAdvisoryModal()">產出建議書</button>
     <button class="bell" id="bell-btn">🔔</button>
   </div>
 </header>
@@ -143,14 +144,146 @@
     </div>
   </section>
 
-  <!-- TAB 2: Incident (Module 2) -->
-  <section class="tab-panel" id="panel-incident">
-    <div class="grid-2">
+  <!-- TAB 2: Incident (Module 2) — 已改為 Modal -->
+
+
+
+  <!-- Module 5 已改為右側 Drawer -->
+
+</main>
+
+<!-- ══ OVERLAY: Module 4 Explanation Drawer ════════════════════════════════ -->
+<div id="drawer-backdrop" class="backdrop hidden" onclick="closeDrawer()"></div>
+<aside id="drawer" class="drawer hidden"
+  <div class="drawer-head">
+    <h3 id="drawer-title">判斷依據 — 解釋鏈</h3>
+    <button class="drawer-close" onclick="closeDrawer()">✕</button>
+  </div>
+  <div class="drawer-body" id="drawer-body-content">
+    <div class="chain">
+      <div class="chain-step active"><div class="node">1</div><div class="step-text"><span class="step-lbl">容量篩選</span> capacity_vph ≥ 1000</div></div>
+      <div class="chain-step active"><div class="node">2</div><div class="step-text"><span class="step-lbl">直接相交</span> 出現在 intersections 中</div></div>
+      <div class="chain-step active"><div class="node">3</div><div class="step-text"><span class="step-lbl">上游判定</span> 依 flow_direction 與路口排序</div></div>
+      <div class="chain-step active"><div class="node">4</div><div class="step-text"><span class="step-lbl">低飽和度</span> 市民大道四段 <span class="mono accent-text">0.61</span></div></div>
+    </div>
+    <div class="formula-box">
+      <div class="formula-title">ETE 公式</div>
+      <div class="formula mono">ETE = base_clearance + congestion_penalty</div>
+      <div class="formula-detail mono">= 60 + (0.89 − 0.5) × 60 = 83.4 min</div>
+    </div>
+  </div>
+</aside>
+
+<!-- ══ OVERLAY: Module 3 AI Advisor Orb ═══════════════════════════════════ -->
+<div id="advisor-orb" class="advisor-orb">
+  <span>🐿️</span>
+</div>
+<div id="chat-backdrop" class="chat-backdrop hidden" onclick="toggleChat()"></div>
+<div id="chat-panel" class="chat-panel hidden">
+  <div class="chat-head">
+    <div class="chat-brand-icon">🐿️</div>
+    <div class="chat-title-block">
+      <b>策略顧問 SQ</b>
+      <span><i class="mode-dot" id="advisor-mode-dot"></i> <span id="advisor-mode-text">連線中…</span></span>
+    </div>
+    <button class="chat-close-btn" onclick="toggleChat()">✕</button>
+  </div>
+
+  <!-- 情境選擇區 -->
+  <div class="advisor-scenario-section">
+    <div class="advisor-category-row">
+      <button class="advisor-category active" data-advisor-set="incident" onclick="showAdvisorScenarioSet('incident')">車禍與路障應變</button>
+      <button class="advisor-category" data-advisor-set="signal" onclick="showAdvisorScenarioSet('signal')">號誌故障應變</button>
+      <button class="advisor-category" data-advisor-set="notification" onclick="showAdvisorScenarioSet('notification')">數位通報</button>
+    </div>
+    <div class="advisor-scenario-row">
+      <select id="advisor-scenario-select" aria-label="顧問情境"></select>
+      <button class="advisor-apply" onclick="askAdvisorScenario()">套用情境</button>
+    </div>
+  </div>
+
+  <!-- 對話訊息區 -->
+  <div class="chat-messages" id="chat-messages">
+    <div class="msg ai">你好！我是松鼠 AI 顧問，可以問我路段狀態、SOP 條款，或套用上方情境檢查是否觸發應變。</div>
+  </div>
+
+  <!-- 快捷假設 + 輸入框 -->
+  <div class="chat-bottom">
+    <div class="advisor-chip-row">
+      <button class="advisor-chip" onclick="advisorQuickAsk('如果忠孝東路四段壅塞程度達 0.96，依 SOP 要啟動哪些措施？')">忠孝東路四段 A 級</button>
+      <button class="advisor-chip" onclick="advisorQuickAsk('如果光復南路壅塞程度達 0.90，依 SOP 是否觸發應變？')">光復南路 B 級</button>
+      <button class="advisor-chip" onclick="advisorQuickAsk('如果捷運國父紀念館站目前有 40,000 人，應該怎麼分流？')">國父紀念館分流</button>
+      <button class="advisor-chip" onclick="advisorQuickAsk('如果大巨蛋人潮達 40,000 人且現在人潮成長率為 -0.25，依 SOP 要啟動哪些措施？')">大巨蛋散場啟動</button>
+      <button class="advisor-chip" onclick="advisorQuickAsk('目前哪些站點需要啟動多語通報？')">多語通報掃描</button>
+      <button class="advisor-chip" onclick="advisorQuickAsk('交通壅塞級別如何判定？')">壅塞級別判定</button>
+    </div>
+    <div class="chat-input">
+      <input id="advisor-input" type="text" placeholder="輸入假設性問題..." onkeydown="if(event.key==='Enter') sendAdvisorMessage()">
+      <button onclick="sendAdvisorMessage()">➤</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ OVERLAY: Module 5 多語通報 Toast ════════════════════════════════════ -->
+<div id="toast" class="toast hidden">
+  <div class="toast-content">
+    <span id="toast-text">多語通報狀態載入中…</span>
+    <button class="toast-btn" onclick="openModule5Modal(); closeToast();">查看多語文案</button>
+    <button class="toast-close" onclick="closeToast()">✕</button>
+  </div>
+</div>
+
+
+<!-- ══ OVERLAY: Module 5 多語通報 Modal（原生，直接呼叫 /api/notify、/api/signal，接 Ollama）══ -->
+<div id="m5-modal-overlay" class="modal-overlay hidden" onclick="if(event.target===this) closeModule5Modal();">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-eyebrow">SOP-6 · 數位通報與多語化</div>
+      <h4 id="m5-modal-title">載入站點資料中…</h4>
+      <div class="modal-meta mono" id="m5-modal-meta"></div>
+      <button class="drawer-close modal-close" onclick="closeModule5Modal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <label>選擇站點</label>
+        <select id="m5-station-select"></select>
+      </div>
+      <div id="m5-sop-banner"></div>
+      <button class="btn btn-primary" id="m5-btn-generate" onclick="m5Generate()">生成多語告警</button>
+      <div id="m5-spinner" class="spinner hidden">
+        <div style="margin-bottom:8px">🤖 LLM 推論中… <span id="m5-progress-pct">0%</span></div>
+        <div style="width:100%;height:8px;background:#1e2a3a;border-radius:4px;overflow:hidden">
+          <div id="m5-progress-bar" style="width:0%;height:100%;background:var(--accent);border-radius:4px;transition:width .3s ease"></div>
+        </div>
+      </div>
+      <div id="m5-editor" class="hidden">
+        <p class="editor-title">警告文字（可編輯後發布）</p>
+        <div id="m5-lang-tabs" class="lang-tabs"></div>
+        <div id="m5-lang-panels" class="lang-panels"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" onclick="m5CopyAll()">複製全部語言</button>
+        <button class="btn btn-danger" id="m5-btn-publish" disabled onclick="m5Publish()">發送簡訊＋看板</button>
+      </div>
+      <div id="m5-publish-result" class="hidden"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ OVERLAY: 事件處置 Modal ═══════════════════════════════════════════ -->
+<div id="incident-modal-overlay" class="modal-overlay hidden" onclick="if(event.target===this) closeIncidentModal();">
+  <div class="modal incident-modal incident-modal-compact">
+    <div class="modal-head">
+      <div class="modal-eyebrow">Module 2 · 事件處置</div>
+      <h4>匯入事件</h4>
+      <button class="drawer-close modal-close" onclick="closeIncidentModal()">✕</button>
+    </div>
+    <div class="modal-body" id="incident-modal-body">
       <div class="panel">
-        <h3>事件注入</h3>
         <div class="inject-tabs">
           <button class="inject-tab active" data-inject-panel="scenario" onclick="switchInjectPanel('scenario')">情境事件</button>
           <button class="inject-tab" data-inject-panel="custom" onclick="switchInjectPanel('custom')">自訂事件</button>
+          <button class="inject-tab" data-inject-panel="import" onclick="switchInjectPanel('import')">匯入 JSON</button>
         </div>
         <div class="scenario-list" id="scenario-list">
           <div class="scenario-item" onclick="injectIncident()">
@@ -261,133 +394,69 @@
           </div>
           <button class="btn btn-primary" type="submit">注入自訂事件</button>
         </form>
-      </div>
-      <div class="panel">
-        <h3>SOP 決策結果</h3>
-        <div id="decision-cards">
-          <div class="decision-card decision-muted">
-            <div class="decision-body">
-              <p>尚未注入事件。請從左側選擇情境事件，系統會即時計算 SOP-1 / SOP-2 / SOP-5 決策、替代路線與 ETE。</p>
-            </div>
+        <div id="import-json-panel" class="import-json-panel hidden">
+          <p class="import-hint">上傳 JSON 檔案（陣列格式），每個物件會自動匯入為一筆事件。</p>
+          <div class="import-dropzone" id="import-dropzone">
+            <span class="import-dropzone-icon">📂</span>
+            <span class="import-dropzone-text">拖曳 JSON 檔至此，或點擊選取檔案</span>
+            <input type="file" id="import-file-input" accept=".json,application/json" hidden>
           </div>
+          <div id="import-preview" class="import-preview hidden"></div>
+          <button class="btn btn-primary" id="import-submit-btn" disabled onclick="submitImportJson()">匯入事件</button>
+          <div id="import-result" class="import-result hidden"></div>
         </div>
       </div>
     </div>
-  </section>
-
-  <!-- Module 5 已改為右側 Drawer -->
-
-</main>
-
-<!-- ══ OVERLAY: Module 4 Explanation Drawer ════════════════════════════════ -->
-<div id="drawer-backdrop" class="backdrop hidden" onclick="closeDrawer()"></div>
-<aside id="drawer" class="drawer hidden"
-  <div class="drawer-head">
-    <h3 id="drawer-title">判斷依據 — 解釋鏈</h3>
-    <button class="drawer-close" onclick="closeDrawer()">✕</button>
-  </div>
-  <div class="drawer-body" id="drawer-body-content">
-    <div class="chain">
-      <div class="chain-step active"><div class="node">1</div><div class="step-text"><span class="step-lbl">容量篩選</span> capacity_vph ≥ 1000</div></div>
-      <div class="chain-step active"><div class="node">2</div><div class="step-text"><span class="step-lbl">直接相交</span> 出現在 intersections 中</div></div>
-      <div class="chain-step active"><div class="node">3</div><div class="step-text"><span class="step-lbl">上游判定</span> 依 flow_direction 與路口排序</div></div>
-      <div class="chain-step active"><div class="node">4</div><div class="step-text"><span class="step-lbl">低飽和度</span> 市民大道四段 <span class="mono accent-text">0.61</span></div></div>
-    </div>
-    <div class="formula-box">
-      <div class="formula-title">ETE 公式</div>
-      <div class="formula mono">ETE = base_clearance + congestion_penalty</div>
-      <div class="formula-detail mono">= 60 + (0.89 − 0.5) × 60 = 83.4 min</div>
-    </div>
-  </div>
-</aside>
-
-<!-- ══ OVERLAY: Module 3 AI Advisor Orb ═══════════════════════════════════ -->
-<div id="advisor-orb" class="advisor-orb">
-  <span>🐿️</span>
-</div>
-<div id="chat-backdrop" class="chat-backdrop hidden" onclick="toggleChat()"></div>
-<div id="chat-panel" class="chat-panel hidden">
-  <div class="chat-head">
-    <div class="chat-brand-icon">🐿️</div>
-    <div class="chat-title-block">
-      <b>策略顧問 SQ</b>
-      <span><i class="mode-dot" id="advisor-mode-dot"></i> <span id="advisor-mode-text">連線中…</span></span>
-    </div>
-    <button class="chat-close-btn" onclick="toggleChat()">✕</button>
-  </div>
-
-  <!-- 情境選擇區 -->
-  <div class="advisor-scenario-section">
-    <div class="advisor-category-row">
-      <button class="advisor-category active" data-advisor-set="incident" onclick="showAdvisorScenarioSet('incident')">車禍與路障應變</button>
-      <button class="advisor-category" data-advisor-set="signal" onclick="showAdvisorScenarioSet('signal')">號誌故障應變</button>
-      <button class="advisor-category" data-advisor-set="notification" onclick="showAdvisorScenarioSet('notification')">數位通報</button>
-    </div>
-    <div class="advisor-scenario-row">
-      <select id="advisor-scenario-select" aria-label="顧問情境"></select>
-      <button class="advisor-apply" onclick="askAdvisorScenario()">套用情境</button>
-    </div>
-  </div>
-
-  <!-- 對話訊息區 -->
-  <div class="chat-messages" id="chat-messages">
-    <div class="msg ai">你好！我是松鼠 AI 顧問，可以問我路段狀態、SOP 條款，或套用上方情境檢查是否觸發應變。</div>
-  </div>
-
-  <!-- 快捷假設 + 輸入框 -->
-  <div class="chat-bottom">
-    <div class="advisor-chip-row">
-      <button class="advisor-chip" onclick="advisorQuickAsk('如果忠孝東路四段壅塞程度達 0.96，依 SOP 要啟動哪些措施？')">忠孝東路四段 A 級</button>
-      <button class="advisor-chip" onclick="advisorQuickAsk('如果光復南路壅塞程度達 0.90，依 SOP 是否觸發應變？')">光復南路 B 級</button>
-      <button class="advisor-chip" onclick="advisorQuickAsk('如果捷運國父紀念館站目前有 40,000 人，應該怎麼分流？')">國父紀念館分流</button>
-      <button class="advisor-chip" onclick="advisorQuickAsk('如果大巨蛋人潮達 40,000 人且現在人潮成長率為 -0.25，依 SOP 要啟動哪些措施？')">大巨蛋散場啟動</button>
-      <button class="advisor-chip" onclick="advisorQuickAsk('目前哪些站點需要啟動多語通報？')">多語通報掃描</button>
-      <button class="advisor-chip" onclick="advisorQuickAsk('交通壅塞級別如何判定？')">壅塞級別判定</button>
-    </div>
-    <div class="chat-input">
-      <input id="advisor-input" type="text" placeholder="輸入假設性問題..." onkeydown="if(event.key==='Enter') sendAdvisorMessage()">
-      <button onclick="sendAdvisorMessage()">➤</button>
-    </div>
   </div>
 </div>
 
-<!-- ══ OVERLAY: Module 5 多語通報 Toast ════════════════════════════════════ -->
-<div id="toast" class="toast hidden">
-  <div class="toast-content">
-    <span id="toast-text">多語通報狀態載入中…</span>
-    <button class="toast-btn" onclick="openModule5Modal(); closeToast();">查看多語文案</button>
-    <button class="toast-close" onclick="closeToast()">✕</button>
-  </div>
-</div>
-
-
-<!-- ══ OVERLAY: Module 5 多語通報 Modal（原生，直接呼叫 /api/notify、/api/signal，接 Ollama）══ -->
-<div id="m5-modal-overlay" class="modal-overlay hidden" onclick="if(event.target===this) closeModule5Modal();">
-  <div class="modal">
+<!-- ══ OVERLAY: 事件匯入結果通知 Modal ═══════════════════════════════════ -->
+<div id="inject-result-modal-overlay" class="modal-overlay hidden" onclick="if(event.target===this) closeInjectResultModal();">
+  <div class="modal inject-result-modal">
     <div class="modal-head">
-      <div class="modal-eyebrow">SOP-6 · 數位通報與多語化</div>
-      <h4 id="m5-modal-title">載入站點資料中…</h4>
-      <div class="modal-meta mono" id="m5-modal-meta"></div>
-      <button class="drawer-close modal-close" onclick="closeModule5Modal()">✕</button>
+      <div class="modal-eyebrow">事件匯入結果</div>
+      <h4 id="inject-result-title">匯入成功</h4>
+      <button class="drawer-close modal-close" onclick="closeInjectResultModal()">✕</button>
     </div>
-    <div class="modal-body">
-      <div class="form-row">
-        <label>選擇站點</label>
-        <select id="m5-station-select"></select>
-      </div>
-      <div id="m5-sop-banner"></div>
-      <button class="btn btn-primary" id="m5-btn-generate" onclick="m5Generate()">生成多語告警</button>
-      <div id="m5-spinner" class="spinner hidden">Ollama 推論中…</div>
-      <div id="m5-editor" class="hidden">
-        <p class="editor-title">警告文字（可編輯後發布）</p>
-        <div id="m5-lang-tabs" class="lang-tabs"></div>
-        <div id="m5-lang-panels" class="lang-panels"></div>
-      </div>
-      <div class="modal-foot">
-        <button class="btn btn-ghost" onclick="m5CopyAll()">複製全部語言</button>
-        <button class="btn btn-danger" id="m5-btn-publish" disabled onclick="m5Publish()">發送簡訊＋看板</button>
-      </div>
-      <div id="m5-publish-result" class="hidden"></div>
+    <div class="modal-body" id="inject-result-body">
+    </div>
+    <div class="modal-foot" style="text-align:center;padding:14px 20px">
+      <button class="btn btn-primary" onclick="closeInjectResultModal()">確定</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ OVERLAY: 交控中心建議書 Modal ══════════════════════════════════════ -->
+<div id="advisory-modal-overlay" class="modal-overlay hidden" onclick="if(event.target===this) closeAdvisoryModal();">
+  <div class="modal advisory-modal">
+    <div class="modal-head">
+      <div class="modal-eyebrow">交通管制中心</div>
+      <h4>交控中心建議書</h4>
+      <button class="drawer-close modal-close" onclick="closeAdvisoryModal()">✕</button>
+    </div>
+    <div class="modal-body" id="advisory-modal-body">
+      <div class="advisory-loading">建議書生成中…</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="copyAdvisoryMarkdown()">複製 Markdown</button>
+      <button class="btn btn-primary" onclick="showPublishSimulation()">模擬發布事件書</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ OVERLAY: 模擬發布事件書 Modal ══════════════════════════════════════ -->
+<div id="publish-sim-modal-overlay" class="modal-overlay hidden" onclick="if(event.target===this) closePublishSimModal();">
+  <div class="modal advisory-modal publish-sim-modal">
+    <div class="modal-head">
+      <div class="modal-eyebrow">模擬發布</div>
+      <h4>事件建議書（Markdown 預覽）</h4>
+      <button class="drawer-close modal-close" onclick="closePublishSimModal()">✕</button>
+    </div>
+    <div class="modal-body" id="publish-sim-body">
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="copyPublishMarkdown()">複製全文</button>
+      <button class="btn btn-danger" onclick="confirmPublish()">確認發布（模擬）</button>
     </div>
   </div>
 </div>

@@ -1,0 +1,15 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Session 啟動健康檢查",
+      "trigger": "SessionStart",
+      "description": "每次 session 開始時驗證 server 可以正常 import，確認環境沒壞",
+      "action": {
+        "type": "command",
+        "command": "cd c:\\Users\\mengr\\squirrel && python -c \"from warroom.server import app; print('Server import OK')\"",
+        "timeout": 15
+      }
+    }
+  ]
+}

@@ -5,6 +5,7 @@ let stationMarkers = {};
 let latestDecisions = [];
 let latestSnapshot = null;
 let latestIncident = null;
+let injectedTimelineData = {}; // { timestamp: { event, decisions, snapshot } }
 
 // 路段／站點經緯度座標改由後端 /api/traffic/coords 載入（見 warroom/data_source/road_coords.json），
 // 不再寫死在前端，方便其他模組重用同一份資料、也不用改程式碼就能更新座標。
@@ -25,9 +26,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   mapInstance = L.map('leaflet-map', { zoomControl: false }).setView([25.0370, 121.5625], 14.5);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(mapInstance);
   L.control.zoom({ position: 'topleft' }).addTo(mapInstance);
-  // 站點標記需要疊在路段線上面，開一個獨立、z-index 更高的 pane
+  // L.circleMarker（站點）預設跟 L.polyline（路段）共用 overlayPane，疊放順序只看
+  // DOM 加入先後，而路段/站點是兩支獨立 API 非同步載入，順序不固定，導致站點有時
+  // 會被路段線蓋住點不到。開一個獨立、z-index 更高的 pane 讓站點永遠疊在路段上面。
   mapInstance.createPane('stationPane');
   mapInstance.getPane('stationPane').style.zIndex = 450;
+  // 事件標記 pane：z-index 高於站點，確保事件 popup 不會被遮住
+  mapInstance.createPane('incidentPane');
+  mapInstance.getPane('incidentPane').style.zIndex = 650;
+  // 確保 popup pane 永遠在最上層（解決站點標記蓋住 popup 的問題）
+  mapInstance.getPane('popupPane').style.zIndex = 900;
   // 地圖高度改用 flex:1 撐滿面板剩餘空間（見 style.css .map-wrap），視窗尺寸變動時
   // 容器實際像素高度會跟著變，Leaflet 需要重新量測才不會顯示錯位/留白。
   window.addEventListener('resize', () => mapInstance.invalidateSize());
@@ -403,19 +411,39 @@ let _snapshotSeq = 0;
 async function loadSnapshotAt(timestamp) {
   const seq = ++_snapshotSeq;
   try {
-    const [dashRes] = await Promise.all([
-      fetch(`/api/dashboard?timestamp=${encodeURIComponent(timestamp)}`),
+    // 先清除地圖上的事件標記（只在非事件時間點清除）
+    clearIncidentMapMarkers();
+
+    // 如果該 timestamp 是注入事件的時間點（後端可能沒有此精確時間），用最近的可用時間
+    let queryTs = timestamp;
+    let dashRes = await fetch(`/api/dashboard?timestamp=${encodeURIComponent(queryTs)}`);
+    if (!dashRes.ok && injectedTimelineData[timestamp]) {
+      const candidates = timelineTimestamps.filter(t => t <= timestamp && !injectedTimelineData[t]);
+      const fallbackTs = candidates.length ? candidates[candidates.length - 1] : timelineTimestamps.find(t => !injectedTimelineData[t]) || timelineTimestamps[0];
+      dashRes = await fetch(`/api/dashboard?timestamp=${encodeURIComponent(fallbackTs)}`);
+    }
+
+    const [dashboard] = await Promise.all([
+      dashRes.json(),
       loadModule5Status(timestamp),
       loadBaseStationPanel(timestamp),
     ]);
+
     // 回應回來時若已有更新的請求，丟棄本次結果
     if (seq !== _snapshotSeq) return;
-    const dashboard = await dashRes.json();
+
     const segments = snapshotToSegments(dashboard.snapshot);
     renderTrafficKPI(computeTrafficSummary(segments));
     renderTrafficAlerts(segments, dashboard);
     renderTrafficMap(segments);
     renderSegmentStatusList(segments);
+
+    // 如果該時間點有注入事件，重新顯示事件標記和警報卡片
+    const injected = injectedTimelineData[timestamp];
+    if (injected) {
+      renderIncidentDecisionsOnDashboard(injected.event, injected.decisions);
+      addIncidentMapMarkers(injected.event, injected.decisions, injected.snapshot);
+    }
   } catch (e) { if (seq === _snapshotSeq) console.error('快照載入失敗', e); }
 }
 
@@ -709,6 +737,113 @@ function switchInjectPanel(panel) {
   });
   document.getElementById('scenario-list').classList.toggle('hidden', panel !== 'scenario');
   document.getElementById('custom-incident-form').classList.toggle('hidden', panel !== 'custom');
+  document.getElementById('import-json-panel').classList.toggle('hidden', panel !== 'import');
+}
+
+/* ── JSON 匯入功能 ─────────────────────────────────────────────────────────── */
+let importJsonData = null;
+
+(function initImportDropzone() {
+  document.addEventListener('DOMContentLoaded', () => {
+    const dropzone = document.getElementById('import-dropzone');
+    const fileInput = document.getElementById('import-file-input');
+    if (!dropzone || !fileInput) return;
+
+    dropzone.addEventListener('click', () => fileInput.click());
+    dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragover'); });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+    dropzone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      const file = e.dataTransfer.files[0];
+      if (file) handleImportFile(file);
+    });
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files[0]) handleImportFile(fileInput.files[0]);
+      fileInput.value = '';
+    });
+  });
+})();
+
+function handleImportFile(file) {
+  if (!file.name.endsWith('.json')) {
+    alert('請選擇 .json 檔案');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      // 移除 BOM 及前後空白，避免 UTF-8 BOM 導致 JSON.parse 失敗
+      const raw = e.target.result.replace(/^\uFEFF/, '').trim();
+      if (!raw) { alert('JSON 檔案內容為空'); return; }
+      let parsed = JSON.parse(raw);
+      // 支援單一物件或陣列
+      if (!Array.isArray(parsed)) parsed = [parsed];
+      if (!parsed.length) { alert('JSON 檔案內容為空'); return; }
+      importJsonData = parsed;
+      renderImportPreview(parsed);
+    } catch (err) {
+      // JSON 格式錯誤：彈出提醒並取消上傳
+      alert('JSON 解析失敗，已取消上傳：\n' + err.message);
+      importJsonData = null;
+      const preview = document.getElementById('import-preview');
+      if (preview) { preview.innerHTML = ''; preview.classList.add('hidden'); }
+      const btn = document.getElementById('import-submit-btn');
+      if (btn) btn.disabled = true;
+      const result = document.getElementById('import-result');
+      if (result) result.classList.add('hidden');
+    }
+  };
+  reader.readAsText(file);
+}
+
+function renderImportPreview(events) {
+  const preview = document.getElementById('import-preview');
+  const btn = document.getElementById('import-submit-btn');
+  preview.classList.remove('hidden');
+  btn.disabled = false;
+  document.getElementById('import-result').classList.add('hidden');
+
+  const rows = events.map((ev, i) => `
+    <div class="import-preview-row">
+      <span class="import-idx">${i + 1}</span>
+      <b>${escapeHtml(ev.event_id || '(無 ID)')}</b> — ${escapeHtml(ev.type || '(無類型)')}<br>
+      <span class="mono">${escapeHtml(ev.affected_segment || '')} · ${escapeHtml(ev.severity || '')} · ${escapeHtml(ev.status || '')}</span>
+    </div>`).join('');
+  preview.innerHTML = `<div class="import-preview-title">預覽：共 ${events.length} 筆事件</div>${rows}`;
+}
+
+async function submitImportJson() {
+  if (!importJsonData || !importJsonData.length) return;
+  const btn = document.getElementById('import-submit-btn');
+  btn.disabled = true;
+  btn.textContent = '匯入中…';
+
+  try {
+    const res = await fetch('/api/incidents/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(importJsonData),
+    });
+    const data = await res.json();
+    if (data.success) {
+      closeIncidentModal();
+      showInjectResultNotification(true, null, {
+        event: { event_id: `批次匯入 ${data.imported_count} 筆`, affected_segment: '—', severity: '—', status: '—' },
+        decisions: [],
+        processing_time_ms: 0,
+      });
+      loadIncidentData();
+    } else {
+      showInjectResultNotification(false, JSON.stringify(data));
+    }
+  } catch (e) {
+    showInjectResultNotification(false, e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '匯入事件';
+    importJsonData = null;
+  }
 }
 
 /* ── Tab Switching ─────────────────────────────────────────────────────────── */
@@ -719,6 +854,20 @@ document.querySelectorAll('.tab').forEach(btn => {
     btn.classList.add('active');
     document.getElementById(`panel-${btn.dataset.tab}`).classList.add('active');
   });
+});
+
+/* ── Brand Home：點擊標題回到主儀表板 ─────────────────────────────────────── */
+document.getElementById('brand-home').addEventListener('click', () => {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelector('.tab[data-tab="dashboard"]').classList.add('active');
+  document.getElementById('panel-dashboard').classList.add('active');
+});
+document.getElementById('brand-home').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    document.getElementById('brand-home').click();
+  }
 });
 
 /* ── Drawer (Module 4) ────────────────────────────────────────────────────────
@@ -760,11 +909,13 @@ async function renderDrawerContent(type) {
   }
 
   // 其餘一律當成 SOP-1 壅塞分級的路段 ID 查詢
-  titleEl.textContent = '判斷依據 — 決策解釋鏈';
+  titleEl.textContent = '決策推理與解釋';
+  titleEl.style.cssText = 'display:flex;align-items:center;gap:10px;font-size:1rem;padding:8px 0 4px;';
+  titleEl.innerHTML = '<span style="width:3.5px;height:16px;border-radius:2px;background:var(--accent);flex:none"></span>決策推理與解釋';
   bodyEl.innerHTML = `<div class="spinner">載入決策分析…</div>`;
   const currentTs = timelineTimestamps[timelineIndex] || '2026-05-20 22:15';
   try {
-    const res = await fetch(`/api/reasoning/demo?timestamp=${encodeURIComponent(currentTs)}&event_id=TPE_2026_ACC_001`);
+    const res = await fetch(`/api/reasoning/demo?timestamp=${encodeURIComponent(currentTs)}`);
     if (!res.ok) throw new Error(await res.text());
     const record = await res.json();
     bodyEl.innerHTML = renderM4Inline(record);
@@ -791,7 +942,7 @@ async function renderDrawerContent(type) {
             <span class="step-lbl">SOP-1 分級</span> ${levelText}
           </div></div>
         </div>
-        <div class="card-yellow" style="margin-top:10px">模組四詳細分析載入失敗：${escapeHtml(e.message)}</div>`;
+        <div class="card-yellow" style="margin-top:10px">目前時間點尚無事件觸發，僅顯示 SOP-1 壅塞分級。</div>`;
     } catch (e2) {
       bodyEl.innerHTML = `<p>資料載入失敗：${escapeHtml(e2.message)}</p>`;
     }
@@ -885,7 +1036,7 @@ const advisorScenarioSets = {
 function toggleChat() {
   document.getElementById('chat-panel').classList.toggle('hidden');
   document.getElementById('chat-backdrop').classList.toggle('hidden');
-  // 首次開啟時檢查 Ollama 狀態
+  // 首次開啟時檢查目前 LLM 後端（Bedrock / Ollama / Mock）狀態
   if (!window._advisorStatusChecked) {
     window._advisorStatusChecked = true;
     checkAdvisorStatus();
@@ -898,9 +1049,9 @@ async function checkAdvisorStatus() {
   try {
     const res = await fetch('/api/advisor/status');
     const data = await res.json();
-    if (data.mode === 'llm') {
+    if (data.ok) {
       dot.className = 'mode-dot mode-dot-llm';
-      text.textContent = 'LLM 模式 · Ollama 已連線';
+      text.textContent = data.message || `LLM 模式 · ${data.mode || 'ready'}`;
     } else {
       dot.className = 'mode-dot mode-dot-rules';
       text.textContent = data.message || '規則引擎 · 即時快照';
@@ -977,7 +1128,7 @@ async function sendAdvisorMessage(forcedMessage) {
     const text = document.getElementById('advisor-mode-text');
     if (data.source === 'llm') {
       dot.className = 'mode-dot mode-dot-llm';
-      text.textContent = 'LLM 模式';
+      text.textContent = data.mode ? `LLM 模式 · ${data.mode}` : 'LLM 模式';
     } else {
       dot.className = 'mode-dot mode-dot-llm';
       text.textContent = 'LLM + 規則引擎';
@@ -1115,6 +1266,19 @@ async function m5Generate() {
   btn.classList.add('loading');
   btn.textContent = '🤖 推論中，請稍候…';
   document.getElementById('m5-spinner').classList.remove('hidden');
+
+  // 模擬進度條（漸慢曲線跑到 95%，收到結果後跳 100%）
+  let progress = 0;
+  const bar = document.getElementById('m5-progress-bar');
+  const pct = document.getElementById('m5-progress-pct');
+  const progressTimer = setInterval(() => {
+    if (progress < 95) {
+      progress += (95 - progress) * 0.04;
+      bar.style.width = progress.toFixed(0) + '%';
+      pct.textContent = progress.toFixed(0) + '%';
+    }
+  }, 500);
+
   try {
     const res = await fetch('/api/notify/generate', {
       method: 'POST',
@@ -1127,17 +1291,25 @@ async function m5Generate() {
       }),
     });
     const data = await res.json();
+    clearInterval(progressTimer);
+    bar.style.width = '100%';
+    pct.textContent = '100%';
     m5Alerts = data.alerts;
     m5RenderEditor(multi);
     document.getElementById('m5-btn-publish').disabled = false;
     if (data.source === 'mock') {
       document.getElementById('m5-sop-banner').insertAdjacentHTML('beforeend',
-        `<div class="card-yellow" style="margin-top:8px">Ollama 未連線，目前顯示為預設模板文字（${data.ollama_status?.message || ''}）</div>`);
+        `<div class="card-yellow" style="margin-top:8px">LLM 未連線，目前顯示為預設模板文字（${data.llm_status?.message || ''}）</div>`);
     }
   } catch (e) {
+    clearInterval(progressTimer);
     alert('生成失敗：' + e.message);
   } finally {
-    document.getElementById('m5-spinner').classList.add('hidden');
+    setTimeout(() => {
+      document.getElementById('m5-spinner').classList.add('hidden');
+      bar.style.width = '0%';
+      pct.textContent = '0%';
+    }, 600);
     btn.disabled = false;
     btn.classList.remove('loading');
     btn.textContent = '⚡ 生成多語告警';
@@ -1198,20 +1370,51 @@ function m5CopyAll() {
 }
 
 /* ── Incident Injection ────────────────────────────────────────────────────── */
+function openIncidentModal() {
+  document.getElementById('incident-modal-overlay').classList.remove('hidden');
+}
+function closeIncidentModal() {
+  document.getElementById('incident-modal-overlay').classList.add('hidden');
+}
+
 function showInjectLoading() {
-  const panel = document.querySelector('#panel-incident');
+  const panel = document.getElementById('incident-modal-body');
   if (!panel) return;
   // Remove existing overlay if any
   const existing = panel.querySelector('.inject-loading-overlay');
   if (existing) existing.remove();
   const overlay = document.createElement('div');
   overlay.className = 'inject-loading-overlay';
-  overlay.innerHTML = `<div class="loading-spinner"></div><div class="loading-text">SOP 規則引擎運算中…</div>`;
+  overlay.innerHTML = `
+    <div class="loading-spinner"></div>
+    <div class="loading-text">SOP 規則引擎運算中… <span id="m2-progress-pct">0%</span></div>
+    <div style="width:60%;height:8px;background:#1e2a3a;border-radius:4px;overflow:hidden;margin-top:10px">
+      <div id="m2-progress-bar" style="width:0%;height:100%;background:var(--accent,#7ec8bc);border-radius:4px;transition:width .3s ease"></div>
+    </div>
+  `;
   panel.appendChild(overlay);
+  // 啟動模擬進度
+  let progress = 0;
+  window._m2ProgressTimer = setInterval(() => {
+    if (progress < 95) {
+      progress += (95 - progress) * 0.06;
+      const bar = document.getElementById('m2-progress-bar');
+      const pct = document.getElementById('m2-progress-pct');
+      if (bar) bar.style.width = progress.toFixed(0) + '%';
+      if (pct) pct.textContent = progress.toFixed(0) + '%';
+    }
+  }, 400);
 }
 function hideInjectLoading() {
-  const overlay = document.querySelector('.inject-loading-overlay');
-  if (overlay) overlay.remove();
+  if (window._m2ProgressTimer) clearInterval(window._m2ProgressTimer);
+  const bar = document.getElementById('m2-progress-bar');
+  const pct = document.getElementById('m2-progress-pct');
+  if (bar) bar.style.width = '100%';
+  if (pct) pct.textContent = '100%';
+  setTimeout(() => {
+    const overlay = document.querySelector('.inject-loading-overlay');
+    if (overlay) overlay.remove();
+  }, 500);
 }
 
 async function injectIncident(eventId) {
@@ -1220,23 +1423,33 @@ async function injectIncident(eventId) {
     const listRes = await fetch('/api/incidents/list');
     const listData = await listRes.json();
     const event = listData.incidents.find(i => i.event_id === eventId);
-    if (!event) { hideInjectLoading(); alert('找不到該事件'); return; }
+    if (!event) { hideInjectLoading(); showInjectResultNotification(false, '找不到該事件'); return; }
 
     const res = await fetch('/api/incidents/inject', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(event),
     });
+    if (!res.ok) {
+      hideInjectLoading();
+      showInjectResultNotification(false, `伺服器回傳 ${res.status} 錯誤`);
+      return;
+    }
     const data = await res.json();
     hideInjectLoading();
     if (data.success) {
       latestIncident = data.event;
       latestDecisions = data.decisions || [];
       latestSnapshot = data.snapshot || null;
-      showInjectResult(data);
+      closeIncidentModal();
+      showInjectResultNotification(true, null, data);
+      applyIncidentToDashboard(data);
+    } else {
+      showInjectResultNotification(false, '注入失敗');
     }
   } catch (e) {
-    alert('注入失敗：' + e.message);
+    hideInjectLoading();
+    showInjectResultNotification(false, e.message);
   }
 }
 
@@ -1273,66 +1486,304 @@ async function injectIncidentPayload(payload) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
+    if (!res.ok) {
+      hideInjectLoading();
+      showInjectResultNotification(false, `伺服器回傳 ${res.status} 錯誤`);
+      return;
+    }
     const data = await res.json();
     hideInjectLoading();
     if (data.success) {
       latestIncident = data.event;
       latestDecisions = data.decisions || [];
       latestSnapshot = data.snapshot || null;
-      showInjectResult(data);
+      closeIncidentModal();
+      showInjectResultNotification(true, null, data);
+      applyIncidentToDashboard(data);
       loadIncidentData();
     } else {
-      alert('注入失敗');
+      showInjectResultNotification(false, '注入失敗');
     }
   } catch (e) {
-    alert('注入失敗：' + e.message);
+    hideInjectLoading();
+    showInjectResultNotification(false, e.message);
   }
 }
 
 function showInjectResult(data) {
-  const container = document.getElementById('decision-cards');
+  // Legacy: kept for compatibility; new flow uses showInjectResultNotification + applyIncidentToDashboard
+  applyIncidentToDashboard(data);
+}
+
+/* ── 匯入結果通知 Modal ─────────────────────────────────────────────────── */
+function showInjectResultNotification(success, errorMsg, data) {
+  const overlay = document.getElementById('inject-result-modal-overlay');
+  const title = document.getElementById('inject-result-title');
+  const body = document.getElementById('inject-result-body');
+
+  if (success && data) {
+    const event = data.event;
+    const decisions = data.decisions || [];
+    const elapsed = data.processing_time_ms ?? 0;
+    const triggeredCount = decisions.filter(d => d.triggered).length;
+    const sopClauses = decisions.filter(d => d.triggered).map(d => d.sop_clause).filter(Boolean).join('、') || '無';
+
+    title.textContent = '✓ 匯入成功';
+    title.style.color = 'var(--safe, #85d99a)';
+    body.innerHTML = `
+      <div class="inject-result-success">
+        <div class="inject-result-icon">✓</div>
+        <div class="inject-result-detail">
+          <p>事件 <b>${escapeHtml(event.event_id)}</b> 已成功注入</p>
+          <p class="mono" style="font-size:12px;color:var(--text-dim)">
+            ${escapeHtml(event.affected_segment)} · ${escapeHtml(event.severity)} · ${escapeHtml(event.status)}
+          </p>
+          <p style="margin-top:10px">觸發 SOP 條款：<b>${escapeHtml(sopClauses)}</b>（${triggeredCount} 筆決策）</p>
+          <p class="mono" style="font-size:11px;color:var(--text-dim)">規則運算 ${elapsed} ms</p>
+        </div>
+      </div>`;
+  } else {
+    title.textContent = '✗ 匯入失敗';
+    title.style.color = 'var(--critical, #f27a84)';
+    body.innerHTML = `
+      <div class="inject-result-fail">
+        <div class="inject-result-icon fail">✗</div>
+        <div class="inject-result-detail">
+          <p>事件注入失敗</p>
+          <p style="color:var(--critical)">${escapeHtml(errorMsg || '未知錯誤')}</p>
+        </div>
+      </div>`;
+  }
+
+  overlay.classList.remove('hidden');
+}
+
+function closeInjectResultModal() {
+  document.getElementById('inject-result-modal-overlay').classList.add('hidden');
+}
+
+/* ── 將匯入事件的 SOP 決策結果反映到儀表板 ─────────────────────────────────── */
+function applyIncidentToDashboard(data) {
   const event = data.event;
   const decisions = data.decisions || [];
-  const elapsed = data.processing_time_ms ?? 0;
+  const snapshot = data.snapshot || latestSnapshot;
 
-  // Extract CMS texts and guidance texts from all decisions, grouped by SOP clause
-  const highlightMap = {};
-  decisions.forEach(d => {
-    if (d.cms_text || d.guidance_text) {
-      const key = d.sop_clause || 'other';
-      if (!highlightMap[key]) highlightMap[key] = { clause: d.sop_clause, cms: null, guidance: null };
-      if (d.cms_text) highlightMap[key].cms = d.cms_text;
-      if (d.guidance_text) highlightMap[key].guidance = d.guidance_text;
+  // 1. 在右側即時警報區加入簡化的 SOP 決策卡片
+  renderIncidentDecisionsOnDashboard(event, decisions);
+
+  // 2. 在地圖上標記事件位置（閃爍圖示 + 封閉路段標紅）
+  addIncidentMapMarkers(event, decisions, snapshot);
+
+  // 3. 更新事件數量 KPI
+  const alertEl = document.getElementById('ks-alert-value');
+  if (alertEl) {
+    const current = parseInt(alertEl.textContent) || 0;
+    alertEl.textContent = current + 1;
+  }
+
+  // 4. 顯示 nav bar 上的「產出建議書」按鈕
+  const advisoryNavBtn = document.getElementById('advisory-nav-btn');
+  if (advisoryNavBtn) advisoryNavBtn.classList.remove('hidden');
+
+  // 5. 將時間軸移動到事件時間點（如不存在則新增）
+  insertIncidentTimestamp(event, data);
+}
+
+/* ── 在時間軸插入事件時間點並跳轉 ─────────────────────────────────────────── */
+
+function insertIncidentTimestamp(event, data) {
+  const ts = event.timestamp;
+  if (!ts || !timelineTimestamps.length) return;
+
+  // 儲存事件資料到對應時間點
+  injectedTimelineData[ts] = {
+    event: data.event,
+    decisions: data.decisions || [],
+    snapshot: data.snapshot || latestSnapshot,
+  };
+
+  // 檢查時間軸是否已包含此時間點
+  const existingIdx = timelineTimestamps.indexOf(ts);
+  if (existingIdx >= 0) {
+    // 時間點已存在，直接跳轉
+    timelineIndex = existingIdx;
+  } else {
+    // 找到插入位置（保持排序）
+    let insertIdx = timelineTimestamps.findIndex(t => t > ts);
+    if (insertIdx === -1) insertIdx = timelineTimestamps.length;
+    timelineTimestamps.splice(insertIdx, 0, ts);
+
+    // 更新 slider 範圍
+    const slider = document.getElementById('timeline-slider');
+    slider.max = timelineTimestamps.length - 1;
+    timelineIndex = insertIdx;
+  }
+
+  // 更新 slider 顯示
+  const slider = document.getElementById('timeline-slider');
+  slider.value = timelineIndex;
+  document.getElementById('timeline-range').textContent =
+    `${shortTime(timelineTimestamps[0])} ─ ${shortTime(timelineTimestamps[timelineTimestamps.length - 1])}`;
+  updateTimelineDisplay();
+
+  // 載入該時間點的資料
+  loadSnapshotAt(ts);
+}
+
+/* ── 在儀表板右側即時警報區渲染簡化 SOP 決策卡片 ──────────────────────────── */
+function renderIncidentDecisionsOnDashboard(event, decisions) {
+  const container = document.querySelector('#panel-dashboard .dash-alerts .alert-scroll');
+  if (!container) return;
+
+  const triggeredDecisions = decisions.filter(d => d.triggered);
+  if (!triggeredDecisions.length) return;
+
+  // 生成每筆 SOP 決策的簡化警報卡片（只顯示最基本資訊，詳細內容在「為什麼」裡）
+  let cardsHtml = '';
+  triggeredDecisions.forEach(d => {
+    const sopClass = d.sop_clause === 'SOP-1' ? 'sop1'
+      : d.sop_clause === 'SOP-2' ? 'sop2'
+      : d.sop_clause === 'SOP-5' ? 'sop5'
+      : d.sop_clause === 'SOP-3' ? 'sop3'
+      : d.sop_clause === 'SOP-6' ? 'sop6'
+      : 'sop2';
+    const tagBg = d.severity === 'critical' || d.severity === 'red' ? '' : 'caution-bg';
+    const timeStr = (event.timestamp || '').slice(11, 16);
+
+    // 簡化卡片：只顯示實體名稱 + 一行摘要
+    let bodyHtml = `<b>${escapeHtml(d.entity_name || event.location)} (${escapeHtml(d.entity_id || event.affected_segment)})</b>`;
+
+    // 只顯示一行重點
+    if (d.sop_clause === 'SOP-2') {
+      if (d.primary_route) bodyHtml += `<br>疏散 → ${escapeHtml(d.primary_route_name || d.primary_route)}`;
+    } else if (d.sop_clause === 'SOP-5') {
+      bodyHtml += `<br>人工指揮派遣`;
+    } else if (d.sop_clause === 'SOP-1') {
+      const shortBasis = d.basis.split('（')[0] || d.basis;
+      bodyHtml += `<br>${escapeHtml(shortBasis)}`;
+    }
+
+    const explainType = d.sop_clause === 'SOP-2' ? 'sop2'
+      : d.sop_clause === 'SOP-5' ? 'sop5'
+      : d.sop_clause === 'SOP-1' && d.entity_id?.startsWith('RD_') ? d.entity_id
+      : 'sop2';
+
+    cardsHtml += `
+      <div class="alert-card ${sopClass} injected-alert">
+        <div class="alert-hdr">
+          <span class="alert-tag ${tagBg}">${d.sop_clause || '事件'} ${escapeHtml(d.clause_name || '')}</span>
+          ${d.ete_minutes && d.sop_clause !== 'SOP-2' && d.sop_clause !== 'SOP-5' ? `<span class="ete-badge mono">ETE ${d.ete_minutes} min</span>` : ''}
+          <span class="mono">${timeStr}</span>
+        </div>
+        <div class="alert-body">${bodyHtml}</div>
+        <button class="btn-explain" onclick="openDrawer('${explainType}')">查看判斷依據</button>
+      </div>`;
+  });
+
+  // 在 alert-scroll 最前面插入
+  container.insertAdjacentHTML('afterbegin', cardsHtml);
+}
+
+/* ── 地圖事件標記：閃爍圖示 + 封閉路段標紅 ─────────────────────────────────── */
+let incidentMapMarkers = [];
+let incidentAffectedSegments = []; // 紀錄被標紅的路段，切換時間點要還原
+
+function clearIncidentMapMarkers() {
+  // 移除所有事件 marker
+  incidentMapMarkers.forEach(m => { if (mapInstance) mapInstance.removeLayer(m); });
+  incidentMapMarkers = [];
+  // 還原被標紅的路段（恢復為正常配色，等 renderTrafficMap 重新上色）
+  incidentAffectedSegments.forEach(segId => {
+    if (roadPolylines[segId]) {
+      roadPolylines[segId].setStyle({ weight: 5, opacity: 0.9 });
+      const el = roadPolylines[segId].getElement();
+      if (el) {
+        el.classList.remove('road-incident-blink');
+        el.style.filter = '';
+      }
     }
   });
-  const highlights = Object.values(highlightMap);
+  incidentAffectedSegments = [];
+  // 清除 dashboard 上的注入事件卡片
+  const container = document.querySelector('#panel-dashboard .dash-alerts .alert-scroll');
+  if (container) {
+    container.querySelectorAll('.injected-alert').forEach(el => el.remove());
+  }
+}
 
-  const highlightHtml = highlights.length ? `
-    <div class="decision-highlight">
-      <div class="decision-highlight-title">⚡ 關鍵決策摘要</div>
-      ${highlights.map(h => `
-        <div class="highlight-group" data-sop="${h.clause || ''}">
-          <div class="highlight-group-header">
-            <span class="highlight-sop-badge">${h.clause || '未分類'}</span>
-          </div>
-          ${h.cms ? `<div class="highlight-item">
-            <div class="highlight-label"><span class="hl-icon">📺</span> CMS 電子看板</div>
-            <div class="highlight-value">${h.cms}</div>
-          </div>` : ''}
-          ${h.guidance ? `<div class="highlight-item">
-            <div class="highlight-label"><span class="hl-icon">🎖️</span> 指揮官建議</div>
-            <div class="highlight-value">${h.guidance}</div>
-          </div>` : ''}
-        </div>`).join('')}
-    </div>` : '';
+function addIncidentMapMarkers(event, decisions, snapshot) {
+  if (!mapInstance) return;
+  const segId = event.affected_segment;
 
-  container.innerHTML = `
-    <div class="card-yellow" style="margin-bottom:14px">
-      事件 <b>${event.event_id}</b> 已注入（${event.affected_segment} · ${event.severity} · ${event.status}）。
-      <span class="mono">規則運算 ${elapsed} ms</span>
-    </div>
-    ${highlightHtml}
-    ${decisions.map(renderDecisionCard).join('')}`;
+  // 1. 將受影響路段標紅並加粗（封閉效果）
+  if (segId && segId.startsWith('RD_') && roadPolylines[segId]) {
+    roadPolylines[segId].setStyle({
+      color: '#ff2244',
+      weight: 8,
+      opacity: 1,
+    });
+    // 加上閃爍 CSS class
+    const el = roadPolylines[segId].getElement();
+    if (el) el.classList.add('road-incident-blink');
+    incidentAffectedSegments.push(segId);
+  }
+
+  // 2. 在事件位置放一個閃爍圖示標記
+  let markerCoords = null;
+
+  // 優先使用路段座標的中點
+  if (segId && ROAD_COORDS[segId] && ROAD_COORDS[segId].length) {
+    const pts = ROAD_COORDS[segId];
+    const midIdx = Math.floor(pts.length / 2);
+    markerCoords = pts[midIdx];
+  }
+  // 其次使用站點座標
+  if (!markerCoords && segId && STATION_COORDS[segId]) {
+    markerCoords = STATION_COORDS[segId];
+  }
+
+  if (markerCoords) {
+    // 決定圖示：車禍 vs 號誌故障
+    const isSignalFailure = event.type === 'Power_Failure' ||
+      (event.description && (event.description.includes('號誌') || event.description.includes('信號')));
+    const iconEmoji = isSignalFailure ? '🚦' : '🚨';
+    const severityColor = event.severity === 'Critical' ? '#ff2244'
+      : event.severity === 'High' ? '#f27a84'
+      : '#eab85c';
+
+    const icon = L.divIcon({
+      className: 'incident-map-marker',
+      html: `<div class="incident-marker-pulse" style="--pulse-color:${severityColor}">
+        <span class="incident-marker-icon">${iconEmoji}</span>
+      </div>`,
+      iconSize: [36, 36],
+      iconAnchor: [18, 18],
+    });
+
+    const marker = L.marker(markerCoords, { icon, zIndexOffset: 500, pane: 'incidentPane' }).addTo(mapInstance);
+
+    // Popup 顯示事件詳細資料
+    const triggeredSops = decisions.filter(d => d.triggered).map(d => d.sop_clause).filter(Boolean).join('、') || '無';
+    const eteDecision = decisions.find(d => d.ete_minutes);
+    const cmsDecision = decisions.find(d => d.cms_text);
+    let popupHtml = `
+      <div class="incident-popup">
+        <div class="incident-popup-title">${iconEmoji} ${escapeHtml(event.event_id)}</div>
+        <div class="incident-popup-row"><b>類型</b> ${escapeHtml(event.type)}</div>
+        <div class="incident-popup-row"><b>位置</b> ${escapeHtml(event.location)}</div>
+        <div class="incident-popup-row"><b>嚴重度</b> <span class="severity-${event.severity.toLowerCase()}">${escapeHtml(event.severity)}</span></div>
+        <div class="incident-popup-row"><b>狀態</b> ${escapeHtml(event.status)}</div>
+        <div class="incident-popup-row"><b>路段</b> ${escapeHtml(segId)}</div>
+        <div class="incident-popup-row"><b>觸發 SOP</b> ${escapeHtml(triggeredSops)}</div>
+        ${eteDecision ? `<div class="incident-popup-row"><b>ETE</b> ${eteDecision.ete_minutes} 分鐘</div>` : ''}
+        ${cmsDecision ? `<div class="incident-popup-row incident-popup-cms"><b>CMS</b> ${escapeHtml(cmsDecision.cms_text)}</div>` : ''}
+        <div class="incident-popup-desc">${escapeHtml(event.description)}</div>
+      </div>`;
+    marker.bindPopup(popupHtml, { maxWidth: 320, className: 'incident-popup-container' });
+    marker.openPopup();
+
+    incidentMapMarkers.push(marker);
+  }
 }
 
 function renderDecisionCard(decision, index) {
@@ -1364,7 +1815,7 @@ function renderDecisionCard(decision, index) {
         ${cmsLine}
         ${actions}
       </div>
-      <button class="btn-explain" onclick="openDrawer('${explainType}')">為什麼</button>
+      <button class="btn-explain" onclick="openDrawer('${explainType}')">查看判斷依據</button>
     </div>`;
 }
 
@@ -1451,7 +1902,7 @@ async function loadM4DeepAnalysis(segmentId) {
     const record = await res.json();
     container.innerHTML = renderM4Inline(record);
   } catch (e) {
-    container.innerHTML = `<div class="card-yellow" style="margin-top:8px">模組四載入失敗：${escapeHtml(e.message)}</div>`;
+    container.innerHTML = `<div class="card-yellow" style="margin-top:8px">目前時間點尚無事件觸發，請將時間軸調至 22:10 之後查看完整決策分析。</div>`;
   }
 }
 
@@ -1504,6 +1955,8 @@ function renderM4Inline(record) {
     <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
       <button class="btn-explain" onclick="toggleM4Panel('m4-rel-panel')">可靠度</button>
       <button class="btn-explain" onclick="toggleM4Panel('m4-cf-panel'); runM4CF()">反事實</button>
+      <button class="btn-explain" onclick="toggleM4Panel('m4-forecast-panel'); runM4Forecast()">壅塞預測</button>
+      <button class="btn-explain" onclick="toggleM4Panel('m4-anomaly-panel'); runM4Anomaly()">異常偵測</button>
     </div>
 
     <div id="m4-rel-panel" class="hidden" style="margin-top:8px">
@@ -1514,6 +1967,12 @@ function renderM4Inline(record) {
     </div>
 
     <div id="m4-cf-panel" class="hidden" style="margin-top:8px">
+    </div>
+
+    <div id="m4-forecast-panel" class="hidden" style="margin-top:8px">
+    </div>
+
+    <div id="m4-anomaly-panel" class="hidden" style="margin-top:8px">
     </div>
   `;
 }
@@ -1578,12 +2037,410 @@ async function loadAiSummary(timestamp) {
   const sourceEl = document.getElementById('m4-summary-source');
   if (!textEl || !sourceEl) return;
   try {
-    const res = await fetch(`/api/reasoning/summary?timestamp=${encodeURIComponent(timestamp)}&event_id=TPE_2026_ACC_001`);
+    const res = await fetch(`/api/reasoning/summary?timestamp=${encodeURIComponent(timestamp)}`);
     if (!res.ok) return;
     const data = await res.json();
     textEl.textContent = data.summary;
     sourceEl.textContent = data.source === 'ollama' ? `Ollama · ${data.model}` : 'deterministic';
   } catch (e) {
     sourceEl.textContent = 'fallback';
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   交控中心建議書 (Advisory Report Modal)
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+let advisoryMarkdownCache = '';
+
+function openAdvisoryModal() {
+  if (!latestIncident || !latestDecisions.length) {
+    alert('請先注入事件並取得 SOP 決策結果');
+    return;
+  }
+  const overlay = document.getElementById('advisory-modal-overlay');
+  overlay.classList.remove('hidden');
+  renderAdvisoryReport();
+}
+
+function closeAdvisoryModal() {
+  document.getElementById('advisory-modal-overlay').classList.add('hidden');
+}
+
+function renderAdvisoryReport() {
+  const body = document.getElementById('advisory-modal-body');
+  const incident = latestIncident;
+  const decisions = latestDecisions;
+  const snapshot = latestSnapshot;
+
+  // 1. 事件辨識
+  const triggeredDecisions = decisions.filter(d => d.triggered);
+  const sopClauses = triggeredDecisions.map(d => d.sop_clause).filter(Boolean).join('、') || '無觸發';
+
+  // 2. 交通分級判定
+  const seg_id = incident.affected_segment;
+  const segData = snapshot?.road_segments?.[seg_id];
+  const saturation = segData?.saturation_score;
+  const avgSpeed = segData?.avg_speed;
+  let levelText = '未達壅塞門檻';
+  let levelClass = 'level-normal';
+  if (saturation >= 0.95) { levelText = 'A 級（癱瘓）'; levelClass = 'level-a'; }
+  else if (saturation >= 0.85) { levelText = 'B 級（壅擠）'; levelClass = 'level-b'; }
+
+  // 3. 替代路徑建議
+  const sop2 = triggeredDecisions.find(d => d.sop_clause === 'SOP-2');
+  let primaryRouteHtml = '<span class="mono dim">未規劃主疏散路徑</span>';
+  let secondaryRouteHtml = '<span class="mono dim">無次要疏散</span>';
+  let excludedHtml = '';
+  if (sop2) {
+    if (sop2.primary_route) {
+      const pName = sop2.primary_route_name || snapshot?.road_segments?.[sop2.primary_route]?.name || sop2.primary_route;
+      const pSat = snapshot?.road_segments?.[sop2.primary_route]?.saturation_score;
+      primaryRouteHtml = `<b>${escapeHtml(pName)}</b> <span class="mono">(${sop2.primary_route})</span>`;
+      if (pSat != null) primaryRouteHtml += ` — 飽和度 <span class="mono">${(pSat * 100).toFixed(0)}%</span>`;
+    }
+    if (sop2.secondary_routes?.length) {
+      const secNames = sop2.secondary_routes.map(id => {
+        const name = sop2.secondary_route_names?.[sop2.secondary_routes.indexOf(id)]
+          || snapshot?.road_segments?.[id]?.name || id;
+        return `${name} (${id})`;
+      });
+      secondaryRouteHtml = secNames.map(n => `<span class="sec-route">${escapeHtml(n)}</span>`).join('、');
+    }
+    if (sop2.excluded_routes?.length) {
+      excludedHtml = sop2.excluded_routes.map(r =>
+        `<div class="excluded-item"><span class="mono">${escapeHtml(r.segment_id)}</span>：${escapeHtml(r.reason)}</div>`
+      ).join('');
+    }
+  }
+
+  // 4. 號誌調整建議
+  let signalHtml = '';
+  const sop1 = triggeredDecisions.find(d => d.sop_clause === 'SOP-1');
+  if (sop1 && sop1.actions) {
+    signalHtml = sop1.actions.filter(a => a.includes('綠燈') || a.includes('配時')).map(a => `<div class="signal-action">${escapeHtml(a)}</div>`).join('');
+  }
+  if (!signalHtml && sop2 && sop2.primary_route) {
+    const altName = snapshot?.road_segments?.[sop2.primary_route]?.name || sop2.primary_route;
+    signalHtml = `<div class="signal-action">替代道路 ${escapeHtml(altName)} 綠燈配時 +25%（事件持續期間）</div>`;
+  }
+  if (!signalHtml) {
+    signalHtml = '<span class="mono dim">本次事件未觸發號誌調整</span>';
+  }
+
+  // 5. 跨系統聯動（觸發第 3 或第 5 條時，列出對北捷、公車處、警力之請求）
+  let crossSystemHtml = '';
+  const hasSop3or5 = triggeredDecisions.some(d => d.sop_clause === 'SOP-3' || d.sop_clause === 'SOP-5');
+  const cascadeItems = [];
+  triggeredDecisions.forEach(d => {
+    (d.cascade_checks || []).forEach(c => cascadeItems.push(c));
+  });
+  if (hasSop3or5 || cascadeItems.length) {
+    const requests = [];
+    if (triggeredDecisions.some(d => d.sop_clause === 'SOP-5')) {
+      const sop5 = triggeredDecisions.find(d => d.sop_clause === 'SOP-5');
+      requests.push(`[警力派遣] ${sop5?.entity_name || seg_id} 各路口派遣 2 名警力接管指揮`);
+    }
+    if (triggeredDecisions.some(d => d.sop_clause === 'SOP-3') || cascadeItems.some(c => c.includes('第 3 條') || c.includes('SOP-3'))) {
+      requests.push('[北捷] 建議啟動「過站不停」疏運');
+      requests.push('[公車處] 調度接駁專車');
+    }
+    if (cascadeItems.some(c => c.includes('警力'))) {
+      requests.push('[警力] 淨空壅塞路口');
+    }
+    if (sop2 && incident.severity === 'Critical') {
+      requests.push('[警力] 事故現場交管＋主疏散路口疏導');
+    }
+    crossSystemHtml = requests.map(r => `<div class="cross-system-item">${escapeHtml(r)}</div>`).join('');
+  }
+  if (!crossSystemHtml) {
+    crossSystemHtml = '<span class="mono dim">本次事件未觸發跨系統聯動</span>';
+  }
+
+  // ETE
+  const eteDecision = triggeredDecisions.find(d => d.ete_minutes);
+  const eteText = eteDecision ? `${eteDecision.ete_minutes} 分鐘` : '未計算';
+
+  body.innerHTML = `
+    <div class="advisory-report">
+      <div class="advisory-section">
+        <div class="advisory-section-title">一、事件辨識</div>
+        <div class="advisory-field"><span class="af-label">事件 ID</span><span class="af-value mono">${escapeHtml(incident.event_id)}</span></div>
+        <div class="advisory-field"><span class="af-label">事件描述</span><span class="af-value">${escapeHtml(incident.description || incident.type)}</span></div>
+        <div class="advisory-field"><span class="af-label">受影響路段</span><span class="af-value mono">${escapeHtml(incident.affected_segment)} — ${escapeHtml(segData?.name || '')}</span></div>
+        <div class="advisory-field"><span class="af-label">觸發 SOP 條款</span><span class="af-value">${escapeHtml(sopClauses)}</span></div>
+        <div class="advisory-field"><span class="af-label">對應條款名稱</span><span class="af-value">${triggeredDecisions.map(d => d.clause_name || '').filter(Boolean).join('、') || '—'}</span></div>
+        <div class="advisory-field"><span class="af-label">嚴重度</span><span class="af-value">${escapeHtml(incident.severity)}</span></div>
+        <div class="advisory-field"><span class="af-label">狀態</span><span class="af-value">${escapeHtml(incident.status)}</span></div>
+        <div class="advisory-field"><span class="af-label">預計恢復時間 (ETE)</span><span class="af-value mono">${eteText}</span></div>
+      </div>
+
+      <div class="advisory-section">
+        <div class="advisory-section-title">二、交通分級判定</div>
+        <div class="advisory-level ${levelClass}">${levelText}</div>
+        <div class="advisory-field"><span class="af-label">路段飽和度</span><span class="af-value mono">${saturation != null ? (saturation * 100).toFixed(1) + '%' : 'N/A'}</span></div>
+        <div class="advisory-field"><span class="af-label">平均車速</span><span class="af-value mono">${avgSpeed != null ? avgSpeed + ' km/h' : 'N/A'}</span></div>
+        <div class="advisory-field"><span class="af-label">判定依據</span><span class="af-value">A 級：Saturation_Score >= 0.95；B 級：0.85 <= Saturation_Score < 0.95</span></div>
+        ${sop1 ? `<div class="advisory-field"><span class="af-label">SOP-1 判定</span><span class="af-value">${escapeHtml(sop1.basis)}</span></div>` : ''}
+      </div>
+
+      <div class="advisory-section">
+        <div class="advisory-section-title">三、替代路徑建議</div>
+        <div class="advisory-field"><span class="af-label">主要疏散</span><span class="af-value">${primaryRouteHtml}</span></div>
+        <div class="advisory-field"><span class="af-label">次要替代</span><span class="af-value">${secondaryRouteHtml}</span></div>
+        ${excludedHtml ? `<div class="advisory-sub-title">排除候選及理由</div><div class="excluded-list">${excludedHtml}</div>` : ''}
+        ${sop2 ? `<div class="advisory-sub-title">SOP-2 判定依據</div><div class="advisory-basis">${escapeHtml(sop2.basis)}</div>` : ''}
+      </div>
+
+      <div class="advisory-section">
+        <div class="advisory-section-title">四、號誌調整建議</div>
+        ${signalHtml}
+      </div>
+
+      <div class="advisory-section">
+        <div class="advisory-section-title">五、跨系統聯動</div>
+        ${crossSystemHtml}
+        ${triggeredDecisions.some(d => d.cascade_checks?.length) ? `<div class="advisory-sub-title">連動檢查</div>${triggeredDecisions.flatMap(d => d.cascade_checks || []).map(c => `<div class="cross-system-item">${escapeHtml(c)}</div>`).join('')}` : ''}
+      </div>
+    </div>`;
+
+  // 預先快取 Markdown 版本
+  advisoryMarkdownCache = generateAdvisoryMarkdown(incident, decisions, snapshot);
+}
+
+function generateAdvisoryMarkdown(incident, decisions, snapshot) {
+  const triggeredDecisions = decisions.filter(d => d.triggered);
+  const sopClauses = triggeredDecisions.map(d => d.sop_clause).filter(Boolean).join('、') || '無觸發';
+  const seg_id = incident.affected_segment;
+  const segData = snapshot?.road_segments?.[seg_id];
+  const saturation = segData?.saturation_score;
+  const avgSpeed = segData?.avg_speed;
+  let levelText = '未達壅塞門檻';
+  if (saturation >= 0.95) levelText = 'A 級（癱瘓）';
+  else if (saturation >= 0.85) levelText = 'B 級（壅擠）';
+
+  const sop2 = triggeredDecisions.find(d => d.sop_clause === 'SOP-2');
+  const sop1 = triggeredDecisions.find(d => d.sop_clause === 'SOP-1');
+  const sop5 = triggeredDecisions.find(d => d.sop_clause === 'SOP-5');
+  const eteDecision = triggeredDecisions.find(d => d.ete_minutes);
+  const eteText = eteDecision ? `${eteDecision.ete_minutes} 分鐘` : '未計算';
+
+  const now = new Date();
+  const timeStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+
+  let md = `# 交控中心建議書\n\n`;
+  md += `> 發布時間：${timeStr}  \n`;
+  md += `> 事件 ID：${incident.event_id}  \n`;
+  md += `> 系統：SQUIRREL 交通指揮中心\n\n`;
+  md += `---\n\n`;
+
+  md += `## 一、事件辨識\n\n`;
+  md += `| 欄位 | 內容 |\n|------|------|\n`;
+  md += `| 事件 ID | ${incident.event_id} |\n`;
+  md += `| 事件類型 | ${incident.type} |\n`;
+  md += `| 事件描述 | ${incident.description || incident.type} |\n`;
+  md += `| 受影響路段 | ${seg_id} — ${segData?.name || ''} |\n`;
+  md += `| 觸發 SOP 條款 | ${sopClauses} |\n`;
+  md += `| 嚴重度 | ${incident.severity} |\n`;
+  md += `| 狀態 | ${incident.status} |\n`;
+  md += `| ETE 預計恢復 | ${eteText} |\n\n`;
+
+  md += `## 二、交通分級判定\n\n`;
+  md += `- **分級結果**：${levelText}\n`;
+  md += `- **路段飽和度**：${saturation != null ? (saturation * 100).toFixed(1) + '%' : 'N/A'}\n`;
+  md += `- **平均車速**：${avgSpeed != null ? avgSpeed + ' km/h' : 'N/A'}\n`;
+  md += `- **判定依據**：A 級 Saturation_Score >= 0.95；B 級 >= 0.85 且 < 0.95\n`;
+  if (sop1) md += `- **SOP-1 判定**：${sop1.basis}\n`;
+  md += `\n`;
+
+  md += `## 三、替代路徑建議\n\n`;
+  if (sop2 && sop2.primary_route) {
+    const pName = snapshot?.road_segments?.[sop2.primary_route]?.name || sop2.primary_route;
+    const pSat = snapshot?.road_segments?.[sop2.primary_route]?.saturation_score;
+    md += `### 主要疏散\n\n`;
+    md += `- **路段**：${pName} (${sop2.primary_route})\n`;
+    if (pSat != null) md += `- **當前飽和度**：${(pSat * 100).toFixed(1)}%\n`;
+    md += `\n`;
+  }
+  if (sop2?.secondary_routes?.length) {
+    md += `### 次要替代\n\n`;
+    sop2.secondary_routes.forEach(id => {
+      const name = snapshot?.road_segments?.[id]?.name || id;
+      md += `- ${name} (${id})\n`;
+    });
+    md += `\n`;
+  }
+  if (sop2?.excluded_routes?.length) {
+    md += `### 排除候選及理由\n\n`;
+    sop2.excluded_routes.forEach(r => {
+      md += `- **${r.segment_id}**：${r.reason}\n`;
+    });
+    md += `\n`;
+  }
+  if (sop2) {
+    md += `### SOP-2 判定依據\n\n`;
+    md += `${sop2.basis}\n\n`;
+  }
+  if (!sop2) {
+    md += `> 本次事件未觸發路網重規劃（SOP-2 未達條件）\n\n`;
+  }
+
+  md += `## 四、號誌調整建議\n\n`;
+  if (sop1 && sop1.actions) {
+    sop1.actions.filter(a => a.includes('綠燈') || a.includes('配時')).forEach(a => {
+      md += `- ${a}\n`;
+    });
+  } else if (sop2 && sop2.primary_route) {
+    const altName = snapshot?.road_segments?.[sop2.primary_route]?.name || sop2.primary_route;
+    md += `- 替代道路 ${altName} 綠燈配時 +25%（事件持續期間）\n`;
+  } else {
+    md += `> 本次事件未觸發號誌調整\n`;
+  }
+  md += `\n`;
+
+  md += `## 五、跨系統聯動\n\n`;
+  const crossItems = [];
+  if (sop5) {
+    crossItems.push(`- [警力派遣] ${sop5.entity_name || seg_id} 各路口派遣 2 名警力接管指揮`);
+  }
+  if (sop2 && incident.severity === 'Critical') {
+    crossItems.push(`- [警力] 事故現場交管＋主疏散路口疏導`);
+  }
+  const cascadeItems = [];
+  triggeredDecisions.forEach(d => { (d.cascade_checks || []).forEach(c => cascadeItems.push(c)); });
+  if (triggeredDecisions.some(d => d.sop_clause === 'SOP-3') || cascadeItems.some(c => c.includes('第 3 條') || c.includes('SOP-3'))) {
+    crossItems.push(`- [北捷] 建議啟動「過站不停」疏運`);
+    crossItems.push(`- [公車處] 調度接駁專車`);
+  }
+  if (crossItems.length) {
+    md += crossItems.join('\n') + '\n';
+  } else {
+    md += `> 本次事件未觸發跨系統聯動\n`;
+  }
+  // 連動檢查（cascade_checks from sop_engine）
+  const allCascade = triggeredDecisions.flatMap(d => d.cascade_checks || []);
+  if (allCascade.length) {
+    md += `\n### 連動檢查\n\n`;
+    allCascade.forEach(c => { md += `- ${c}\n`; });
+  }
+  md += `\n---\n\n`;
+  md += `*本建議書由 SQUIRREL 交通指揮中心自動產出，僅供決策參考。*\n`;
+
+  return md;
+}
+
+function copyAdvisoryMarkdown() {
+  if (!advisoryMarkdownCache) {
+    alert('尚無建議書內容');
+    return;
+  }
+  navigator.clipboard.writeText(advisoryMarkdownCache).then(() => {
+    alert('已複製建議書 Markdown 至剪貼簿');
+  }).catch(() => {
+    // Fallback
+    const ta = document.createElement('textarea');
+    ta.value = advisoryMarkdownCache;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    alert('已複製建議書 Markdown 至剪貼簿');
+  });
+}
+
+/* ── 模擬發布事件書 ─────────────────────────────────────────────────────── */
+function showPublishSimulation() {
+  const overlay = document.getElementById('publish-sim-modal-overlay');
+  const body = document.getElementById('publish-sim-body');
+  overlay.classList.remove('hidden');
+
+  // Render markdown as formatted HTML preview
+  const md = advisoryMarkdownCache || generateAdvisoryMarkdown(latestIncident, latestDecisions, latestSnapshot);
+  body.innerHTML = `
+    <div class="publish-sim-preview">
+      <div class="publish-sim-header">
+        <span class="publish-badge">DRAFT</span>
+        <span class="publish-time">${new Date().toLocaleString('zh-TW')}</span>
+      </div>
+      <pre class="publish-md-content">${escapeHtml(md)}</pre>
+    </div>`;
+}
+
+function closePublishSimModal() {
+  document.getElementById('publish-sim-modal-overlay').classList.add('hidden');
+}
+
+function copyPublishMarkdown() {
+  const md = advisoryMarkdownCache || '';
+  navigator.clipboard.writeText(md).then(() => {
+    alert('已複製事件書全文至剪貼簿');
+  }).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = md;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    alert('已複製事件書全文至剪貼簿');
+  });
+}
+
+function confirmPublish() {
+  const body = document.getElementById('publish-sim-body');
+  body.innerHTML += `
+    <div class="publish-confirm-banner">
+      <span class="publish-confirm-icon">[V]</span>
+      <span>建議書已模擬發布成功（模擬模式：實際系統未傳送）</span>
+    </div>`;
+  // Change badge to SENT
+  const badge = body.querySelector('.publish-badge');
+  if (badge) { badge.textContent = 'SENT'; badge.classList.add('sent'); }
+}
+
+
+async function runM4Forecast() {
+  const panel = document.getElementById('m4-forecast-panel');
+  if (!panel || panel.innerHTML.trim()) return;
+  panel.innerHTML = `<div class="spinner">預測中…</div>`;
+  try {
+    const ts = timelineTimestamps[timelineIndex] || '2026-05-20 22:15';
+    const res = await fetch(`/api/reasoning/forecast?timestamp=${encodeURIComponent(ts)}`);
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+    if (data.warnings && data.warnings.length) {
+      panel.innerHTML = data.warnings.map(w => `
+        <div class="formula-box align-left" style="margin-bottom:6px;border-left:3px solid var(--caution)">
+          <div style="font-weight:600;font-size:13px">${escapeHtml(w)}</div>
+        </div>
+      `).join('') + `<div style="font-size:11px;color:var(--text-dim);margin-top:6px">共 ${data.total_segments} 路段分析，${data.approaching_threshold} 條接近門檻</div>`;
+    } else {
+      panel.innerHTML = `<div class="card-yellow">目前所有路段趨勢穩定，無接近門檻預警。</div>`;
+    }
+  } catch (e) {
+    panel.innerHTML = `<div style="color:var(--critical)">壅塞預測失敗：${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function runM4Anomaly() {
+  const panel = document.getElementById('m4-anomaly-panel');
+  if (!panel || panel.innerHTML.trim()) return;
+  panel.innerHTML = `<div class="spinner">偵測中…</div>`;
+  try {
+    const ts = timelineTimestamps[timelineIndex] || '2026-05-20 22:15';
+    const res = await fetch(`/api/reasoning/anomaly?timestamp=${encodeURIComponent(ts)}`);
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+    if (data.alerts && data.alerts.length) {
+      panel.innerHTML = data.alerts.map(a => `
+        <div class="formula-box align-left" style="margin-bottom:6px;border-left:3px solid ${a.severity === 'critical' ? 'var(--critical)' : 'var(--caution)'}">
+          <div style="font-weight:600;font-size:13px">[${a.severity}] ${escapeHtml(a.segment_name)}</div>
+          <div style="font-size:12px;color:var(--text-dim);margin-top:4px">${escapeHtml(a.description)}</div>
+        </div>
+      `).join('') + `<div style="font-size:11px;color:var(--text-dim);margin-top:6px">共偵測到 ${data.anomaly_count} 個異常</div>`;
+    } else {
+      panel.innerHTML = `<div class="card-yellow">目前無資料異常。</div>`;
+    }
+  } catch (e) {
+    panel.innerHTML = `<div style="color:var(--critical)">異常偵測失敗：${escapeHtml(e.message)}</div>`;
   }
 }

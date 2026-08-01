@@ -20,6 +20,9 @@ from reasoning.rules import (
     ROUTE_SCORE_VERSION,
     SOP_VERSION,
     build_rule_hit_for_incident,
+    build_rule_hit_for_signal_failure,
+    build_rule_hit_for_crowd_diversion,
+    build_rule_hit_for_dome_dispersal,
     calculate_confidence,
     calculate_data_quality,
     calculate_ete,
@@ -65,6 +68,24 @@ def build_decision_record(
     )
     if incident_rule:
         rule_hits.append(incident_rule)
+
+    # SOP-5: 號誌故障
+    signal_rule = build_rule_hit_for_signal_failure(
+        event,
+        [evidence_by_key["event:status"], evidence_by_key["event:severity"]],
+    )
+    if signal_rule:
+        rule_hits.append(signal_rule)
+
+    # SOP-3: 捷運分流
+    crowd_rule = build_rule_hit_for_crowd_diversion(snapshot, [])
+    if crowd_rule:
+        rule_hits.append(crowd_rule)
+
+    # SOP-4: 大巨蛋散場
+    dome_rule = build_rule_hit_for_dome_dispersal(snapshot, [])
+    if dome_rule:
+        rule_hits.append(dome_rule)
 
     ete = calculate_ete(
         event["severity"],
