@@ -443,12 +443,13 @@ def build_sop2_decision(incident: dict, snapshot: dict) -> TriggerDecision:
 
     llm_result = generate_guidance(draft_decision)
     guidance_text = llm_result.get("guidance_text", "")
-    guidance_source = llm_result.get("_source", "mock")
 
     actions = [
         f"重新導引車流：主疏散路徑 {primary_seg_id or '無'}",
         f"CMS 電子看板更新：{cms_text}",
     ]
+    if guidance_text:
+        actions.append(f"指揮官建議：{guidance_text}")
 
     return TriggerDecision(
         triggered=True,
@@ -465,8 +466,6 @@ def build_sop2_decision(incident: dict, snapshot: dict) -> TriggerDecision:
         excluded_routes=excluded_for_schema,
         ete_minutes=ete_minutes,
         cms_text=cms_text,
-        guidance_text=guidance_text,
-        guidance_source=guidance_source,
         timestamp=incident.get("timestamp"),
     )
 
@@ -523,12 +522,13 @@ def build_sop5_decision(incident: dict, snapshot: dict) -> TriggerDecision:
 
     llm_result = generate_guidance(draft_decision)
     guidance_text = llm_result.get("guidance_text", "")
-    guidance_source = llm_result.get("_source", "mock")
 
     actions = [
         f"人工指揮派遣：{seg_name} 派遣 {police_needed} 名警力接管交通指揮",
         f"CMS 更新：{cms_text}",
     ]
+    if guidance_text:
+        actions.append(f"指揮官建議：{guidance_text}")
 
     return TriggerDecision(
         triggered=True,
@@ -545,8 +545,6 @@ def build_sop5_decision(incident: dict, snapshot: dict) -> TriggerDecision:
         excluded_routes=[],
         ete_minutes=ete_minutes,
         cms_text=cms_text,
-        guidance_text=guidance_text,
-        guidance_source=guidance_source,
         timestamp=incident.get("timestamp"),
     )
 

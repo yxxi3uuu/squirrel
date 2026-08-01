@@ -15,6 +15,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from warroom.module2.backend.services.sop_engine import process_incident as _engine_process_incident
+from warroom.module2.backend.services.llm_mock import generate_commander_summary
 from shared.schemas import TriggerDecision
 
 router = APIRouter()
@@ -105,6 +106,29 @@ def inject_incident(req: InjectRequest):
         station_decisions = _build_station_decisions(new_event, snapshot)
         decisions.extend(station_decisions)
 
+    # 產生總結指揮官建議：擷取所有 decisions 的 guidance_text，合併成一段
+    guidance_items = []
+    for d in decisions:
+        gt = d.get("guidance_text") or ""
+        if not gt:
+            # 從 actions 中找「指揮官建議：」開頭的項目
+            for action in (d.get("actions") or []):
+                if action.startswith("指揮官建議："):
+                    gt = action.replace("指揮官建議：", "")
+                    break
+        if gt:
+            guidance_items.append({
+                "sop_clause": d.get("sop_clause") or "未分類",
+                "guidance_text": gt,
+            })
+
+    commander_summary = ""
+    commander_summary_source = "none"
+    if guidance_items:
+        summary_result = generate_commander_summary(guidance_items)
+        commander_summary = summary_result.get("commander_summary", "")
+        commander_summary_source = summary_result.get("_source", "mock")
+
     elapsed_ms = round((time.monotonic() - t0) * 1000, 2)
     return {
         "success": True,
@@ -113,6 +137,8 @@ def inject_incident(req: InjectRequest):
         "decisions": decisions,
         "snapshot": snapshot,
         "processing_time_ms": elapsed_ms,
+        "commander_summary": commander_summary,
+        "commander_summary_source": commander_summary_source,
     }
 
 
@@ -124,6 +150,19 @@ def resolve_incident(event_id: str):
             inc["status"] = "Resolved"
             return {"success": True, "event_id": event_id}
     return {"success": False, "message": f"找不到 {event_id}"}
+
+
+@router.post("/import")
+def import_incidents(events: list[InjectRequest]):
+    """批次匯入多筆事件（JSON 檔上傳用），逐筆注入並回傳所有決策。"""
+    results = []
+    for req in events:
+        new_event = req.model_dump()
+        existing_ids = {inc.get("event_id") for inc in _incidents}
+        if new_event["event_id"] not in existing_ids:
+            _incidents.append(new_event)
+        results.append({"event_id": new_event["event_id"], "imported": True})
+    return {"success": True, "imported_count": len(results), "total": len(_incidents), "results": results}
 
 
 @router.get("/reload")
