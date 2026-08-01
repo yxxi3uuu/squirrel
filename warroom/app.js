@@ -30,12 +30,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   // DOM 加入先後，而路段/站點是兩支獨立 API 非同步載入，順序不固定，導致站點有時
   // 會被路段線蓋住點不到。開一個獨立、z-index 更高的 pane 讓站點永遠疊在路段上面。
   mapInstance.createPane('stationPane');
-  mapInstance.getPane('stationPane').style.zIndex = 450;
+  mapInstance.getPane('stationPane').style.zIndex = 420;
   // 事件標記 pane：z-index 高於站點，確保事件 popup 不會被遮住
   mapInstance.createPane('incidentPane');
   mapInstance.getPane('incidentPane').style.zIndex = 650;
   // 確保 popup pane 永遠在最上層（解決站點標記蓋住 popup 的問題）
   mapInstance.getPane('popupPane').style.zIndex = 900;
+  // 確保站點標記不會擋住 popup 的滑鼠事件
+  mapInstance.getPane('stationPane').style.pointerEvents = 'auto';
   // 地圖高度改用 flex:1 撐滿面板剩餘空間（見 style.css .map-wrap），視窗尺寸變動時
   // 容器實際像素高度會跟著變，Leaflet 需要重新量測才不會顯示錯位/留白。
   window.addEventListener('resize', () => mapInstance.invalidateSize());
@@ -1780,6 +1782,8 @@ function addIncidentMapMarkers(event, decisions, snapshot) {
         <div class="incident-popup-desc">${escapeHtml(event.description)}</div>
       </div>`;
     marker.bindPopup(popupHtml, { maxWidth: 320, className: 'incident-popup-container' });
+    marker.on('popupopen', () => { mapInstance.getPane('stationPane').style.display = 'none'; });
+    marker.on('popupclose', () => { mapInstance.getPane('stationPane').style.display = ''; });
     marker.openPopup();
 
     incidentMapMarkers.push(marker);

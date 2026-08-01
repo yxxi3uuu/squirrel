@@ -1050,6 +1050,7 @@ footer { text-align: center; padding: 20px; color: var(--text-dim); font-size: .
   background: var(--panel, #141c26); border: 1px solid var(--border, #2a3545);
   border-radius: 10px; color: var(--text, #f2f5f9);
   z-index: 10000;
+  position: relative;
 }
 .incident-popup-container .leaflet-popup-tip { background: var(--panel, #141c26); }
 .incident-popup { font-family: var(--font-body, 'Noto Sans TC', sans-serif); font-size: .82rem; line-height: 1.6; }
