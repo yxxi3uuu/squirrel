@@ -97,7 +97,5 @@ class TriggerDecision(StrictBaseModel):
     excluded_routes: List[Dict] = Field(default_factory=list)
     # [{"segment_id": ..., "reason": ...}] 排除理由（模組 4 解釋鏈要求）
     ete_minutes: Optional[float] = None     # SOP 7 公式結果（程式算，LLM 只解釋）
-    cms_text: Optional[str] = None          # SOP 2b 產出的 CMS 文字（固定格式，非 LLM 生成）
-    guidance_text: Optional[str] = None     # LLM 產出的指揮官引導文字（Ollama 失效時為 mock）
-    guidance_source: Optional[str] = None   # "llm" 或 "mock"，標記 guidance_text 的來源
+    cms_text: Optional[str] = None          # SOP 2b 產出的 CMS 文字
     timestamp: Optional[str] = None
