@@ -96,12 +96,13 @@
             <div class="timeline-row">
               <button class="tl-play-btn" id="timeline-play" onclick="toggleTimelinePlay()" aria-pressed="false">▶</button>
               <div class="tl-speed-select">
+                <button class="tl-speed-btn" data-speed="0.5" onclick="setTimelineSpeed(0.5)">0.5×</button>
                 <button class="tl-speed-btn active" data-speed="1" onclick="setTimelineSpeed(1)">1×</button>
-                <button class="tl-speed-btn" data-speed="2" onclick="setTimelineSpeed(2)">2×</button>
-                <button class="tl-speed-btn" data-speed="4" onclick="setTimelineSpeed(4)">4×</button>
               </div>
               <span class="tl-time mono" id="timeline-time">--:--</span>
+              <button class="tl-step-btn" onclick="timelineStepPrev()" title="上一格">⏮</button>
               <input type="range" id="timeline-slider" min="0" max="0" value="0" step="1" oninput="onTimelineSlide(this.value)">
+              <button class="tl-step-btn" onclick="timelineStepNext()" title="下一格">⏭</button>
               <span class="tl-range mono" id="timeline-range"></span>
             </div>
           </div>
