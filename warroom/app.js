@@ -710,6 +710,14 @@ function renderIncidentList(incidents) {
   container.innerHTML = html;
 }
 
+/* ── 輔助：解析實體中文名稱（支援 RD_ 路段 + BS_ 站點）────────────────── */
+function resolveEntityName(entityId, snapshot) {
+  if (!entityId) return '';
+  if (snapshot?.road_segments?.[entityId]?.name) return snapshot.road_segments[entityId].name;
+  if (snapshot?.stations?.[entityId]?.name) return snapshot.stations[entityId].name;
+  return '';
+}
+
 function buildIncidentTooltipContent(inc) {
   return Object.entries(inc)
     .filter(([_, v]) => v !== null && v !== undefined && v !== '')
@@ -1441,21 +1449,22 @@ async function submitCustomIncident(event) {
   const now = new Date();
   const fallbackId = `CUSTOM_${now.getHours()}${now.getMinutes()}${now.getSeconds()}`;
   const affected = document.getElementById('custom-segment').value.trim();
-  const affectedRoad = document.getElementById('custom-affected-road').value.trim() || null;
   const location = document.getElementById('custom-location').value.trim() || affected;
+  const timeValue = document.getElementById('custom-timestamp').value || '22:00';
+  const timestamp = `2026-05-20 ${timeValue}`;
   const payload = {
     event_id: document.getElementById('custom-event-id').value.trim() || fallbackId,
-    type: document.getElementById('custom-type').value,
+    type: document.getElementById('custom-type').value.trim() || 'Unknown',
     location,
     affected_segment: affected,
-    affected_road: affectedRoad,
+    affected_road: null,
     severity: document.getElementById('custom-severity').value,
     status: document.getElementById('custom-status').value,
     description: document.getElementById('custom-description').value.trim(),
-    timestamp: latestSnapshot?.timestamp || '2026-05-20 22:30',
+    timestamp,
   };
   if (!payload.affected_segment) {
-    alert('請選擇目標路段或站點');
+    alert('請選擇影響路段/站點');
     return;
   }
   await injectIncidentPayload(payload);
@@ -2126,7 +2135,8 @@ function renderAdvisoryReport() {
 
   // 2. 交通分級判定
   const seg_id = incident.affected_segment;
-  const segData = snapshot?.road_segments?.[seg_id];
+  const segData = snapshot?.road_segments?.[seg_id] || snapshot?.stations?.[seg_id];
+  const entityName = resolveEntityName(seg_id, snapshot);
   const saturation = segData?.saturation_score;
   const avgSpeed = segData?.avg_speed;
   let levelText = '未達壅塞門檻';
@@ -2215,7 +2225,7 @@ function renderAdvisoryReport() {
         <div class="advisory-field"><span class="af-label">事件 ID</span><span class="af-value mono">${escapeHtml(incident.event_id)}</span></div>
         <div class="advisory-field"><span class="af-label">事件描述</span><span class="af-value">${escapeHtml(incident.description || incident.type)}</span></div>
         <div class="advisory-field"><span class="af-label">事件時間點</span><span class="af-value mono">${escapeHtml(eventTimestamp)}</span></div>
-        <div class="advisory-field"><span class="af-label">受影響路段</span><span class="af-value mono">${escapeHtml(incident.affected_segment)} — ${escapeHtml(segData?.name || '')}</span></div>
+        <div class="advisory-field"><span class="af-label">受影響路段</span><span class="af-value mono">${escapeHtml(incident.affected_segment)} — ${escapeHtml(entityName || '')}</span></div>
         <div class="advisory-field"><span class="af-label">觸發 SOP 條款</span><span class="af-value">${escapeHtml(sopClauses)}</span></div>
         <div class="advisory-field"><span class="af-label">對應條款名稱</span><span class="af-value">${triggeredDecisions.map(d => d.clause_name || '').filter(Boolean).join('、') || '—'}</span></div>
         <div class="advisory-field"><span class="af-label">嚴重度</span><span class="af-value">${escapeHtml(incident.severity)}</span></div>
@@ -2225,11 +2235,16 @@ function renderAdvisoryReport() {
 
       <div class="advisory-section">
         <div class="advisory-section-title">二、交通分級判定</div>
-        <div class="advisory-level ${levelClass}">${levelText} <span class="advisory-level-road">(${escapeHtml(segData?.name || incident.affected_segment)})</span></div>
+        ${seg_id.startsWith('BS_') ? `
+        <div class="advisory-field"><span class="af-label">類型</span><span class="af-value">站點（${escapeHtml(entityName || seg_id)}）</span></div>
+        <div class="advisory-field"><span class="af-label">說明</span><span class="af-value">受影響對象為人流站點，非車行路段，不適用路段飽和度分級</span></div>
+        ` : `
+        <div class="advisory-level ${levelClass}">${levelText} <span class="advisory-level-road">(${escapeHtml(entityName || incident.affected_segment)})</span></div>
         <div class="advisory-field"><span class="af-label">路段飽和度</span><span class="af-value mono">${saturation != null ? (saturation * 100).toFixed(1) + '%' : 'N/A'}</span></div>
         <div class="advisory-field"><span class="af-label">平均車速</span><span class="af-value mono">${avgSpeed != null ? avgSpeed + ' km/h' : 'N/A'}</span></div>
         <div class="advisory-field"><span class="af-label">判定依據</span><span class="af-value">A 級：Saturation_Score >= 0.95；B 級：0.85 <= Saturation_Score < 0.95</span></div>
         ${sop1 ? `<div class="advisory-field"><span class="af-label">SOP-1 判定</span><span class="af-value">${escapeHtml(sop1.basis)}</span></div>` : ''}
+        `}
       </div>
 
       <div class="advisory-section">
@@ -2319,7 +2334,8 @@ function generateAdvisoryMarkdown(incident, decisions, snapshot) {
   const triggeredDecisions = decisions.filter(d => d.triggered);
   const sopClauses = triggeredDecisions.map(d => d.sop_clause).filter(Boolean).join('、') || '無觸發';
   const seg_id = incident.affected_segment;
-  const segData = snapshot?.road_segments?.[seg_id];
+  const segData = snapshot?.road_segments?.[seg_id] || snapshot?.stations?.[seg_id];
+  const entityName = resolveEntityName(seg_id, snapshot);
   const saturation = segData?.saturation_score;
   const avgSpeed = segData?.avg_speed;
   let levelText = '未達壅塞門檻';
@@ -2347,18 +2363,23 @@ function generateAdvisoryMarkdown(incident, decisions, snapshot) {
   md += `| 事件類型 | ${incident.type} |\n`;
   md += `| 事件描述 | ${incident.description || incident.type} |\n`;
   md += `| 事件時間點 | ${incident.timestamp || 'N/A'} |\n`;
-  md += `| 受影響路段 | ${seg_id} — ${segData?.name || ''} |\n`;
+  md += `| 受影響路段 | ${seg_id} — ${entityName || ''} |\n`;
   md += `| 觸發 SOP 條款 | ${sopClauses} |\n`;
   md += `| 嚴重度 | ${incident.severity} |\n`;
   md += `| 狀態 | ${incident.status} |\n`;
   md += `| ETE 預計恢復 | ${eteText} |\n\n`;
 
   md += `## 二、交通分級判定\n\n`;
-  md += `- **分級結果**：${levelText}（${segData?.name || seg_id}）\n`;
-  md += `- **路段飽和度**：${saturation != null ? (saturation * 100).toFixed(1) + '%' : 'N/A'}\n`;
-  md += `- **平均車速**：${avgSpeed != null ? avgSpeed + ' km/h' : 'N/A'}\n`;
-  md += `- **判定依據**：A 級 Saturation_Score >= 0.95；B 級 >= 0.85 且 < 0.95\n`;
-  if (sop1) md += `- **SOP-1 判定**：${sop1.basis}\n`;
+  if (seg_id.startsWith('BS_')) {
+    md += `- **類型**：站點（${entityName || seg_id}）\n`;
+    md += `- **說明**：受影響對象為人流站點，非車行路段，不適用路段飽和度分級\n`;
+  } else {
+    md += `- **分級結果**：${levelText}（${entityName || seg_id}）\n`;
+    md += `- **路段飽和度**：${saturation != null ? (saturation * 100).toFixed(1) + '%' : 'N/A'}\n`;
+    md += `- **平均車速**：${avgSpeed != null ? avgSpeed + ' km/h' : 'N/A'}\n`;
+    md += `- **判定依據**：A 級 Saturation_Score >= 0.95；B 級 >= 0.85 且 < 0.95\n`;
+    if (sop1) md += `- **SOP-1 判定**：${sop1.basis}\n`;
+  }
   md += `\n`;
 
   md += `## 三、替代路徑建議\n\n`;
