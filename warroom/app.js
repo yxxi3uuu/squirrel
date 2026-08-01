@@ -1305,12 +1305,36 @@ function showInjectLoading() {
   if (existing) existing.remove();
   const overlay = document.createElement('div');
   overlay.className = 'inject-loading-overlay';
-  overlay.innerHTML = `<div class="loading-spinner"></div><div class="loading-text">SOP 規則引擎運算中…</div>`;
+  overlay.innerHTML = `
+    <div class="loading-spinner"></div>
+    <div class="loading-text">SOP 規則引擎運算中… <span id="m2-progress-pct">0%</span></div>
+    <div style="width:60%;height:8px;background:#1e2a3a;border-radius:4px;overflow:hidden;margin-top:10px">
+      <div id="m2-progress-bar" style="width:0%;height:100%;background:var(--accent,#7ec8bc);border-radius:4px;transition:width .3s ease"></div>
+    </div>
+  `;
   panel.appendChild(overlay);
+  // 啟動模擬進度
+  let progress = 0;
+  window._m2ProgressTimer = setInterval(() => {
+    if (progress < 95) {
+      progress += (95 - progress) * 0.06;
+      const bar = document.getElementById('m2-progress-bar');
+      const pct = document.getElementById('m2-progress-pct');
+      if (bar) bar.style.width = progress.toFixed(0) + '%';
+      if (pct) pct.textContent = progress.toFixed(0) + '%';
+    }
+  }, 400);
 }
 function hideInjectLoading() {
-  const overlay = document.querySelector('.inject-loading-overlay');
-  if (overlay) overlay.remove();
+  if (window._m2ProgressTimer) clearInterval(window._m2ProgressTimer);
+  const bar = document.getElementById('m2-progress-bar');
+  const pct = document.getElementById('m2-progress-pct');
+  if (bar) bar.style.width = '100%';
+  if (pct) pct.textContent = '100%';
+  setTimeout(() => {
+    const overlay = document.querySelector('.inject-loading-overlay');
+    if (overlay) overlay.remove();
+  }, 500);
 }
 
 async function injectIncident(eventId) {
