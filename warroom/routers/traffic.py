@@ -54,6 +54,13 @@ def get_network():
     return {"network": data}
 
 
+@router.get("/coords")
+def get_coords():
+    """取得地圖用的路段／站點經緯度座標（路段座標為 OpenStreetMap 實際道路描點）。"""
+    with open(os.path.join(DATA_DIR, "road_coords.json"), encoding="utf-8") as f:
+        return json.load(f)
+
+
 @router.get("/sop")
 def get_sop():
     """取得 SOP 全文"""

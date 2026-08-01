@@ -51,7 +51,7 @@
           </div>
           <div class="kpi-strip-card">
             <div class="ks-label">重點壅塞路段</div>
-            <div class="ks-value"><span id="ks-seg-value">--</span><span class="ks-unit">/ 15</span></div>
+            <div class="ks-value"><span id="ks-seg-value">--</span><span class="ks-unit" id="ks-seg-total">/ --</span></div>
             <div class="ks-delta" id="ks-seg-delta"></div>
           </div>
           <div class="kpi-strip-card">
@@ -282,7 +282,7 @@
 
 <!-- ══ OVERLAY: Module 4 Explanation Drawer ════════════════════════════════ -->
 <div id="drawer-backdrop" class="backdrop hidden" onclick="closeDrawer()"></div>
-<aside id="drawer" class="drawer">
+<aside id="drawer" class="drawer hidden"
   <div class="drawer-head">
     <h3 id="drawer-title">判斷依據 — 解釋鏈</h3>
     <button class="drawer-close" onclick="closeDrawer()">✕</button>
