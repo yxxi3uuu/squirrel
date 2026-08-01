@@ -7,7 +7,6 @@ from dotenv import load_dotenv
 load_dotenv()  # 讀取 .env（LLM_MODE, BEDROCK_REGION 等）
 
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import os, sys
 from typing import Optional
@@ -41,22 +40,12 @@ app.include_router(module1.router,   prefix="/api",           tags=["Module1 (Dy
 
 # ── 路徑 ──────────────────────────────────────────────────────────────────
 _warroom = os.path.dirname(__file__)
-_m5_frontend = os.path.join(_warroom, "module5", "frontend")
 
 
 def _no_cache_file(path: str, media_type: Optional[str] = None):
     response = FileResponse(path, media_type=media_type)
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
-
-# /static/ → module5 前端的 CSS/JS（iframe 裡的 /static/style.css 等）
-app.mount("/static", StaticFiles(directory=_m5_frontend), name="m5-static")
-
-# /m5/ → module5 前端 index.html
-@app.get("/m5/")
-@app.get("/m5")
-def m5_index():
-    return FileResponse(os.path.join(_m5_frontend, "index.html"))
 
 # ── 戰情室主頁 ─────────────────────────────────────────────────────────────
 @app.get("/")

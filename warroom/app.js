@@ -43,9 +43,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 容器實際像素高度會跟著變，Leaflet 需要重新量測才不會顯示錯位/留白。
   window.addEventListener('resize', () => mapInstance.invalidateSize());
 
-  // 模組 5 的觸發站點要先拿到，儀表板右側 SOP-6 卡片才能顯示真實資料
+  // 模組 5 狀態載入（供 SOP-6 卡片與多語化按鈕使用）
   loadModule5Status().then(() => {
-    showModule5Toast();
     loadTrafficData();
     loadIncidentData();
   });
@@ -1214,10 +1213,7 @@ function escapeHtml(value) {
     .replace(/'/g, '&#039;');
 }
 
-/* ── 模組五：多語通報 Toast ─────────────────────────────────────────────────
-   真實資料來源：/api/signal/triggered，帶 timestamp 讓 m5Triggered（供即時警報
-   欄的 SOP-6 卡片使用）跟著模組一時間軸走。但 toast 本身「只在」頁面載入／按
-   鈴鐺時彈出，不會跟著時間軸每一格都跳，避免快速拖動時 toast 一直閃現互蓋。 */
+/* ── 模組五：漫遊率狀態（供即時警報欄 SOP-6 卡片使用）───────────────────── */
 let m5Triggered = [];
 
 let _m5Seq = 0;
@@ -1232,21 +1228,6 @@ async function loadModule5Status(timestamp) {
   } catch (e) {
     if (seq === _m5Seq) console.error('模組 5 狀態載入失敗', e);
   }
-}
-
-function showModule5Toast() {
-  if (m5Triggered.length) {
-    const top = [...m5Triggered].sort((a, b) => b.roaming_rate - a.roaming_rate)[0];
-    const more = m5Triggered.length > 1 ? `等 ${m5Triggered.length} 個站點` : '';
-    document.getElementById('toast-text').textContent =
-      `${top.station_name}${more} 外籍旅客比例達 ${(top.roaming_rate * 100).toFixed(0)}%，超過 SOP 第 6 條 30% 門檻`;
-  } else {
-    document.getElementById('toast-text').textContent = '目前無站點外籍旅客比例達 30% 門檻';
-  }
-  document.getElementById('toast').classList.remove('hidden');
-}
-function closeToast() {
-  document.getElementById('toast').classList.add('hidden');
 }
 
 /* ── Module 5：多語通報 Modal（原生元件，直接打 /api/signal、/api/notify，內部接 Ollama）── */
@@ -1404,6 +1385,161 @@ function m5CopyAll() {
   const lines = M5_LANG_ORDER
     .filter(k => m5Alerts[k])
     .map(k => `[${M5_LANG_LABEL[k]}] ${document.getElementById(`m5-ta-${k}`)?.value || m5Alerts[k]}`);
+  if (!lines.length) return;
+  navigator.clipboard?.writeText(lines.join('\n\n'));
+}
+
+/* ── Module 5 CMS 多語化發布（從地圖 popup 觸發）─────────────────────────── */
+let m5CmsAlerts = {};
+let m5CmsMultilingual = false;
+let m5CmsSourceTexts = [];
+
+function openM5CmsModal(encodedData, eventTimestamp) {
+  const cmsData = JSON.parse(decodeURIComponent(encodedData));
+  m5CmsSourceTexts = cmsData; // [{sop: "SOP-2", text: "xxx"}, ...]
+
+  document.getElementById('m5-cms-modal-overlay').classList.remove('hidden');
+  document.getElementById('m5-cms-modal-title').textContent = '多語化通報生成中…';
+  document.getElementById('m5-cms-modal-meta').textContent = eventTimestamp || '';
+  document.getElementById('m5-cms-editor').classList.add('hidden');
+  document.getElementById('m5-cms-btn-publish').disabled = true;
+  document.getElementById('m5-cms-publish-result').classList.add('hidden');
+  m5CmsAlerts = {};
+
+  // 取得當前漫遊率判斷是否需要多語化
+  const ts = eventTimestamp || '';
+  const url = ts ? `/api/signal/triggered?timestamp=${encodeURIComponent(ts)}` : '/api/signal/triggered';
+  fetch(url).then(r => r.json()).then(data => {
+    const triggered = data.triggered || [];
+    m5CmsMultilingual = triggered.length > 0; // 任一站點 >= 30%
+
+    const combinedCms = cmsData.map(d => d.text).join('\n');
+
+    if (m5CmsMultilingual) {
+      const topStation = triggered.sort((a, b) => b.roaming_rate - a.roaming_rate)[0];
+      document.getElementById('m5-cms-sop-banner').innerHTML =
+        `<div class="card-red" style="margin-bottom:14px"><b>SOP 第 6 條觸發</b>｜${topStation.station_name} 漫遊率 ${(topStation.roaming_rate * 100).toFixed(1)}%（≥ 30%），自動產出七語版</div>`;
+      document.getElementById('m5-cms-modal-title').textContent = '多語化通報（七語版）';
+      m5CmsGenerate(combinedCms, true);
+    } else {
+      document.getElementById('m5-cms-sop-banner').innerHTML =
+        `<div class="card-yellow" style="margin-bottom:14px">所有站點漫遊率 < 30%｜僅產出繁體中文版</div>`;
+      document.getElementById('m5-cms-modal-title').textContent = '通報發布（中文版）';
+      // 不需翻譯，直接顯示中文（加上【交通管制】標題）
+      m5CmsAlerts = { zh_tw: '【交通管制】' + combinedCms };
+      m5CmsRenderEditor(false);
+      document.getElementById('m5-cms-btn-publish').disabled = false;
+    }
+  }).catch(e => {
+    console.error('漫遊率查詢失敗', e);
+    // fallback: 只產出中文
+    const combinedCms = cmsData.map(d => d.text).join('\n');
+    m5CmsAlerts = { zh_tw: '【交通管制】' + combinedCms };
+    document.getElementById('m5-cms-sop-banner').innerHTML =
+      `<div class="card-yellow" style="margin-bottom:14px">漫遊率資料讀取失敗，僅產出中文版</div>`;
+    document.getElementById('m5-cms-modal-title').textContent = '通報發布（中文版）';
+    m5CmsRenderEditor(false);
+    document.getElementById('m5-cms-btn-publish').disabled = false;
+  });
+}
+
+function closeM5CmsModal() {
+  document.getElementById('m5-cms-modal-overlay').classList.add('hidden');
+}
+
+async function m5CmsGenerate(cmsText, multilingual) {
+  document.getElementById('m5-cms-spinner').classList.remove('hidden');
+  let progress = 0;
+  const bar = document.getElementById('m5-cms-progress-bar');
+  const pct = document.getElementById('m5-cms-progress-pct');
+  const progressTimer = setInterval(() => {
+    if (progress < 95) {
+      progress += (95 - progress) * 0.04;
+      bar.style.width = progress.toFixed(0) + '%';
+      pct.textContent = progress.toFixed(0) + '%';
+    }
+  }, 500);
+
+  try {
+    const res = await fetch('/api/notify/generate-cms', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cms_text: cmsText, multilingual }),
+    });
+    const data = await res.json();
+    clearInterval(progressTimer);
+    bar.style.width = '100%';
+    pct.textContent = '100%';
+    m5CmsAlerts = data.alerts;
+    m5CmsRenderEditor(multilingual);
+    document.getElementById('m5-cms-btn-publish').disabled = false;
+  } catch (e) {
+    clearInterval(progressTimer);
+    // fallback 中文
+    m5CmsAlerts = { zh_tw: cmsText };
+    m5CmsRenderEditor(false);
+    document.getElementById('m5-cms-btn-publish').disabled = false;
+    document.getElementById('m5-cms-sop-banner').insertAdjacentHTML('beforeend',
+      `<div class="card-yellow" style="margin-top:8px">翻譯失敗，僅顯示中文版</div>`);
+  } finally {
+    setTimeout(() => {
+      document.getElementById('m5-cms-spinner').classList.add('hidden');
+      bar.style.width = '0%';
+      pct.textContent = '0%';
+    }, 600);
+  }
+}
+
+function m5CmsRenderEditor(multi) {
+  const langs = multi ? M5_LANG_ORDER : ['zh_tw'];
+  document.getElementById('m5-cms-lang-tabs').innerHTML = langs.map((k, i) =>
+    `<div class="lang-tab ${i === 0 ? 'active' : ''}" data-lang="${k}">${M5_LANG_LABEL[k]}</div>`).join('');
+  document.getElementById('m5-cms-lang-panels').innerHTML = langs.map((k, i) =>
+    `<div class="lang-panel ${i === 0 ? 'active' : ''}" id="m5-cms-panel-${k}"><textarea id="m5-cms-ta-${k}">${m5CmsAlerts[k] || ''}</textarea></div>`).join('');
+  document.querySelectorAll('#m5-cms-lang-tabs .lang-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('#m5-cms-lang-tabs .lang-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('#m5-cms-lang-panels .lang-panel').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById(`m5-cms-panel-${tab.dataset.lang}`).classList.add('active');
+    });
+  });
+  document.getElementById('m5-cms-editor').classList.remove('hidden');
+}
+
+async function m5CmsPublish() {
+  const alerts = {};
+  M5_LANG_ORDER.forEach(k => {
+    const t = document.getElementById(`m5-cms-ta-${k}`);
+    if (t) alerts[k] = t.value;
+  });
+  try {
+    const res = await fetch('/api/notify/publish', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        station_name: 'CMS 通報',
+        roaming_rate: m5CmsMultilingual ? 0.30 : 0,
+        alerts,
+        channels: ['cell_broadcast', 'cms'],
+      }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      document.getElementById('m5-cms-publish-result').classList.remove('hidden');
+      document.getElementById('m5-cms-publish-result').innerHTML =
+        `<div class="publish-success" style="background:#1a2e25;border:1.5px solid #85d99a;border-radius:8px;padding:12px 18px;color:#85d99a;font-weight:700;margin-top:14px">✅ 通報已成功發布　${new Date().toLocaleTimeString()}</div>`;
+      document.getElementById('m5-cms-btn-publish').disabled = true;
+    }
+  } catch (e) {
+    alert('發布失敗：' + e.message);
+  }
+}
+
+function m5CmsCopyAll() {
+  const lines = M5_LANG_ORDER
+    .filter(k => m5CmsAlerts[k])
+    .map(k => `[${M5_LANG_LABEL[k]}] ${document.getElementById(`m5-cms-ta-${k}`)?.value || m5CmsAlerts[k]}`);
   if (!lines.length) return;
   navigator.clipboard?.writeText(lines.join('\n\n'));
 }
@@ -1841,8 +1977,26 @@ function addIncidentMapMarkers(event, decisions, snapshot) {
     // Popup 顯示事件詳細資料
     const triggeredSops = decisions.filter(d => d.triggered).map(d => d.sop_clause).filter(Boolean).join('、') || '無';
     const eteDecision = decisions.find(d => d.ete_minutes);
-    const cmsDecision = decisions.find(d => d.cms_text);
+    const cmsDecisions = decisions.filter(d => d.triggered && d.cms_text);
     const adviceDecision = decisions.find(d => d.commander_advice);
+
+    // 組合 CMS 區塊（含發布警告按鈕）
+    let cmsHtml = '';
+    if (cmsDecisions.length) {
+      const cmsItems = cmsDecisions.map(d =>
+        `<div class="incident-popup-cms-item"><span class="incident-popup-cms-tag">${d.sop_clause}</span>${escapeHtml(d.cms_text)}</div>`
+      ).join('');
+      // 將 cms_text 陣列序列化存在按鈕 data 上供多語化流程使用
+      const cmsDataAttr = encodeURIComponent(JSON.stringify(cmsDecisions.map(d => ({ sop: d.sop_clause, text: d.cms_text }))));
+      const eventTs = event.timestamp || '';
+      cmsHtml = `
+        <div class="incident-popup-cms-block">
+          <div class="incident-popup-cms-label">CMS</div>
+          ${cmsItems}
+          <button class="btn-publish-warning" onclick="openM5CmsModal('${cmsDataAttr}', '${eventTs}')">發布警告</button>
+        </div>`;
+    }
+
     let popupHtml = `
       <div class="incident-popup">
         <div class="incident-popup-title">${iconEmoji} ${escapeHtml(event.event_id)}</div>
@@ -1853,7 +2007,7 @@ function addIncidentMapMarkers(event, decisions, snapshot) {
         <div class="incident-popup-row"><b>路段</b> ${escapeHtml(segId)}</div>
         <div class="incident-popup-row"><b>觸發 SOP</b> ${escapeHtml(triggeredSops)}</div>
         ${eteDecision ? `<div class="incident-popup-row"><b>ETE</b> ${eteDecision.ete_minutes} 分鐘</div>` : ''}
-        ${cmsDecision ? `<div class="incident-popup-row incident-popup-cms"><b>CMS</b> ${escapeHtml(cmsDecision.cms_text)}</div>` : ''}
+        ${cmsHtml}
         ${adviceDecision ? renderCommanderAdvicePopup(adviceDecision.commander_advice) : ''}
         <div class="incident-popup-desc">${escapeHtml(event.description)}</div>
       </div>`;
@@ -1898,12 +2052,6 @@ function renderDecisionCard(decision, index) {
       <button class="btn-explain" onclick="openDrawer('${explainType}')">查看判斷依據</button>
     </div>`;
 }
-
-/* ── Bell：重新整理目前時間點的資料（含模組五），並跳出模組五 toast ───────── */
-document.getElementById('bell-btn').addEventListener('click', () => {
-  if (timelineTimestamps.length) loadSnapshotAt(timelineTimestamps[timelineIndex]);
-  loadModule5Status().then(showModule5Toast);
-});
 
 /* ── Draggable Advisor Orb ─────────────────────────────────────────────────── */
 (function initDraggableOrb() {

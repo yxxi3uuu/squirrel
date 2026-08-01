@@ -383,7 +383,7 @@ mc4.metric("人流增幅", f"{s_growth*100:+.1f}%")
 
 if multilingual:
     st.markdown(
-        f'<div class="card-red">📌 <b>SOP 第 6 條觸發</b>｜漫遊率 {s_roaming*100:.1f}% ≥ 30%'
+        f'<div class="card-red"><b>SOP 第 6 條觸發</b>｜漫遊率 {s_roaming*100:.1f}% ≥ 30%'
         f'，將產出 <b>繁中／英文／日文／韓文／泰文／越南文／法文</b> 七語版。</div>', unsafe_allow_html=True)
 else:
     st.markdown(

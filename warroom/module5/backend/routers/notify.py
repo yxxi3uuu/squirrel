@@ -6,7 +6,8 @@ from typing import Optional
 import datetime
 
 from warroom.module5.backend.services.llm import (
-    generate_alerts, mock_alerts, check_ollama, LANG_META
+    generate_alerts, mock_alerts, check_ollama, LANG_META,
+    translate_cms_text,
 )
 
 router = APIRouter()
@@ -22,6 +23,12 @@ class GenerateRequest(BaseModel):
     roaming_rate: float
     growth_rate:  float
     timestamp:    str
+    multilingual: bool = True
+
+
+class GenerateCmsRequest(BaseModel):
+    """從 SOP-2/5 的 CMS 文字翻譯成多語版本"""
+    cms_text:     str
     multilingual: bool = True
 
 
@@ -54,6 +61,38 @@ def generate(req: GenerateRequest):
     except Exception as e:
         alerts = mock_alerts(req.station_name)
         return {"alerts": alerts, "source": "mock", "error": str(e)}
+
+
+@router.post("/generate-cms")
+def generate_cms(req: GenerateCmsRequest):
+    """將 SOP-2/5 產出的 CMS 文字翻譯成多語版本"""
+    status = check_ollama()
+    if not req.multilingual:
+        return {"alerts": {"zh_tw": req.cms_text}, "source": "direct"}
+    if not status["ok"]:
+        alerts = _mock_translate(req.cms_text)
+        return {"alerts": alerts, "source": "mock", "llm_status": status}
+    try:
+        alerts = translate_cms_text(req.cms_text, req.multilingual)
+        from warroom.module5.backend.services.llm import LLM_MODE
+        source = "bedrock" if LLM_MODE == "bedrock" else "ollama"
+        return {"alerts": alerts, "source": source, "llm_status": status}
+    except Exception as e:
+        alerts = _mock_translate(req.cms_text)
+        return {"alerts": alerts, "source": "mock", "error": str(e)}
+
+
+def _mock_translate(cms_text: str) -> dict:
+    """Mock 翻譯：中文原文 + 各語言簡易模板"""
+    return {
+        "zh_tw": f"【交通管制】{cms_text}",
+        "en": f"【TRAFFIC ALERT】{cms_text}",
+        "ja": f"【交通規制】{cms_text}",
+        "ko": f"【교통 통제】{cms_text}",
+        "th": f"【ประกาศจราจร】{cms_text}",
+        "vi": f"【Cảnh báo giao thông】{cms_text}",
+        "fr": f"【Alerte circulation】{cms_text}",
+    }
 
 
 @router.post("/publish")
