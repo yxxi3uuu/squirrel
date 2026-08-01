@@ -38,6 +38,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   mapInstance.getPane('incidentPane').style.zIndex = 650;
   // 確保 popup pane 永遠在最上層（解決站點標記蓋住 popup 的問題）
   mapInstance.getPane('popupPane').style.zIndex = 900;
+  // 事件 ID tooltip 氣泡在所有圖層最上層（使用獨立 pane）
+  mapInstance.createPane('incidentTooltipPane');
+  mapInstance.getPane('incidentTooltipPane').style.zIndex = 9999;
+  mapInstance.getPane('incidentTooltipPane').style.pointerEvents = 'none';
+  mapInstance.getPane('tooltipPane').style.zIndex = 950;
   // 確保站點標記不會擋住 popup 的滑鼠事件
   mapInstance.getPane('stationPane').style.pointerEvents = 'auto';
   // 地圖高度改用 flex:1 撐滿面板剩餘空間（見 style.css .map-wrap），視窗尺寸變動時
@@ -580,7 +585,6 @@ function renderTrafficAlerts(segments, dashboard) {
       </div>`;
   });
 
-  html += renderModule5AlertCard();
   html += '</div>';
   container.innerHTML = html;
 }
@@ -645,29 +649,6 @@ function renderSop4Card(dashboard) {
 }
 
 /* ── 模組五：多語通報卡片（真實資料，不是寫死文字）─────────────────────────── */
-function renderModule5AlertCard() {
-  if (!m5Triggered || !m5Triggered.length) {
-    return `
-    <div class="alert-card sop6">
-      <div class="alert-hdr"><span class="alert-tag accent-bg">SOP-6 多語</span></div>
-      <div class="alert-body">目前無站點外籍旅客比例達 30% 門檻</div>
-      <button class="btn-explain" onclick="openModule5Modal()">查看站點狀態</button>
-    </div>`;
-  }
-  const sorted = [...m5Triggered].sort((a, b) => b.roaming_rate - a.roaming_rate);
-  const stationLines = sorted.map(s =>
-    `<b>${s.station_name}</b> (${s.station_id}) — <span class="mono critical-text">${(s.roaming_rate * 100).toFixed(1)}%</span>`
-  ).join('<br>');
-  return `
-    <div class="alert-card sop6">
-      <div class="alert-hdr"><span class="alert-tag accent-bg">SOP-6 多語</span><span class="mono">${sorted.length} 站觸發</span></div>
-      <div class="alert-body">
-        ${stationLines}
-      </div>
-      <button class="btn-explain" onclick="openModule5Modal()">查看多語通報</button>
-    </div>`;
-}
-
 function renderTrafficMap(segments) {
   const colorMap = { A: '#f27a84', B: '#eab85c', OK: '#85d99a' };
   segments.forEach(s => {
@@ -1548,7 +1529,7 @@ async function m5CmsPublish() {
     if (data.success) {
       document.getElementById('m5-cms-publish-result').classList.remove('hidden');
       document.getElementById('m5-cms-publish-result').innerHTML =
-        `<div class="publish-success" style="background:#1a2e25;border:1.5px solid #85d99a;border-radius:8px;padding:12px 18px;color:#85d99a;font-weight:700;margin-top:14px">✅ 通報已成功發布　${new Date().toLocaleTimeString()}</div>`;
+        `<div class="publish-success" style="background:#1a2e25;border:1.5px solid #85d99a;border-radius:8px;padding:12px 18px;color:#85d99a;font-weight:700;margin-top:14px">通報已成功發布　${new Date().toLocaleTimeString()}</div>`;
       document.getElementById('m5-cms-btn-publish').disabled = true;
     }
   } catch (e) {
@@ -1892,6 +1873,8 @@ function clearIncidentMapMarkers() {
   // 移除所有事件 marker
   incidentMapMarkers.forEach(m => { if (mapInstance) mapInstance.removeLayer(m); });
   incidentMapMarkers = [];
+  // 清除事件詳情暫存
+  window._incidentDetailStore = {};
   // 還原被標紅的路段（恢復為正常配色，等 renderTrafficMap 重新上色）
   incidentAffectedSegments.forEach(segId => {
     if (roadPolylines[segId]) {
@@ -1994,50 +1977,68 @@ function addIncidentMapMarkers(event, decisions, snapshot) {
 
     const marker = L.marker(markerCoords, { icon, zIndexOffset: 500, pane: 'incidentPane' }).addTo(mapInstance);
 
-    // Popup 顯示事件詳細資料
-    const triggeredSops = decisions.filter(d => d.triggered).map(d => d.sop_clause).filter(Boolean).join('、') || '無';
-    const eteDecision = decisions.find(d => d.ete_minutes);
-    const cmsDecisions = decisions.filter(d => d.triggered && d.cms_text);
-    const adviceDecision = decisions.find(d => d.commander_advice);
+    // 點擊閃爍 emoji 圖示時開啟事件詳情 Modal
+    if (!window._incidentDetailStore) window._incidentDetailStore = {};
+    window._incidentDetailStore[event.event_id] = { event, decisions, snapshot, segId, iconEmoji };
+    marker.on('click', () => { openIncidentDetailModal(event.event_id); });
 
-    // 組合 CMS 區塊（含發布警告按鈕）
-    let cmsHtml = '';
-    if (cmsDecisions.length) {
-      const cmsItems = cmsDecisions.map(d =>
-        `<div class="incident-popup-cms-item"><span class="incident-popup-cms-tag">${d.sop_clause}</span>${escapeHtml(d.cms_text)}</div>`
-      ).join('');
-      // 將 cms_text 陣列序列化存在按鈕 data 上供多語化流程使用
-      const cmsDataAttr = encodeURIComponent(JSON.stringify(cmsDecisions.map(d => ({ sop: d.sop_clause, text: d.cms_text }))));
-      const eventTs = event.timestamp || '';
-      cmsHtml = `
-        <div class="incident-popup-cms-block">
-          <div class="incident-popup-cms-label">CMS</div>
-          ${cmsItems}
-          <button class="btn-publish-warning" onclick="openM5CmsModal('${cmsDataAttr}', '${eventTs}')">發布警告</button>
-        </div>`;
-    }
-
-    let popupHtml = `
-      <div class="incident-popup">
-        <div class="incident-popup-title">${iconEmoji} ${escapeHtml(event.event_id)}</div>
-        <div class="incident-popup-row"><b>類型</b> ${escapeHtml(event.type)}</div>
-        <div class="incident-popup-row"><b>位置</b> ${escapeHtml(event.location)}</div>
-        <div class="incident-popup-row"><b>嚴重度</b> <span class="severity-${event.severity.toLowerCase()}">${escapeHtml(event.severity)}</span></div>
-        <div class="incident-popup-row"><b>狀態</b> ${escapeHtml(event.status)}</div>
-        <div class="incident-popup-row"><b>路段</b> ${escapeHtml(segId)}</div>
-        <div class="incident-popup-row"><b>觸發 SOP</b> ${escapeHtml(triggeredSops)}</div>
-        ${eteDecision ? `<div class="incident-popup-row"><b>ETE</b> ${eteDecision.ete_minutes} 分鐘</div>` : ''}
-        ${cmsHtml}
-        ${adviceDecision ? renderCommanderAdvicePopup(adviceDecision.commander_advice) : ''}
-        <div class="incident-popup-desc">${escapeHtml(event.description)}</div>
-      </div>`;
-    marker.bindPopup(popupHtml, { maxWidth: 320, className: 'incident-popup-container' });
-    marker.on('popupopen', () => { mapInstance.getPane('stationPane').style.display = 'none'; });
-    marker.on('popupclose', () => { mapInstance.getPane('stationPane').style.display = ''; });
-    marker.openPopup();
+    // 氣泡只顯示事件 ID（使用 tooltip 常駐，不受 marker click 影響）
+    const labelHtml = `<div class="incident-map-label-id">${escapeHtml(event.event_id)}</div>`;
+    marker.bindTooltip(labelHtml, { permanent: true, direction: 'top', offset: [0, -20], className: 'incident-label-tooltip-container', interactive: false, pane: 'incidentTooltipPane' });
 
     incidentMapMarkers.push(marker);
   }
+}
+
+/* ── 事件詳情 Modal ────────────────────────────────────────────────────────── */
+function openIncidentDetailModal(eventId) {
+  const store = window._incidentDetailStore || {};
+  const data = store[eventId];
+  if (!data) return;
+  const { event, decisions, snapshot, segId, iconEmoji } = data;
+
+  const triggeredSops = decisions.filter(d => d.triggered).map(d => d.sop_clause).filter(Boolean).join('、') || '無';
+  const eteDecision = decisions.find(d => d.ete_minutes);
+  const cmsDecisions = decisions.filter(d => d.triggered && d.cms_text);
+  const adviceDecision = decisions.find(d => d.commander_advice);
+
+  // 組合 CMS 區塊（含發布警告按鈕）
+  let cmsHtml = '';
+  if (cmsDecisions.length) {
+    const cmsItems = cmsDecisions.map(d =>
+      `<div class="incident-popup-cms-item"><span class="incident-popup-cms-tag">${d.sop_clause}</span>${escapeHtml(d.cms_text)}</div>`
+    ).join('');
+    const cmsDataAttr = encodeURIComponent(JSON.stringify(cmsDecisions.map(d => ({ sop: d.sop_clause, text: d.cms_text }))));
+    const eventTs = event.timestamp || '';
+    cmsHtml = `
+      <div class="incident-popup-cms-block">
+        <div class="incident-popup-cms-label">CMS</div>
+        ${cmsItems}
+        <button class="btn-publish-warning" onclick="closeIncidentDetailModal(); openM5CmsModal('${cmsDataAttr}', '${eventTs}')">發布警告</button>
+      </div>`;
+  }
+
+  const bodyHtml = `
+    <div class="incident-popup">
+      <div class="incident-popup-title">${iconEmoji} ${escapeHtml(event.event_id)}</div>
+      <div class="incident-popup-row"><b>類型</b> ${escapeHtml(event.type)}</div>
+      <div class="incident-popup-row"><b>位置</b> ${escapeHtml(event.location)}</div>
+      <div class="incident-popup-row"><b>嚴重度</b> <span class="severity-${event.severity.toLowerCase()}">${escapeHtml(event.severity)}</span></div>
+      <div class="incident-popup-row"><b>狀態</b> ${escapeHtml(event.status)}</div>
+      <div class="incident-popup-row"><b>路段</b> ${escapeHtml(segId)}</div>
+      <div class="incident-popup-row"><b>觸發 SOP</b> ${escapeHtml(triggeredSops)}</div>
+      ${eteDecision ? `<div class="incident-popup-row"><b>ETE</b> ${eteDecision.ete_minutes} 分鐘</div>` : ''}
+      ${cmsHtml}
+      ${adviceDecision ? renderCommanderAdvicePopup(adviceDecision.commander_advice) : ''}
+      <div class="incident-popup-desc">${escapeHtml(event.description)}</div>
+    </div>`;
+
+  document.getElementById('incident-detail-modal-body').innerHTML = bodyHtml;
+  document.getElementById('incident-detail-modal-overlay').classList.remove('hidden');
+}
+
+function closeIncidentDetailModal() {
+  document.getElementById('incident-detail-modal-overlay').classList.add('hidden');
 }
 
 function renderDecisionCard(decision, index) {
@@ -2530,9 +2531,11 @@ function renderAdvisoryReport() {
             refHtml += '<div class="sop-rule-actions">';
             refHtml += '<div class="advisory-sub-title">▸ 對外請求</div>';
             if (m2Sop5.actions?.length) {
-              m2Sop5.actions.forEach(a => {
-                refHtml += `<div class="cross-system-item"><b>[警力]</b> ${escapeHtml(a)}</div>`;
-              });
+              m2Sop5.actions
+                .filter(a => !a.startsWith('CMS 更新') && !a.startsWith('指揮官建議'))
+                .forEach(a => {
+                  refHtml += `<div class="cross-system-item"><b>[警力]</b> ${escapeHtml(a)}</div>`;
+                });
             } else {
               refHtml += `<div class="cross-system-item"><b>[警力]</b> ${escapeHtml(m2Sop5.entity_name || '')} 各路口派遣 2 名警力接管指揮</div>`;
             }
@@ -2682,7 +2685,9 @@ function generateAdvisoryMarkdown(incident, decisions, snapshot) {
     md += `- **時間點**：${sop5.timestamp || incident.timestamp || ''}\n\n`;
     md += `**對外請求：**\n\n`;
     if (sop5.actions?.length) {
-      sop5.actions.forEach(a => { md += `- **[警力]** ${a}\n`; });
+      sop5.actions
+        .filter(a => !a.startsWith('CMS 更新') && !a.startsWith('指揮官建議'))
+        .forEach(a => { md += `- **[警力]** ${a}\n`; });
     } else {
       md += `- **[警力]** ${sop5.entity_name || ''} 各路口派遣 2 名警力接管指揮\n`;
     }
