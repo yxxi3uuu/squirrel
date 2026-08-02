@@ -20,15 +20,19 @@ inclusion: always
 ## 模組職責邊界（嚴格遵守）
 | 模組 | 職責 | 不做 |
 |------|------|------|
-| M1 Dashboard | 時序展示、SOP 1/3 門檻預警 | 不產出行動建議、不讀 live_incidents |
-| M2 Incident | 事件注入、疏散路徑、SOP 2/5/7 | 不做趨勢展示 |
-| M3 Advisor | 對話式 What-if 諮詢 | 不直接修改資料 |
-| M5 Notify | 多語通報、SOP 6 漫遊門檻 | 不做判斷邏輯 |
+| M1 Dashboard | 時序展示、SOP 1/3/4 門檻預警、SOP-4 連動 SOP-3 | 不產出行動建議、不讀 live_incidents |
+| M2 Incident | 事件注入、疏散路徑、SOP 2/5/7、CMS 產出 | 不做趨勢展示 |
+| M3 Advisor | 對話式 What-if 諮詢（規則引擎 + LLM） | 不直接修改資料 |
+| M4 Reasoning | 決策解釋鏈、ETE 公式分解、排除理由展示 | 不做門檻判斷 |
+| M5 Notify | 多語通報、SOP 6 漫遊門檻、CMS 多語翻譯 | 不做判斷邏輯 |
 
 ## SOP 門檻判斷原則
 - 門檻判斷一律由 Python 純函式計算，**禁止由 LLM 自行計算門檻數值**
-- LLM 只負責把算好的結果轉寫成中文摘要/預警提示
+- M1 不再使用 LLM 生成摘要（已移除 `generate_summary` 呼叫），門檻觸發結果直接渲染到前端卡片
+- M3 Advisor 使用 LLM 做 What-if 問答（規則引擎為主、LLM 為輔潤飾）
+- M5 使用 LLM（Ollama/Bedrock）做多語翻譯
 - TriggerDecision 的 `actions` 欄位：M1 固定回傳空陣列，M2 才產出具體行動
+- SOP-4 觸發時透過 `cascade_checks` 連動 SOP-3 前端顯示
 
 ## Router 掛載慣例
 - API 路徑一律 `/api/` 開頭
