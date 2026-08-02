@@ -2,7 +2,7 @@
 
 import json, urllib.request, urllib.error, os
 
-LLM_MODE     = os.environ.get("LLM_MODE",     "ollama")
+LLM_MODE     = os.environ.get("LLM_MODE",     "bedrock")
 OLLAMA_URL   = os.environ.get("OLLAMA_URL",   "http://localhost:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:7b")
 BEDROCK_REGION = os.environ.get("BEDROCK_REGION", "us-west-2")
