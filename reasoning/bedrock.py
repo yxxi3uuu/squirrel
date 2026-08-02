@@ -117,7 +117,7 @@ def generate_bedrock_explanation(record: DecisionRecord) -> Optional[str]:
         f"```json\n{decision_json}\n```"
     )
 
-    return _bedrock.converse(EXPLAINER_SYSTEM_PROMPT, user_message, max_tokens=1500)
+    return _bedrock.converse(EXPLAINER_SYSTEM_PROMPT, user_message, max_tokens=4096)
 
 
 def generate_bedrock_review(record: DecisionRecord) -> Optional[dict]:
@@ -133,7 +133,7 @@ def generate_bedrock_review(record: DecisionRecord) -> Optional[dict]:
         f"```json\n{decision_json}\n```"
     )
 
-    text = _bedrock.converse(REVIEWER_SYSTEM_PROMPT, user_message, max_tokens=1000)
+    text = _bedrock.converse(REVIEWER_SYSTEM_PROMPT, user_message, max_tokens=2048)
     if not text:
         return None
 
