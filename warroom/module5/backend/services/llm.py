@@ -2,9 +2,9 @@
 
 import json, urllib.request, urllib.error, os
 
-LLM_MODE     = os.environ.get("LLM_MODE",     "bedrock")
+LLM_MODE     = os.environ.get("LLM_MODE",     "ollama")
 OLLAMA_URL   = os.environ.get("OLLAMA_URL",   "http://localhost:11434")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:7b")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:3b")
 BEDROCK_REGION = os.environ.get("BEDROCK_REGION", "us-west-2")
 BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
 
@@ -95,29 +95,33 @@ def generate_alerts(sid: str, name: str, user_count: int,
 
 def _parse(text: str, multilingual: bool) -> dict:
     import re
-    pats = {
-        "zh_tw": r"【(?:繁體中文|中文)】(.*?)(?=【[^】]+】|$)",
-        "en":    r"【(?:English|英文)】(.*?)(?=【[^】]+】|$)",
-        "ja":    r"【(?:日本語|日文)】(.*?)(?=【[^】]+】|$)",
-        "ko":    r"【(?:한국어|韓文)】(.*?)(?=【[^】]+】|$)",
-        "th":    r"【(?:ภาษาไทย|泰文)】(.*?)(?=【[^】]+】|$)",
-        "vi":    r"【(?:Tiếng Việt|越南文)】(.*?)(?=【[^】]+】|$)",
-        "fr":    r"【(?:Français|法文)】(.*?)(?=【[^】]+】|$)",
+    # 匹配語言標籤後的內容，直到下一個語言標籤或結尾
+    lang_markers = {
+        "zh_tw": r"【(?:繁體中文|中文)】",
+        "en":    r"【(?:English|英文)】",
+        "ja":    r"【(?:日本語|日文)】",
+        "ko":    r"【(?:한국어|韓文)】",
+        "th":    r"【(?:ภาษาไทย|泰文)】",
+        "vi":    r"【(?:Tiếng Việt|越南文)】",
+        "fr":    r"【(?:Français|法文)】",
     }
+    # 建立所有語言標籤的 alternation 用於 lookahead
+    all_lang_pats = "|".join(lang_markers.values())
     result, found = {}, False
-    for lang, pat in pats.items():
+    for lang, marker in lang_markers.items():
+        pat = marker + r"(.*?)(?=" + all_lang_pats + r"|$)"
         m = re.search(pat, text, re.DOTALL | re.IGNORECASE)
         if m:
             result[lang] = m.group(1).strip()
             found = True
     if not found:
         segs = [s.strip() for s in re.split(r'\n{2,}', text) if s.strip()]
-        keys = list(pats.keys()) if multilingual else ["zh_tw"]
+        keys = list(lang_markers.keys()) if multilingual else ["zh_tw"]
         for i, k in enumerate(keys):
             result[k] = segs[i] if i < len(segs) else segs[0] if segs else text
     if not multilingual:
         return {"zh_tw": result.get("zh_tw", text)}
-    for k in pats:
+    for k in lang_markers:
         result.setdefault(k, "")
     return result
 
