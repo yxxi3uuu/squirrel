@@ -7,18 +7,23 @@
 ## 快速啟動（本機開發）
 
 ```bash
-# 1. 設定 AWS Bedrock 認證（需有 Bedrock 模型存取權限）
-export AWS_ACCESS_KEY_ID=your-key
-export AWS_SECRET_ACCESS_KEY=your-secret
-export AWS_DEFAULT_REGION=us-west-2
+# 1. 拉取最新程式碼
+git pull origin frontend-integration
 
 # 2. 安裝 Python 依賴
 pip install -r requirements.txt
 
-# 3. 啟動戰情室
-uvicorn warroom.server:app --reload --port 8000
+# 3. 設定環境變數（Bedrock 模式）
+cat > .env << EOF
+LLM_MODE=bedrock
+BEDROCK_MODEL_ID=us.anthropic.claude-sonnet-4-5-20250929-v1:0
+BEDROCK_REGION=us-west-2
+EOF
 
-# 4. 瀏覽器開啟
+# 4. 啟動戰情室
+uvicorn warroom.server:app --host 0.0.0.0 --port 8000
+
+# 5. 瀏覽器開啟
 # http://localhost:8000
 ```
 
@@ -33,7 +38,7 @@ ollama pull qwen2.5:3b
 export LLM_MODE=ollama
 
 # 啟動
-uvicorn warroom.server:app --reload --port 8000
+uvicorn warroom.server:app --host 0.0.0.0 --port 8000
 ```
 
 ---
