@@ -7,9 +7,10 @@
 ## 快速啟動（本機開發）
 
 ```bash
-# 1. 確認 Ollama 在背景執行並拉好模型
-ollama serve
-ollama pull qwen2.5:3b
+# 1. 設定 AWS Bedrock 認證（需有 Bedrock 模型存取權限）
+export AWS_ACCESS_KEY_ID=your-key
+export AWS_SECRET_ACCESS_KEY=your-secret
+export AWS_DEFAULT_REGION=us-west-2
 
 # 2. 安裝 Python 依賴
 pip install -r requirements.txt
@@ -19,6 +20,20 @@ uvicorn warroom.server:app --reload --port 8000
 
 # 4. 瀏覽器開啟
 # http://localhost:8000
+```
+
+### 本機無 AWS 時的替代方案（Ollama）
+
+```bash
+# 安裝 Ollama 並拉模型
+ollama serve
+ollama pull qwen2.5:3b
+
+# 設定環境變數切換到 Ollama 模式
+export LLM_MODE=ollama
+
+# 啟動
+uvicorn warroom.server:app --reload --port 8000
 ```
 
 ---

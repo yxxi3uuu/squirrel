@@ -4,7 +4,7 @@ import json, urllib.request, urllib.error, os
 
 LLM_MODE     = os.environ.get("LLM_MODE",     "ollama")
 OLLAMA_URL   = os.environ.get("OLLAMA_URL",   "http://localhost:11434")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:3b")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:7b")
 BEDROCK_REGION = os.environ.get("BEDROCK_REGION", "us-west-2")
 BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
 
