@@ -1753,40 +1753,38 @@ function openM5CmsModal(encodedData, eventTimestamp) {
   document.getElementById('m5-cms-publish-result').classList.add('hidden');
   m5CmsAlerts = {};
 
-  // 取得當前漫遊率判斷是否需要多語化
+  // 取得當前漫遊率判斷是否需要多語化（查不到精確時間時 fallback 不帶 timestamp）
   const ts = eventTimestamp || '';
   const url = ts ? `/api/signal/triggered?timestamp=${encodeURIComponent(ts)}` : '/api/signal/triggered';
-  fetch(url).then(r => r.json()).then(data => {
+  fetch(url).then(r => { if (!r.ok) return fetch('/api/signal/triggered'); return r; })
+  .then(r => r.json()).then(data => {
     const triggered = data.triggered || [];
-    m5CmsMultilingual = triggered.length > 0; // 任一站點 >= 30%
+    m5CmsMultilingual = triggered.length > 0;
 
     const combinedCms = cmsData.map(d => d.text).join('\n');
 
     if (m5CmsMultilingual) {
       const topStation = triggered.sort((a, b) => b.roaming_rate - a.roaming_rate)[0];
       document.getElementById('m5-cms-sop-banner').innerHTML =
-        `<div class="card-red" style="margin-bottom:14px"><b>SOP 第 6 條觸發</b>｜${topStation.station_name} 漫遊率 ${(topStation.roaming_rate * 100).toFixed(1)}%（≥ 30%），自動產出七語版</div>`;
+        `<div class="card-red" style="margin-bottom:14px"><b>SOP 第 6 條觸發</b>｜${topStation.station_name} 漫遊率 ${(topStation.roaming_rate * 100).toFixed(1)}%（>= 30%），自動產出七語版</div>`;
       document.getElementById('m5-cms-modal-title').textContent = '多語化通報（七語版）';
       m5CmsGenerate(combinedCms, true);
     } else {
       document.getElementById('m5-cms-sop-banner').innerHTML =
         `<div class="card-yellow" style="margin-bottom:14px">所有站點漫遊率 < 30%｜僅產出繁體中文版</div>`;
       document.getElementById('m5-cms-modal-title').textContent = '通報發布（中文版）';
-      // 不需翻譯，直接顯示中文（加上【交通管制】標題）
       m5CmsAlerts = { zh_tw: '【交通管制】' + combinedCms };
       m5CmsRenderEditor(false);
       document.getElementById('m5-cms-btn-publish').disabled = false;
     }
   }).catch(e => {
     console.error('漫遊率查詢失敗', e);
-    // fallback: 只產出中文
     const combinedCms = cmsData.map(d => d.text).join('\n');
-    m5CmsAlerts = { zh_tw: '【交通管制】' + combinedCms };
+    m5CmsMultilingual = true;
     document.getElementById('m5-cms-sop-banner').innerHTML =
-      `<div class="card-yellow" style="margin-bottom:14px">漫遊率資料讀取失敗，僅產出中文版</div>`;
-    document.getElementById('m5-cms-modal-title').textContent = '通報發布（中文版）';
-    m5CmsRenderEditor(false);
-    document.getElementById('m5-cms-btn-publish').disabled = false;
+      `<div class="card-red" style="margin-bottom:14px"><b>SOP 第 6 條</b>｜CMS 告警自動產出七語版</div>`;
+    document.getElementById('m5-cms-modal-title').textContent = '多語化通報（七語版）';
+    m5CmsGenerate(combinedCms, true);
   });
 }
 
